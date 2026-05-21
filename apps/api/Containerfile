@@ -1,0 +1,95 @@
+# syntax=docker/dockerfile:1.7
+#
+# Scout — api container.
+#
+# Multi-stage build:
+#   stage 1 (spa-builder) builds the React SPA from apps/web/
+#   stage 2 (py-builder)  resolves Python deps via uv
+#   stage 3 (runtime)     ships venv + api source + built SPA, non-root
+#
+# Both Docker (`docker buildx build`) and Podman (`podman build`) consume this file.
+
+# ============================================================================
+# Stage 1: spa-builder
+# ----------------------------------------------------------------------------
+# Plan 02 only copies the placeholder apps/web/index.html into dist/.
+# Plan 08 replaces this stage's body with:
+#     COPY apps/web/package.json apps/web/pnpm-lock.yaml ./
+#     RUN pnpm install --frozen-lockfile
+#     COPY apps/web/ ./
+#     RUN pnpm build
+# ============================================================================
+FROM registry.access.redhat.com/ubi9/nodejs-22 AS spa-builder
+
+WORKDIR /build/web
+
+# Plan 02 placeholder: just emit dist/index.html from the committed apps/web/index.html.
+COPY apps/web/index.html ./index.html
+RUN mkdir -p dist && cp index.html dist/index.html
+
+# ============================================================================
+# Stage 2: py-builder
+# ----------------------------------------------------------------------------
+# Installs Python deps into a venv using uv.
+# Once uv.lock is committed (step 06 generates it on first run), the sync
+# command below switches to `uv sync --frozen` for reproducibility.
+# ============================================================================
+FROM registry.access.redhat.com/ubi9/python-312 AS py-builder
+
+USER 0
+
+# Pin uv version. Update via dependabot.
+RUN pip install --no-cache-dir uv==0.5.4
+
+WORKDIR /build/api
+
+# Copy only the manifest for better layer caching on dep-only changes.
+COPY apps/api/pyproject.toml ./
+# Generate venv. Plan 06 commits uv.lock; switch to `uv sync --frozen` then.
+RUN uv sync --no-dev
+
+# Copy api source.
+COPY apps/api/app ./app
+
+# ============================================================================
+# Stage 3: runtime
+# ----------------------------------------------------------------------------
+# Minimal runtime. Non-root user (uid 1001). Listens on :8000.
+# ============================================================================
+FROM registry.access.redhat.com/ubi9/python-312 AS runtime
+
+USER 0
+
+# Create the runtime user. Rootless Podman maps subuid to this uid.
+RUN useradd --uid 1001 --create-home --shell /bin/bash scout \
+ && mkdir -p /app /var/lib/scout/storage/pdf_uploads /var/lib/scout/storage/raw_pages \
+ && chown -R scout:scout /app /var/lib/scout
+
+WORKDIR /app
+
+# Copy venv from py-builder.
+COPY --from=py-builder --chown=scout:scout /build/api/.venv /app/.venv
+
+# Copy api source.
+COPY --from=py-builder --chown=scout:scout /build/api/app /app/app
+
+# Copy built SPA from spa-builder.
+COPY --from=spa-builder --chown=scout:scout /build/web/dist /app/static
+
+# Make the venv the default Python.
+ENV PATH="/app/.venv/bin:${PATH}" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
+
+USER 1001
+
+EXPOSE 8000
+
+# Container-level healthcheck. Compose also declares one in compose.yaml;
+# this baked-in copy means `docker run` works correctly without compose.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=5 \
+  CMD python -c "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/healthz').status == 200 else 1)" \
+   || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
