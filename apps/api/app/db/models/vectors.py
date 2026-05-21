@@ -13,7 +13,8 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, SmallInteger, String, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, SmallInteger, String, Text
+from sqlalchemy import text as sql_text  # aliased to avoid shadowing by DocumentChunk.text column
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,7 +36,7 @@ class EmbeddingModel(TimestampedMixin, Base):
     provider: Mapped[str] = mapped_column(String(60), nullable=False)
     dimension: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
+        Boolean, nullable=False, server_default=sql_text("false")
     )
     deprecated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -75,7 +76,7 @@ class DocumentChunk(TimestampedMixin, Base):
     # Docling structural info: {section_heading, page_number, content_type}.
     # `{}` for non-document inputs (manual messaging entries, SME bios).
     chunk_metadata: Mapped[dict] = mapped_column(
-        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+        JSONB, nullable=False, server_default=sql_text("'{}'::jsonb")
     )
 
     # Bumped on retrieval; drives decay (plan 25).

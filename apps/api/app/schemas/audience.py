@@ -12,12 +12,14 @@ adding a new industry is a workbook edit, not a code change + migration.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from pydantic import Field
 
 from app.schemas.common import (
+    READ_CONFIG,
     AudienceName,
     Description,
     ListItem,
@@ -54,6 +56,8 @@ class AudienceProfileUpdate(AudienceProfileBase):
 
 
 class AudienceProfileRead(AudienceProfileBase):
+    model_config = READ_CONFIG
+
     id: UUID
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime

@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 08 complete — Vite + React SPA wired through to the api image)
+**Last updated:** 2026-05-21 (plan 09 backend complete; UI wizards land next)
 
 ## Plan status
 
@@ -18,7 +18,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 06 | FastAPI skeleton | ✅ | Completed 2026-05-21 (infrastructure + ORM + baseline migration + seed) |
 | 07 | Config & secrets | ✅ | Completed 2026-05-21. Implementation done in plan 06; this pass added the operator runbook. |
 | 08 | Vite frontend skeleton | ✅ | Completed 2026-05-21 |
-| 09 | Manual data entry | ⬜ | |
+| 09 | Manual data entry | 🚧 | Backend CRUD landed 2026-05-21; UI wizards next pass |
 | 10 | LLM service layer | ⬜ | |
 | 11 | Embeddings & chunking | ⬜ | |
 | 12 | PDF/RAG ingestion | ⬜ | |
@@ -258,8 +258,43 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   - **Runtime validation**: pending Docker/Podman + `pnpm install` against
     the real registry. The TS strict / ESLint / Vite-build verification
     happens once the container builds.
-- 🚧 **Plan 09 — Manual data entry** next (CRUD endpoints + UI wizards
-  consuming the plan 05 Pydantic schemas + plan 06 ORM models).
+- 🐛 **Bug fix** before plan 09 backend: `apps/api/app/db/models/vectors.py`
+  had a `text` column that shadowed `sqlalchemy.text()` used on the next line.
+  Aliased the import to `sql_text` to break the shadow. Caught by importing the
+  whole codebase in a temp venv against real SQLAlchemy. **The full codebase now
+  imports cleanly; ORM registers 30 tables.**
+- 🚧 **Plan 09 — Manual data entry, backend pass** complete
+  - `apps/api/app/services/_common.py` — `paginate(stmt, page, per_page)` →
+    `(rows, total)`; `write_audit(action, target_type, target_id, before, after,
+    actor_label)` stages an audit-log row; `model_to_audit_dict(obj)` serializes
+    ORM rows to JSONB-friendly dicts.
+  - `apps/api/app/services/messaging_service.py`,
+    `audience_service.py`, `sme_service.py`, `past_conference_service.py`,
+    `topic_service.py` — list / get / create / update / soft-delete per entity.
+    SME service also does FK existence checks on `primary_topics` +
+    `audience_focus` (denormalized array columns; no DB-level FK constraints).
+    Past-conference service has a CSV import path: row-by-row validation
+    against `PastConferenceCSVRow`, name→UUID resolution against active SMEs,
+    all-or-nothing transaction by default, formula-injection quoting.
+  - `apps/api/app/api/v1/messaging.py`, `audiences.py`, `smes.py`,
+    `past_conferences.py`, `topics.py` — routers wire the services to FastAPI
+    + `DbSession` dependency + Pydantic response models.
+  - Topic admin: `POST /api/v1/topics/{id}/approve` (promotes LLM-discovered
+    topics from `pending_review=true, is_active=false` to active);
+    `POST /api/v1/topics/{id}/reject` (audit-logged deactivate).
+  - `apps/api/app/main.py` includes all 5 new routers.
+  - `apps/api/app/schemas/common.py` — added `Page[T]` (generic paginated
+    response) + `READ_CONFIG` (ConfigDict with `from_attributes=True`).
+  - Every `*Read` schema fixed: `created_at`/`updated_at` typed as `datetime`
+    (was `str`); inherits `READ_CONFIG` for ORM serialization.
+  - `python-multipart` added to deps (needed by `UploadFile` in the CSV import).
+  - **Verified**: full codebase imports against real Pydantic + SQLAlchemy +
+    asyncpg in a temp venv. **32 routes** registered including 27 from this
+    pass. Pydantic Create-schema instantiation + rejection-of-bad-input both
+    behave as designed.
+- 🚧 **Plan 09 — Manual data entry, UI pass** next (multi-step wizards for
+  messaging + audience entry; form pages for SME + past conferences; topic
+  review queue; CSV drop-zone). All consume the 27 endpoints landed in this pass.
 
 ### 2026-05-21 (afternoon revision)
 - 🔄 **Docling adopted** for PDF parsing + structure-aware chunking

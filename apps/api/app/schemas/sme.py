@@ -11,12 +11,14 @@ UUID format; existence is verified by the service layer in plan 09.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from pydantic import EmailStr, Field, field_validator
 
 from app.schemas.common import (
+    READ_CONFIG,
     CountryCode,
     LanguageCode,
     ListItem,
@@ -88,6 +90,8 @@ class SmeUpdate(SmeBase):
 
 
 class SmeRead(SmeBase):
+    model_config = READ_CONFIG
+
     id: UUID
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime

@@ -14,13 +14,14 @@ schema's `name`/`aliases` constraints but the service layer sets the flags.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from pydantic import Field, field_validator
 from pydantic.functional_validators import AfterValidator
 
-from app.schemas.common import StrictBase, TopicName
+from app.schemas.common import READ_CONFIG, StrictBase, TopicName
 
 
 def _slugify_lower(value: str) -> str:
@@ -73,6 +74,8 @@ class TopicUpdate(TopicBase):
 
 
 class TopicRead(TopicBase):
+    model_config = READ_CONFIG
+
     id: UUID
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
