@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 07 complete — secrets runbook landed)
+**Last updated:** 2026-05-21 (plan 08 complete — Vite + React SPA wired through to the api image)
 
 ## Plan status
 
@@ -17,7 +17,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 05 | Data input guardrails | ✅ | Completed 2026-05-21 |
 | 06 | FastAPI skeleton | ✅ | Completed 2026-05-21 (infrastructure + ORM + baseline migration + seed) |
 | 07 | Config & secrets | ✅ | Completed 2026-05-21. Implementation done in plan 06; this pass added the operator runbook. |
-| 08 | Vite frontend skeleton | ⬜ | |
+| 08 | Vite frontend skeleton | ✅ | Completed 2026-05-21 |
 | 09 | Manual data entry | ⬜ | |
 | 10 | LLM service layer | ⬜ | |
 | 11 | Embeddings & chunking | ⬜ | |
@@ -221,9 +221,45 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   - **Manual sanity check**: grep across all committed files found zero
     secret-shaped patterns outside docs and `.env.example` placeholders.
     `.env` confirmed gitignored.
-- 🚧 **Plan 08 — Vite frontend skeleton** next (the SPA: React 19 + TS strict +
-  Tailwind + shadcn/ui + TanStack Router + TanStack Query, built into the
-  api image's `static/` directory).
+- ✅ **Plan 08 — Vite + React SPA** complete
+  - **Tooling**: `apps/web/package.json` (full deps: Vite 6, React 19,
+    TS strict, Tailwind v4, TanStack Query+Router, openapi-fetch, lucide,
+    shadcn primitives), `tsconfig.json` (strict + `noUncheckedIndexedAccess`
+    + `exactOptionalPropertyTypes` + path alias `@/*`), `tsconfig.node.json`,
+    `vite.config.ts` (with TanStack Router plugin + Tailwind v4 plugin +
+    `/api` proxy to the api container in dev), `eslint.config.js` (flat
+    config), `.prettierrc` (with `prettier-plugin-tailwindcss`).
+  - **Entry**: `index.html` (replaces the plan-02 placeholder) + `src/main.tsx`
+    (QueryClientProvider → RouterProvider → root); React Query Devtools
+    in dev only.
+  - **Design system**: Tailwind v4 design tokens in `src/styles/index.css`
+    under `@theme` — dark canvas, Red Hat-red accent, status palette,
+    score-bucket palette, typography + radius scale.
+  - **shadcn primitives**: Button (cva variants: default/secondary/ghost/
+    outline/danger × default/sm/lg/icon) + Card family. Both styled via
+    Tailwind tokens.
+  - **Layout**: `Sidebar.tsx` (3-section nav: Discover / Team / Tools with
+    lucide icons, active-route highlighting via TanStack Router's
+    activeProps) + `TopBar.tsx` (env badge + LLM cost meter + notification
+    bell — placeholders wired to real endpoints later).
+  - **Routes** (file-based): `__root.tsx` (AppShell wrapper), `/` redirects
+    to `/dashboard`, plus placeholder pages for dashboard, conferences,
+    conferences/[id], smes, audiences, messaging, agent, graph,
+    diagnostics, settings.
+  - **Containerfile**: spa-builder stage now actually runs
+    `corepack enable && pnpm install && pnpm build`; output flows through
+    to `/app/static/` in the runtime image.
+  - **Makefile**: `make build-spa` works via a throwaway UBI node-22
+    container (uses `CONTAINER_CLI` auto-detected docker/podman).
+  - **`.gitignore`**: added `apps/web/src/routeTree.gen.ts` (auto-generated
+    by the TanStack Router plugin).
+  - `docs/ARCHITECTURE.md` — new "Frontend" subsection with stack table
+    and dev/prod workflow.
+  - **Runtime validation**: pending Docker/Podman + `pnpm install` against
+    the real registry. The TS strict / ESLint / Vite-build verification
+    happens once the container builds.
+- 🚧 **Plan 09 — Manual data entry** next (CRUD endpoints + UI wizards
+  consuming the plan 05 Pydantic schemas + plan 06 ORM models).
 
 ### 2026-05-21 (afternoon revision)
 - 🔄 **Docling adopted** for PDF parsing + structure-aware chunking

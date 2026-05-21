@@ -135,9 +135,21 @@ db-psql:  ## Open a psql shell against the running postgres
 # ---------------------------------------------------------------------------
 # Frontend — implemented in step 08
 # ---------------------------------------------------------------------------
+# Detect docker vs podman for one-off `run` calls (build-spa, etc.).
+# COMPOSE_RUNTIME is what compose-aware targets use; CONTAINER_CLI is for plain `run`.
+CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || echo docker)
+
 .PHONY: build-spa
-build-spa:  ## Build the Vite SPA into apps/api/static (step 08)
-	@echo "make build-spa: implemented in step 08" && exit 1
+build-spa:  ## Build the Vite SPA (throwaway node container; deposits in apps/api/static)
+	@echo "Building SPA via UBI node-22 container ($(CONTAINER_CLI))..."
+	@mkdir -p apps/api/static
+	@$(CONTAINER_CLI) run --rm \
+	  -v $(PWD)/apps/web:/build/web \
+	  -v $(PWD)/apps/api/static:/build/static \
+	  -w /build/web \
+	  registry.access.redhat.com/ubi9/nodejs-22 \
+	  bash -c 'corepack enable && corepack prepare pnpm@9.12.0 --activate && pnpm install && pnpm build && rm -rf /build/static/* && cp -R dist/. /build/static/'
+	@echo "OK — SPA built into apps/api/static/"
 
 # ---------------------------------------------------------------------------
 # Tests — implemented in step 27

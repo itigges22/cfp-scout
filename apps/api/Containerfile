@@ -12,20 +12,34 @@
 # ============================================================================
 # Stage 1: spa-builder
 # ----------------------------------------------------------------------------
-# Plan 02 only copies the placeholder apps/web/index.html into dist/.
-# Plan 08 replaces this stage's body with:
-#     COPY apps/web/package.json apps/web/pnpm-lock.yaml ./
-#     RUN pnpm install --frozen-lockfile
-#     COPY apps/web/ ./
-#     RUN pnpm build
+# Builds the Vite + React SPA. Output lands at /build/web/dist; stage 3
+# copies it to /app/static in the runtime image.
+#
+# pnpm-lock.yaml will exist after the first `pnpm install` in dev. Until
+# then we run without --frozen-lockfile (which would fail). Switch to
+# --frozen-lockfile once the lockfile is committed.
 # ============================================================================
 FROM registry.access.redhat.com/ubi9/nodejs-22 AS spa-builder
 
+USER 0
+
+# Install pnpm via corepack (bundled with Node 22). No global npm install
+# required — corepack manages pnpm versions per the packageManager field
+# in package.json.
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+
 WORKDIR /build/web
 
-# Plan 02 placeholder: just emit dist/index.html from the committed apps/web/index.html.
-COPY apps/web/index.html ./index.html
-RUN mkdir -p dist && cp index.html dist/index.html
+# Copy manifests first for better layer caching on dep-only changes.
+COPY apps/web/package.json ./
+# COPY apps/web/pnpm-lock.yaml ./   # uncomment once lockfile is committed
+RUN pnpm install
+
+# Copy source.
+COPY apps/web/ ./
+
+# Build. Outputs apps/web/dist/ which stage 3 copies to /app/static.
+RUN pnpm build
 
 # ============================================================================
 # Stage 2: py-builder
