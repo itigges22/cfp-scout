@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 03 complete)
+**Last updated:** 2026-05-21 (plan 04 complete)
 
 ## Plan status
 
@@ -13,7 +13,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 01 | Project bootstrap | ✅ | Completed 2026-05-21 |
 | 02 | Containerization foundation | ✅ | Completed 2026-05-21. End-to-end `make up` not verified — neither Docker nor Podman installed on this build host. |
 | 03 | Postgres + pgvector | ✅ | Completed 2026-05-21 |
-| 04 | Database schema | ⬜ | |
+| 04 | Database schema | ✅ | Design complete 2026-05-21; ORM + migrations land in plan 06 |
 | 05 | Data input guardrails | ⬜ | |
 | 06 | FastAPI skeleton | ⬜ | |
 | 07 | Config & secrets | ⬜ | |
@@ -93,7 +93,16 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
     for schemas-over-databases
   - `docs/ARCHITECTURE.md` — updated postgres section to reflect actual
     role model and link to the new runbooks
-- 🚧 **Plan 04 — Database schema (tables, indexes, junctions)** next
+- ✅ **Plan 04 — Database schema** (design phase) complete
+  - `docs/data-model.md` — comprehensive schema reference: every table,
+    column, index, conventions, Mermaid ERD, seed plan, open questions
+  - `docs/ARCHITECTURE.md` — new "Data model" pointer section
+  - **What's NOT here**: SQLAlchemy ORM models and the initial Alembic
+    baseline migration. Those land in plan 06 (FastAPI skeleton), where
+    Alembic gets wired up. Plan 04 is purely the design.
+- 🚧 **Plan 05 — Data input guardrails** next (Pydantic schemas for the
+  manually-entered entity types — `extra='forbid'`, length caps, enums,
+  ISO validators)
 
 ---
 
