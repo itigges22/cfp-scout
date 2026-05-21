@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 06 complete — full backend skeleton landed)
+**Last updated:** 2026-05-21 (plan 07 complete — secrets runbook landed)
 
 ## Plan status
 
@@ -16,7 +16,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 04 | Database schema | ✅ | Design complete 2026-05-21; ORM + migrations land in plan 06 |
 | 05 | Data input guardrails | ✅ | Completed 2026-05-21 |
 | 06 | FastAPI skeleton | ✅ | Completed 2026-05-21 (infrastructure + ORM + baseline migration + seed) |
-| 07 | Config & secrets | ⬜ | |
+| 07 | Config & secrets | ✅ | Completed 2026-05-21. Implementation done in plan 06; this pass added the operator runbook. |
 | 08 | Vite frontend skeleton | ⬜ | |
 | 09 | Manual data entry | ⬜ | |
 | 10 | LLM service layer | ⬜ | |
@@ -204,9 +204,26 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   - **All 8 model files + both migrations compile under py3.9 (syntax check)**.
     Runtime validation pending Docker/Podman on a build host that can run
     `make migrate` against a live Postgres.
-- 🚧 **Plan 07 — Config & secrets** next (mostly already landed via plan 06's
-  settings.py + .env.example; pass 07 documents the secret-handling SOP and
-  adds the `gitleaks` CI hook verification).
+- ✅ **Plan 07 — Config & secrets** complete
+  - Implementation already landed via plan 06's `app/settings.py` (validators
+    + SecretStr fields), `app/logging.py` (redaction processor), and
+    `app/lifespan.py` (startup banner with redacted config). `.env.example`
+    has every documented env var. `.gitignore` blocks `.env*` while allowing
+    `.env.example`. gitleaks is wired into `.pre-commit-config.yaml` from plan 01.
+  - **New in this pass**: `docs/ops/secrets.md` — operator runbook covering:
+    what counts as a secret in Scout, where each lives, first-time setup,
+    MaaS key provisioning, MaaS rotation procedure (revoke-last to avoid
+    breaking in-flight requests), Postgres password rotation (easy nuke vs
+    surgical ALTER USER paths), leak-response playbook (revoke → audit →
+    find leak → if-committed-rewrite-history → post-incident), and the
+    seven-layer defense recap.
+  - `docs/ARCHITECTURE.md` — new "Secrets" section linking to the runbook.
+  - **Manual sanity check**: grep across all committed files found zero
+    secret-shaped patterns outside docs and `.env.example` placeholders.
+    `.env` confirmed gitignored.
+- 🚧 **Plan 08 — Vite frontend skeleton** next (the SPA: React 19 + TS strict +
+  Tailwind + shadcn/ui + TanStack Router + TanStack Query, built into the
+  api image's `static/` directory).
 
 ### 2026-05-21 (afternoon revision)
 - 🔄 **Docling adopted** for PDF parsing + structure-aware chunking
