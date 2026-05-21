@@ -457,8 +457,11 @@ These don't block plan 04's design but need answers before plan 06 ships the mig
 - **Industry enum coverage** — open question whether to make this a Postgres enum or a `lookup_values` table. Recommend the latter so it's editable via the workbook.
 - **HNSW build parameters** — `m=16, ef_construction=64` is the proposed start; finalize in plan 11 once we have real corpus shape.
 
-## Migration history (placeholder for plan 06)
+## Migration history
 
-Plan 06 will produce a single Alembic baseline migration encoding everything
-above. Subsequent migrations land per-plan as features add or modify tables.
-List them here as they merge.
+| Revision | Description |
+|----------|-------------|
+| `20260521_1200_baseline` | All 30 tables — hand-crafted baseline (plan 06 pass 2) |
+| `20260521_1210_seed_embedding_model` | Inserts the `nomic-embed-text-v1-5` row |
+
+Per-plan migrations land as features add or modify tables. See `docs/ops/migrations.md` for the operator view.
