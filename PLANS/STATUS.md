@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 05 complete; Docling revision applied to plans 04/11/12)
+**Last updated:** 2026-05-21 (plan 06 pass 1 complete — infrastructure landed, ORM models in pass 2)
 
 ## Plan status
 
@@ -15,7 +15,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 03 | Postgres + pgvector | ✅ | Completed 2026-05-21 |
 | 04 | Database schema | ✅ | Design complete 2026-05-21; ORM + migrations land in plan 06 |
 | 05 | Data input guardrails | ✅ | Completed 2026-05-21 |
-| 06 | FastAPI skeleton | ⬜ | |
+| 06 | FastAPI skeleton | 🚧 | Pass 1 of 2 complete (infrastructure); pass 2 lands ORM models + baseline migration |
 | 07 | Config & secrets | ⬜ | |
 | 08 | Vite frontend skeleton | ⬜ | |
 | 09 | Manual data entry | ⬜ | |
@@ -128,6 +128,54 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 - 🚧 **Plan 06 — FastAPI backend skeleton** next (this is the big one:
   async SQLAlchemy + Alembic baseline migration encoding plan 04's design,
   structured logging, settings, OpenAPI schema, role switch-over to `app`)
+
+### 2026-05-21 (plan 06 pass 1)
+- 🚧 **Plan 06 — FastAPI skeleton, pass 1 of 2** complete (infrastructure)
+  - `apps/api/app/settings.py` — full Pydantic-settings driven config matching
+    plan 07's env contract. Rejects `LLM_API_KEY=changeme` and `POSTGRES_PASSWORD=changeme`
+    placeholders. Validates matcher weights sum to 1.0. Exposes `superuser_sync_dsn`
+    / `superuser_async_dsn` for Alembic use only.
+  - `apps/api/app/logging.py` — structlog config with JSON or console renderer;
+    redaction processor scrubs `api_key`, `password`, `token`, `secret`,
+    `authorization` etc. plus bearer/sk-style patterns in string values.
+  - `apps/api/app/db/base.py` — SQLAlchemy declarative `Base` with a project-wide
+    naming convention so Alembic autogenerate produces deterministic constraint names.
+  - `apps/api/app/db/session.py` — async engine + `AsyncSession` factory + `get_db`
+    FastAPI dependency + `DbSession` Annotated alias. Pool sized for one api process.
+  - `apps/api/app/middleware/request_id.py` — propagates `X-Request-ID` header and
+    binds it into structlog contextvars; logs `request.completed` per request.
+  - `apps/api/app/middleware/error_handler.py` — RFC 7807 problem+json responses
+    for ValidationError, HTTPException, SQLAlchemyError, and the unhandled-Exception
+    fallback. Tracebacks included only in `ENV=dev`.
+  - `apps/api/app/lifespan.py` — startup probes the DB (`SELECT 1`) and fails loud
+    if Postgres is unreachable; shutdown disposes the engine. Hooks reserved for
+    APScheduler (plan 13) and Docling warm-up (plan 12).
+  - `apps/api/app/main.py` — rewired to use the new lifespan + middleware + error
+    handlers; CORS configured for the Vite dev server.
+  - `apps/api/app/api/v1/health.py` — adds `/api/v1/readyz` that runs `SELECT 1`
+    against the DB; returns 503 if unreachable.
+  - `apps/api/alembic.ini` + `alembic/env.py` (async-aware) + `script.py.mako`
+    template. Alembic uses the superuser DSN (built from POSTGRES_* env vars);
+    api uses the limited `app` role.
+  - `infra/compose/compose.yaml` — `DATABASE_URL` now uses the `app` role;
+    POSTGRES_* env vars exposed to the api container so Alembic can build its
+    own DSN. New `APP_DB_PASSWORD` env (default 'app').
+  - `Makefile` — `make migrate`, `make migrate-create MSG=...`, `make migrate-history`,
+    `make migrate-current` all wired up (run `alembic` inside the api container).
+  - `.env.example` — `APP_DB_PASSWORD` documented; superuser-vs-app-role separation
+    explained inline.
+  - `apps/api/pyproject.toml` — sqlalchemy[asyncio], asyncpg, alembic, structlog,
+    pgvector added to deps.
+  - `docs/ADR/0004-async-sqlalchemy-and-alembic.md` — async SQLAlchemy + Alembic
+    decision recorded; alternatives considered (sync, SQLModel, Tortoise, raw asyncpg).
+  - `docs/ops/migrations.md` — operator runbook for daily migration workflow,
+    common gotchas, role/schema interaction.
+  - `docs/ARCHITECTURE.md` — ADR list updated.
+  - **All Python compiles (py3.9 syntax check).** Container-side runtime
+    validation when `make up` runs on a Docker/Podman host.
+- 🚧 **Plan 06 pass 2** next: ORM models for every table in plan 04 + the
+  initial Alembic baseline migration + `make seed` target + role-switch
+  verification.
 
 ### 2026-05-21 (afternoon revision)
 - 🔄 **Docling adopted** for PDF parsing + structure-aware chunking

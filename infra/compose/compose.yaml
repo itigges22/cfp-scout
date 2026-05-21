@@ -58,7 +58,17 @@ services:
         condition: service_healthy
     environment:
       ENV: ${ENV:-dev}
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Runtime DSN — the api uses the limited `app` role created by
+      # infra/postgres/init/02-roles-and-schemas.sql. Alembic, in contrast,
+      # builds its own URL from POSTGRES_USER/POSTGRES_PASSWORD (also exposed
+      # below) so it can run DDL as the superuser.
+      DATABASE_URL: postgresql+asyncpg://app:${APP_DB_PASSWORD:-app}@postgres:5432/${POSTGRES_DB}
+      # Superuser credentials — Alembic reads these via Settings.superuser_*_dsn.
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
       LLM_BASE_URL: ${LLM_BASE_URL:?LLM_BASE_URL not set in .env}
       LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY not set in .env}
       LLM_CHAT_MODEL: ${LLM_CHAT_MODEL:-granite-3-2-8b-instruct}
