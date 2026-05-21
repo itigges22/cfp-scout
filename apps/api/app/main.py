@@ -21,7 +21,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.v1 import health
+from app.api.v1 import (
+    audiences,
+    health,
+    messaging,
+    past_conferences,
+    smes,
+    topics,
+)
 from app.lifespan import lifespan
 from app.logging import configure_logging
 from app.middleware.error_handler import install_error_handlers
@@ -63,6 +70,11 @@ install_error_handlers(app)
 
 # ---- routers --------------------------------------------------------------
 app.include_router(health.router)
+app.include_router(messaging.router)
+app.include_router(audiences.router)
+app.include_router(smes.router)
+app.include_router(past_conferences.router)
+app.include_router(topics.router)
 
 # ---- static SPA at / (FastAPI's StaticFiles, html=True for SPA fallback) --
 if STATIC_DIR.exists():

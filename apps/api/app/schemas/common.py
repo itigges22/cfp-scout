@@ -6,8 +6,10 @@ place. Schemas in sibling modules re-use what's here rather than redefining.
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Generic, TypeVar
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
@@ -31,6 +33,44 @@ class StrictBase(BaseModel):
     """All Scout input schemas inherit from this. Centralises model_config."""
 
     model_config = BASE_CONFIG
+
+
+class ReadBase(BaseModel):
+    """Base for *Read* schemas — permissive on extras, supports ORM-to-schema.
+
+    Read schemas serialize ORM rows to JSON. They need ``from_attributes=True``
+    so FastAPI can pull values via attribute access. They tolerate extra
+    fields because the ORM may carry private attributes we don't surface.
+    """
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+# ---------------------------------------------------------------------------
+# Pagination
+# ---------------------------------------------------------------------------
+T = TypeVar("T")
+
+
+class Page(BaseModel, Generic[T]):
+    """Generic paginated response wrapper.
+
+    Routes that list resources return Page[ResourceRead]. The frontend
+    consumes ``items`` + ``total`` for pagination controls.
+    """
+
+    items: list[T]
+    total: int
+    page: int
+    per_page: int
+
+
+# ---------------------------------------------------------------------------
+# READ_CONFIG — convenience constant for Read schemas. Each Read variant sets
+# this as its model_config so it can serialize ORM rows (from_attributes=True)
+# without rejecting extra columns that aren't surfaced (extra='ignore').
+# ---------------------------------------------------------------------------
+READ_CONFIG = ConfigDict(from_attributes=True, extra="ignore")
 
 
 # ---------------------------------------------------------------------------

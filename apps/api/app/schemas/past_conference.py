@@ -9,13 +9,14 @@ workbook import (plan 31) validate against this schema.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
 from pydantic import Field, field_validator
 
 from app.schemas.common import (
+    READ_CONFIG,
     ConferenceName,
     PastConferenceRole,
     PastConferenceSessionType,
@@ -66,9 +67,11 @@ class PastConferenceUpdate(PastConferenceBase):
 
 
 class PastConferenceRead(PastConferenceBase):
+    model_config = READ_CONFIG
+
     id: UUID
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 
 # ---------------------------------------------------------------------------

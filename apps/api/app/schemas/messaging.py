@@ -13,12 +13,14 @@ See ``PLANS/phase-1/05-data-input-guardrails.md`` for the rules.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from pydantic import Field, model_validator
 
 from app.schemas.common import (
+    READ_CONFIG,
     ElevatorPitch,
     ListItem,
     MessagingSourceType,
@@ -73,9 +75,11 @@ class MessagingDocumentUpdate(MessagingDocumentBase):
 
 
 class MessagingDocumentRead(MessagingDocumentBase):
-    """Read response. Adds server-side fields."""
+    """Read response. Adds server-managed fields + relaxes extras for ORM serialization."""
+
+    model_config = READ_CONFIG
 
     id: UUID
     file_path: str | None = None
-    created_at: str  # ISO-8601 timestamp
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
