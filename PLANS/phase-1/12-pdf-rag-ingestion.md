@@ -23,14 +23,35 @@ contributes the embedding corpus, not the matching dimensions.
   - `owner_id` required — the structured entity it attaches to (created via step 09 first)
   - response: 202 + job id
 
-### Parsing
-- [ ] `pypdf` for native PDFs.
-- [ ] If text yield < 100 chars/page average → fall back to **`ocrmypdf`** (Tesseract).
-- [ ] Extract: full text, page-level text, PDF metadata.
+### Parsing — Docling
+- [ ] **Library**: [Docling](https://github.com/DS4SD/docling) (IBM Research).
+      Same library that does chunking in plan 11. Replaces three of our previously-planned
+      deps (`pypdf` + `ocrmypdf` + `langchain-text-splitters`) with one.
+      Decision recorded in [`ADR-0003`](../../docs/ADR/0003-docling-for-pdf-and-chunking.md).
+- [ ] **Why**: Docling is layout-aware, OCR-built-in, and produces a structured
+      `DoclingDocument` that downstream HybridChunker consumes natively. No
+      separate OCR fallback path to maintain; no native/scanned PDF branching.
+- [ ] **Configuration**:
+  - PDF parsing with default Docling pipeline (CPU-only models; no GPU needed)
+  - OCR enabled (Docling auto-decides when to run it based on text yield)
+  - Table structure recognition enabled (so tables become structured chunks)
+- [ ] **Future-proofing**: Docling also handles DOCX, PPTX, HTML, and images
+      via the same `DocumentConverter`. If the team ever wants to upload a
+      KubeCon trip-report .pptx or a Word doc of messaging, the conversion
+      path already exists — we just whitelist new MIME types in the upload
+      endpoint. Out of scope for Phase 1; flagged.
 - [ ] Persist:
   - Original PDF → `STORAGE_PATH/pdf_uploads/<uuid>.pdf`. Path stored on owner.
-  - Extracted text → owner's `raw_content`.
-  - Then `embed_owner` via step 11.
+  - Docling's `DoclingDocument` is passed directly to the embedder (plan 11)
+    so chunks inherit document structure (page, section heading, content type).
+  - A plain-text export is also written to the owner's `raw_content` for any
+    callers that just want full text (matcher fallback paths, etc.).
+- [ ] **Container size impact**: Docling pulls ~500MB-1GB of CPU-only layout
+      models on first import. The Containerfile pre-fetches them during the
+      py-builder stage so runtime images already have them cached.
+- [ ] **Cold-start mitigation**: FastAPI lifespan (plan 06) warms the
+      `DocumentConverter` with a 1-page dummy so the first real upload doesn't
+      eat the model-load latency.
 
 ### Strict rules (PDF: "Only documents from which we need data.")
 - [ ] Filename denylist (configurable regex; default blocks `*resume*`,
@@ -80,8 +101,15 @@ contributes the embedding corpus, not the matching dimensions.
 - **PII policy specifics** — confirm SME bios are exempt for name/email
   but always blocked on SSN/CC.
 - **Max pages override** — 200 conservative; admin override per upload?
-- **OCR languages** — Tesseract default English; add others later.
+- **OCR languages** — Docling defaults to English; non-English models
+  available via configuration. Add as we hit need.
 
 ## Risks
-- OCR is slow. UI shows estimated time; job runs in background.
-- Worst-case PDF can hang `pypdf`. Hard timeout per parse.
+- **Image size**: ~500MB-1GB for Docling's layout models. Acceptable on
+  user workstations; documented in [`docs/ops/ingestion.md`](../../docs/ops/ingestion.md)
+  and the README quickstart.
+- **First-call latency**: Docling loads layout models on first import.
+  Mitigated by warm-up during FastAPI lifespan startup; subsequent calls
+  use cached models.
+- **Worst-case PDF can hang**: hard timeout per parse, run inside the
+  APScheduler task (not the request thread).

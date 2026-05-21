@@ -20,9 +20,12 @@ pipeline so we can swap embedding models later without losing the corpus.
   the corpus (a one-time background job).
 - 4k context per call (per MaaS catalog); we batch chunks accordingly.
 
-### Chunk size
-- 800 tokens / chunk, 100-token overlap, sentence-aware split.
-- Token counts via `tiktoken` (`cl100k_base`) as a portable approximation.
+### Chunker: Docling `HybridChunker`
+- **Library**: [Docling](https://github.com/DS4SD/docling) (IBM Research) — same library that handles PDF parsing in plan 12. One dep, not two.
+- **Why structural chunking matters here**: a recursive char/token splitter cuts mid-table or splits a section heading from its content. `HybridChunker` respects document structure — chunks stop at section boundaries, tables stay intact, headings stay paired with their content.
+- **Sizing**: tokenizer-aware to match our embedding model (nomic-embed-text-v1-5). Target 800 tokens with hard cap at 1024 (4k context per embedding call divided among batched chunks). 100-token overlap on prose; tables aren't overlapped (they're atomic).
+- **For non-document text** (manual messaging entries, SME bios, audience profiles entered via wizards), Docling can still chunk them by treating them as structured plain text — no PDF round-trip needed.
+- Decision recorded in [`ADR-0003`](../../docs/ADR/0003-docling-for-pdf-and-chunking.md).
 
 ### Index
 - **HNSW** on `document_chunks.embedding` with `m=16, ef_construction=64`.
@@ -36,15 +39,22 @@ pipeline so we can swap embedding models later without losing the corpus.
 
 ## Tasks
 - [ ] `app/services/embeddings/`:
-  - `chunker.py` — sentence-aware split via `langchain-text-splitters`
-    (`RecursiveCharacterTextSplitter` with token counts)
-  - `pipeline.py` — `embed_owner(owner_type, owner_id, text)`:
+  - `chunker.py` — wraps `docling.chunking.HybridChunker`. Configured with the
+    same tokenizer used by `nomic-embed-text-v1-5` (via `sentence-transformers`
+    AutoTokenizer) so token budgets line up exactly.
+  - `pipeline.py` — `embed_owner(owner_type, owner_id, text_or_docling_doc)`:
     1. Look up active model
     2. Delete prior chunks for this owner under the active model
-    3. Chunk text
+    3. Chunk via HybridChunker, capturing per-chunk `metadata` (section heading,
+       page number for PDF source, content type: prose/table/list)
     4. Batch-embed via LLM client
-    5. Insert chunk rows in a single transaction
+    5. Insert chunk rows (text + metadata) in a single transaction
   - `search.py` — `similar_chunks(query_text, owner_types, k=10) -> list[Chunk]`
+    returns chunks WITH metadata so the agent chat (plan 22) can cite
+    "page 4, section 'Audience profiles'" not just "chunk N".
+  - **Container warm-up**: on FastAPI lifespan startup, run a one-off chunk
+    against a trivial input so Docling's layout models load while the user
+    is staring at the boot logs, not during the first real request.
 - [ ] Initial migration creates the HNSW index. Build it after first batch
       of seed data via `CREATE INDEX CONCURRENTLY` if rows already exist.
 - [ ] Admin endpoints (single-user, no auth, but logged loudly):

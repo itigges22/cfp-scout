@@ -108,7 +108,12 @@ NetworkX (step 16) loads from these.
 - [ ] `document_chunks`
       `id`, `owner_type` (enum: `messaging`/`audience`/`conference`/`sme_bio`/`raw_page`),
       `owner_id`, `chunk_index`, `text`, `token_count`,
-      `embedding_model_id`, `embedding vector(768)`, `last_used_at`.
+      `embedding_model_id`, `embedding vector(768)`, `last_used_at`,
+      `chunk_metadata jsonb` — Docling-produced structural info captured during
+      chunking: `{section_heading, page_number, content_type, ...}` where
+      `content_type` is `prose`/`table`/`list`/`heading`/`other`. Powers
+      citation in the agent chat (plan 22) — "see page 4, table 'Audience profiles'"
+      instead of "see chunk 17". Empty object `{}` for non-document inputs.
 - [ ] `embedding_models`
       `name`, `provider`, `dimension`, `is_active`, `deprecated_at`.
 

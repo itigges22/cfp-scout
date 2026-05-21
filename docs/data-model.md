@@ -268,8 +268,10 @@ columns are `real` to keep storage small; they're consumed by the matcher.
 ### 4. Vectors (`vectors` schema)
 
 #### `document_chunks`
-Chunked + embedded text. The HNSW index on `embedding` is what makes
-similarity search fast.
+Chunked + embedded text. Produced by Docling's `HybridChunker` (plan 11; see
+[ADR-0003](ADR/0003-docling-for-pdf-and-chunking.md)) so chunks respect
+document structure rather than being cut at arbitrary character boundaries.
+The HNSW index on `embedding` is what makes similarity search fast.
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -280,6 +282,7 @@ similarity search fast.
 | `token_count` | smallint | For budget accounting |
 | `embedding_model_id` | uuid FK | Records which model produced this vector |
 | `embedding` | vector(768) | nomic-embed-text-v1-5 dimension |
+| `chunk_metadata` | jsonb | Docling structural info: `{section_heading, page_number, content_type}` where `content_type` ∈ `prose`/`table`/`list`/`heading`/`other`. Powers citation in agent chat (plan 22). `{}` for non-document inputs. |
 | `last_used_at` | timestamptz nullable | Bumped on retrieval; drives decay (plan 25) |
 
 Indexes: HNSW on `embedding` with `vector_cosine_ops`, `m=16`, `ef_construction=64`.

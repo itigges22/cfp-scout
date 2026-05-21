@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 05 complete)
+**Last updated:** 2026-05-21 (plan 05 complete; Docling revision applied to plans 04/11/12)
 
 ## Plan status
 
@@ -128,6 +128,19 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 - 🚧 **Plan 06 — FastAPI backend skeleton** next (this is the big one:
   async SQLAlchemy + Alembic baseline migration encoding plan 04's design,
   structured logging, settings, OpenAPI schema, role switch-over to `app`)
+
+### 2026-05-21 (afternoon revision)
+- 🔄 **Docling adopted** for PDF parsing + structure-aware chunking
+  ([ADR-0003](../docs/ADR/0003-docling-for-pdf-and-chunking.md))
+  - Plan 11 revised: `HybridChunker` replaces `langchain-text-splitters`
+  - Plan 12 revised: Docling `DocumentConverter` replaces `pypdf` + `ocrmypdf`
+  - Plan 04 revised: `document_chunks.chunk_metadata jsonb` added — captures
+    Docling's structural info (section heading, page number, content type)
+    so the agent chat (plan 22) can cite page + section, not just chunk index
+  - `docs/data-model.md` + `docs/ARCHITECTURE.md` updated
+  - **Drops three deps**, picks up one heavier one (~500MB-1GB image cost
+    for layout models). Multi-format upside: DOCX/PPTX/HTML upload paths
+    become trivial later.
 
 ---
 
