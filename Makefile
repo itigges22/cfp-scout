@@ -92,12 +92,34 @@ seed:  ## Seed reference data (implemented in step 04 + 06)
 	@echo "make seed: implemented in step 06" && exit 1
 
 .PHONY: db-dump
-db-dump:  ## Dump Postgres to ./backups (implemented in step 03)
-	@echo "make db-dump: implemented in step 03" && exit 1
+db-dump:  ## Dump Postgres to ./backups/<timestamp>.sql.gz
+	@mkdir -p backups
+	@TS=$$(date +%Y-%m-%d-%H%M%S); \
+	  FILE=backups/scout-$$TS.sql.gz; \
+	  echo "Dumping to $$FILE..."; \
+	  $(COMPOSE) exec -T postgres sh -c \
+	    'pg_dump -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" --no-owner --no-privileges --clean --if-exists' \
+	    | gzip > $$FILE; \
+	  if [ -s $$FILE ]; then \
+	    echo "OK ($$FILE, $$(du -h $$FILE | cut -f1))"; \
+	  else \
+	    rm -f $$FILE; \
+	    echo "FAILED — empty dump (is postgres up? \`make up\` first)"; exit 1; \
+	  fi
 
 .PHONY: db-restore
-db-restore:  ## Restore from ./backups: make db-restore FILE=...
-	@echo "make db-restore: implemented in step 03" && exit 1
+db-restore:  ## Restore from a backup: make db-restore FILE=backups/scout-...sql.gz
+	@if [ -z "$(FILE)" ]; then echo "usage: make db-restore FILE=backups/scout-YYYY-MM-DD-HHMMSS.sql.gz"; exit 2; fi
+	@if [ ! -f "$(FILE)" ]; then echo "no such file: $(FILE)"; exit 2; fi
+	@echo "Restoring from $(FILE) (this will OVERWRITE current data)..."
+	@printf "Type 'restore' to confirm: " && read -r ans && [ "$$ans" = "restore" ] || (echo "Aborted."; exit 1)
+	@gunzip -c "$(FILE)" | $(COMPOSE) exec -T postgres sh -c \
+	  'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" --quiet --set ON_ERROR_STOP=1'
+	@echo "OK"
+
+.PHONY: db-psql
+db-psql:  ## Open a psql shell against the running postgres
+	@$(COMPOSE) exec -it postgres sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
 
 # ---------------------------------------------------------------------------
 # Frontend — implemented in step 08

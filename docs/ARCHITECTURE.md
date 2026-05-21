@@ -34,8 +34,15 @@ flowchart LR
 ### `postgres`
 - Postgres 16 with `pgvector`, `pg_trgm`, `unaccent`, `pgcrypto`.
 - Schemas: `app` (entities + junctions), `vectors` (embeddings), `audit`
-  (append-only), `jobs` (APScheduler jobstore).
+  (append-only), `jobs` (APScheduler jobstore). See [ADR-0002](ADR/0002-postgres-schemas-not-databases.md).
+- Two roles:
+  - `POSTGRES_USER` (from `.env`) — superuser, used by Alembic for migrations only.
+  - `app` — runtime role used by the api. SELECT+INSERT+UPDATE+DELETE on
+    `app`/`vectors`/`jobs`; **only SELECT+INSERT on `audit`** (defense in depth).
 - Backed by named volume `postgres_data`.
+- Init SQL: `infra/postgres/init/01-extensions.sql` (extensions) and
+  `02-roles-and-schemas.sql` (schemas + role + default privileges).
+- Operator runbook: [`docs/ops/database.md`](ops/database.md). Backups: [`docs/ops/backups.md`](ops/backups.md).
 
 ### `api`
 - FastAPI app (`apps/api/app/main.py`).
@@ -90,6 +97,7 @@ Crawl4AI / ICS / wikicfp -> raw_pages -> trafilatura + LLM extract ->
 See [`ADR/`](ADR/). The most consequential records:
 
 - [`ADR/0001`](ADR/0001-route-1-local-install-2-containers.md) — Route 1 + local install + 2-container architecture
+- [`ADR/0002`](ADR/0002-postgres-schemas-not-databases.md) — Logical separation via Postgres schemas (`app`/`vectors`/`audit`/`jobs`), not multiple databases
 - (more added as plans complete)
 
 ## Where things are still TBD

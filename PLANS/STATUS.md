@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 02 complete)
+**Last updated:** 2026-05-21 (plan 03 complete)
 
 ## Plan status
 
@@ -12,7 +12,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 |---|------|--------|-------|
 | 01 | Project bootstrap | ✅ | Completed 2026-05-21 |
 | 02 | Containerization foundation | ✅ | Completed 2026-05-21. End-to-end `make up` not verified — neither Docker nor Podman installed on this build host. |
-| 03 | Postgres + pgvector | ⬜ | |
+| 03 | Postgres + pgvector | ✅ | Completed 2026-05-21 |
 | 04 | Database schema | ⬜ | |
 | 05 | Data input guardrails | ⬜ | |
 | 06 | FastAPI skeleton | ⬜ | |
@@ -78,7 +78,22 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   - **Verification status**: Docker/Podman not installed on this host;
     `make up` will need to be run on a host with one of them to confirm
     end-to-end. Python/JSON/Makefile syntax all check out locally.
-- 🚧 **Plan 03 — Postgres + pgvector data layer** next
+- ✅ **Plan 03 — Postgres data layer** complete
+  - `infra/postgres/init/02-roles-and-schemas.sql` — four schemas (`app`,
+    `vectors`, `audit`, `jobs`); `app` role with role-level enforcement of
+    the audit append-only invariant (INSERT + SELECT only on `audit`)
+  - `Makefile` — `db-dump`, `db-restore`, `db-psql` wired up.
+    `db-dump` writes to `./backups/scout-<ts>.sql.gz`;
+    `db-restore` prompts to confirm (it's destructive)
+  - `docs/ops/database.md` — operator runbook: schemas, roles, extensions,
+    connection strings, init SQL ordering, troubleshooting
+  - `docs/ops/backups.md` — backup/restore SOP including round-trip test
+    pattern and a portable cross-host workflow
+  - `docs/ADR/0002-postgres-schemas-not-databases.md` — decision record
+    for schemas-over-databases
+  - `docs/ARCHITECTURE.md` — updated postgres section to reflect actual
+    role model and link to the new runbooks
+- 🚧 **Plan 04 — Database schema (tables, indexes, junctions)** next
 
 ---
 
