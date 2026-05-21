@@ -1,0 +1,20 @@
+# Podman-specific overrides.
+#
+# Applied automatically by the Makefile when COMPOSE_RUNTIME contains
+# "podman" (see Makefile). Use manually with:
+#   podman compose -f compose.yaml -f compose.override.podman.yaml up
+#
+# What's here:
+#   - :z volume labels so SELinux on rootless Podman doesn't deny mounts
+#     (lowercase :z = shared content; :Z = private to this container)
+
+services:
+  postgres:
+    volumes:
+      - postgres_data:/var/lib/postgresql/data:z
+      - ../postgres/init:/docker-entrypoint-initdb.d:ro,z
+
+  api:
+    volumes:
+      - pdf_uploads:/var/lib/scout/storage/pdf_uploads:z
+      - scraper_raw_pages:/var/lib/scout/storage/raw_pages:z

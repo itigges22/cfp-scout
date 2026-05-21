@@ -8,8 +8,13 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Red Hat DAAM" }]
 
-# Runtime deps land in step 06. Listed here as placeholders for the eventual lock.
-dependencies = []
+# Plan 02 ships the minimum for the api container to start and serve /healthz +
+# the placeholder SPA. Step 06 adds SQLAlchemy / Alembic / Pydantic settings /
+# structlog. Step 13 adds APScheduler. Step 10 adds the openai client.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
 
 [dependency-groups]
 dev = [

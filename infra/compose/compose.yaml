@@ -1,0 +1,123 @@
+# Scout — primary compose file.
+#
+# Designed for compose-spec features only so the same file drives both
+# `docker compose` and `podman compose`. Anything Docker-specific lives in
+# `compose.override.docker.yaml` (none yet). Podman-specific tweaks
+# (SELinux :Z flags) live in `compose.override.podman.yaml`.
+#
+# Two services. That's the whole stack.
+#   - postgres : Postgres 16 with pgvector. Step 03 owns its init SQL.
+#   - api      : FastAPI + APScheduler + built SPA. See apps/api/Containerfile.
+#
+# Volumes are named (not host bind mounts) so they survive `down` and play
+# well with rootless Podman.
+
+services:
+  # --------------------------------------------------------------------------
+  # Postgres 16 with pgvector. Schema, indexes, and the rest of the data
+  # layer land in plans 03 + 04.
+  # --------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: scout-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER not set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB not set in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - scout
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+
+  # --------------------------------------------------------------------------
+  # api: FastAPI + in-process APScheduler + built SPA.
+  # Containerfile is multi-stage; see apps/api/Containerfile.
+  # --------------------------------------------------------------------------
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Containerfile
+    image: scout/api:dev
+    container_name: scout-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENV: ${ENV:-dev}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LLM_BASE_URL: ${LLM_BASE_URL:?LLM_BASE_URL not set in .env}
+      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY not set in .env}
+      LLM_CHAT_MODEL: ${LLM_CHAT_MODEL:-granite-3-2-8b-instruct}
+      LLM_EMBEDDING_MODEL: ${LLM_EMBEDDING_MODEL:-nomic-embed-text-v1-5}
+      LLM_EXTRACTION_MODEL: ${LLM_EXTRACTION_MODEL:-}
+      LLM_NARRATIVE_MODEL: ${LLM_NARRATIVE_MODEL:-}
+      LLM_AGENT_MODEL: ${LLM_AGENT_MODEL:-}
+      LLM_DRY_RUN: ${LLM_DRY_RUN:-false}
+      LLM_MONTHLY_BUDGET_USD: ${LLM_MONTHLY_BUDGET_USD:-}
+      SAFETY_CLASSIFIER_ENABLED: ${SAFETY_CLASSIFIER_ENABLED:-false}
+      SAFETY_CLASSIFIER_MODEL: ${SAFETY_CLASSIFIER_MODEL:-Llama-Guard-3-1B}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      STORAGE_PATH: /var/lib/scout/storage
+      SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-UTC}
+      SCRAPER_USER_AGENT: ${SCRAPER_USER_AGENT:?SCRAPER_USER_AGENT not set in .env}
+      SCRAPER_DEFAULT_POLITENESS_SECONDS: ${SCRAPER_DEFAULT_POLITENESS_SECONDS:-3}
+      MATCH_M_GATE: ${MATCH_M_GATE:-0.55}
+      MATCH_P_GATE: ${MATCH_P_GATE:-0.55}
+      MATCH_S_GATE: ${MATCH_S_GATE:-0.5}
+      MATCH_W_MESSAGING: ${MATCH_W_MESSAGING:-0.35}
+      MATCH_W_PILLAR: ${MATCH_W_PILLAR:-0.35}
+      MATCH_W_SME: ${MATCH_W_SME:-0.30}
+      DECAY_ENABLED: ${DECAY_ENABLED:-true}
+    volumes:
+      - pdf_uploads:/var/lib/scout/storage/pdf_uploads
+      - scraper_raw_pages:/var/lib/scout/storage/raw_pages
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/healthz').status==200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - scout
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+# ---------------------------------------------------------------------------
+# Named volumes. Survive `compose down`; destroyed by `compose down -v` or
+# `make nuke` (with confirmation prompt).
+# ---------------------------------------------------------------------------
+volumes:
+  postgres_data:
+  pdf_uploads:
+  scraper_raw_pages:
+
+# ---------------------------------------------------------------------------
+# Single user-defined bridge network. Services reference each other by name.
+# ---------------------------------------------------------------------------
+networks:
+  scout:
+    driver: bridge

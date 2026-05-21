@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 01 complete)
+**Last updated:** 2026-05-21 (plan 02 complete)
 
 ## Plan status
 
@@ -11,7 +11,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | # | Plan | Status | Notes |
 |---|------|--------|-------|
 | 01 | Project bootstrap | ✅ | Completed 2026-05-21 |
-| 02 | Containerization foundation | ⬜ | |
+| 02 | Containerization foundation | ✅ | Completed 2026-05-21. End-to-end `make up` not verified — neither Docker nor Podman installed on this build host. |
 | 03 | Postgres + pgvector | ⬜ | |
 | 04 | Database schema | ⬜ | |
 | 05 | Data input guardrails | ⬜ | |
@@ -59,7 +59,26 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   - `apps/web/package.json` stub (deps land in step 08)
   - `docs/ARCHITECTURE.md` skeleton with Mermaid diagram + glossary
   - `docs/ADR/0000-template.md` + `docs/ADR/0001-route-1-local-install-2-containers.md`
-- 🚧 **Plan 02 — Containerization foundation** next
+- ✅ **Plan 02 — Containerization foundation** complete
+  - `infra/compose/compose.yaml` — 2-service stack (postgres + api)
+    with healthchecks, depends_on, named volumes (`postgres_data`, `pdf_uploads`,
+    `scraper_raw_pages`), single bridge network, resource limits
+  - `infra/compose/compose.override.podman.yaml` — `:z` SELinux labels
+  - `infra/compose/compose.override.dev.yaml` — host-bound Postgres port +
+    `uvicorn --reload` + `LOG_FORMAT=console`
+  - `infra/postgres/init/01-extensions.sql` — pgvector, pg_trgm, unaccent, pgcrypto
+  - `apps/api/Containerfile` — 3-stage multi-stage build
+    (spa-builder → py-builder → runtime), runs as non-root uid 1001, baked HEALTHCHECK
+  - `apps/api/app/main.py` + `app/api/v1/health.py` — minimal FastAPI with
+    `/api/v1/healthz`, OpenAPI at `/api/openapi.json`, StaticFiles at `/`
+  - `apps/api/pyproject.toml` — fastapi + uvicorn deps added
+  - `apps/web/index.html` — placeholder page (real Vite SPA lands in plan 08)
+  - `.env.example` — all known env vars with sensible defaults (matcher
+    weights, MaaS model names, safety classifier toggle, etc.)
+  - **Verification status**: Docker/Podman not installed on this host;
+    `make up` will need to be run on a host with one of them to confirm
+    end-to-end. Python/JSON/Makefile syntax all check out locally.
+- 🚧 **Plan 03 — Postgres + pgvector data layer** next
 
 ---
 
