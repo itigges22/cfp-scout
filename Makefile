@@ -80,16 +80,25 @@ nuke:  ## Destroy stack + volumes (PROMPTS for confirmation)
 # Database — implemented in steps 03 / 06
 # ---------------------------------------------------------------------------
 .PHONY: migrate
-migrate:  ## Run Alembic migrations (implemented in step 06)
-	@echo "make migrate: implemented in step 06" && exit 1
+migrate:  ## Run Alembic migrations to head (inside the api container)
+	@$(COMPOSE) exec -T api alembic upgrade head
 
 .PHONY: migrate-create
-migrate-create:  ## Create a new Alembic revision: make migrate-create MSG="..."
-	@echo "make migrate-create: implemented in step 06" && exit 1
+migrate-create:  ## Create a new Alembic revision: make migrate-create MSG="describe change"
+	@if [ -z "$(MSG)" ]; then echo 'usage: make migrate-create MSG="describe change"'; exit 2; fi
+	@$(COMPOSE) exec -T api alembic revision --autogenerate -m "$(MSG)"
+
+.PHONY: migrate-history
+migrate-history:  ## Show Alembic revision history
+	@$(COMPOSE) exec -T api alembic history --verbose
+
+.PHONY: migrate-current
+migrate-current:  ## Show currently-applied revision
+	@$(COMPOSE) exec -T api alembic current
 
 .PHONY: seed
-seed:  ## Seed reference data (implemented in step 04 + 06)
-	@echo "make seed: implemented in step 06" && exit 1
+seed:  ## Seed reference data — strategic_pillars, embedding_models, conference_series (plan 06 pass 2)
+	@echo "make seed: implemented in plan 06 pass 2 (once models + baseline migration land)" && exit 1
 
 .PHONY: db-dump
 db-dump:  ## Dump Postgres to ./backups/<timestamp>.sql.gz

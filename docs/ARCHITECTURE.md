@@ -114,6 +114,7 @@ See [`ADR/`](ADR/). The most consequential records:
 - [`ADR/0001`](ADR/0001-route-1-local-install-2-containers.md) — Route 1 + local install + 2-container architecture
 - [`ADR/0002`](ADR/0002-postgres-schemas-not-databases.md) — Logical separation via Postgres schemas (`app`/`vectors`/`audit`/`jobs`), not multiple databases
 - [`ADR/0003`](ADR/0003-docling-for-pdf-and-chunking.md) — Docling for PDF parsing + structure-aware chunking (replaces pypdf + ocrmypdf + langchain-text-splitters)
+- [`ADR/0004`](ADR/0004-async-sqlalchemy-and-alembic.md) — Async SQLAlchemy 2.x + Alembic for the data access layer
 - (more added as plans complete)
 
 ## Where things are still TBD
