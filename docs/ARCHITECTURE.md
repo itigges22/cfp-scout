@@ -89,6 +89,14 @@ lives in [`data-model.md`](data-model.md). It includes a Mermaid ERD and
 per-table notes. Implementation (SQLAlchemy ORM + Alembic migrations) lands
 in plan 06.
 
+## Input guardrails
+
+User-entered data is governed by strict Pydantic v2 schemas in
+`apps/api/app/schemas/` — `extra='forbid'`, length caps, enums, ISO-3166/639-1
+validation. The same schemas are reused by the manual-entry UI (plan 09)
+and the XLSX workbook import (plan 31), so both paths apply identical rules.
+Operator runbook: [`ops/data-guardrails.md`](ops/data-guardrails.md).
+
 ## Glossary
 
 - **DAAM** — Red Hat data and AI advocacy team

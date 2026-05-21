@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 04 complete)
+**Last updated:** 2026-05-21 (plan 05 complete)
 
 ## Plan status
 
@@ -14,7 +14,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 02 | Containerization foundation | ✅ | Completed 2026-05-21. End-to-end `make up` not verified — neither Docker nor Podman installed on this build host. |
 | 03 | Postgres + pgvector | ✅ | Completed 2026-05-21 |
 | 04 | Database schema | ✅ | Design complete 2026-05-21; ORM + migrations land in plan 06 |
-| 05 | Data input guardrails | ⬜ | |
+| 05 | Data input guardrails | ✅ | Completed 2026-05-21 |
 | 06 | FastAPI skeleton | ⬜ | |
 | 07 | Config & secrets | ⬜ | |
 | 08 | Vite frontend skeleton | ⬜ | |
@@ -100,9 +100,34 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   - **What's NOT here**: SQLAlchemy ORM models and the initial Alembic
     baseline migration. Those land in plan 06 (FastAPI skeleton), where
     Alembic gets wired up. Plan 04 is purely the design.
-- 🚧 **Plan 05 — Data input guardrails** next (Pydantic schemas for the
-  manually-entered entity types — `extra='forbid'`, length caps, enums,
-  ISO validators)
+- ✅ **Plan 05 — Data input guardrails** complete
+  - `apps/api/app/schemas/__init__.py` — package marker + intro doc
+  - `apps/api/app/schemas/common.py` — `StrictBase` (sets `extra='forbid'`,
+    `str_strip_whitespace=True`); StrEnums for role seniority,
+    messaging source type, past-conference role + session type; ISO-3166-1
+    and ISO-639-1 validators via `pycountry`; reusable `Annotated`
+    type aliases (ShortTitle, AudienceName, ElevatorPitch, SmeBio, etc.)
+  - `apps/api/app/schemas/messaging.py` — structured-source-only on create;
+    PDF source goes through plan 12's upload endpoint
+  - `apps/api/app/schemas/audience.py` — industry is freeform text now,
+    validated against the team's industries vocabulary by the service layer
+    (so adding a new industry is a workbook edit, not a code change)
+  - `apps/api/app/schemas/sme.py` — 200-2000 char bio (forces real content);
+    `external_links` constrained to `linkedin`/`github`/`website` keys only
+  - `apps/api/app/schemas/past_conference.py` — single-row + CSV-row variants;
+    CSV uses semicolon-separated `attended_by_names` (resolved by service layer)
+  - `apps/api/app/schemas/topic.py` — admin-entry path; LLM-discovered
+    topics use the same `name`/`aliases` rules but the service layer flags
+    them `is_active=false, pending_review=true`
+  - `docs/ops/data-guardrails.md` — operator runbook: what's rejected and why
+  - `docs/ARCHITECTURE.md` — new "Input guardrails" section
+  - `apps/api/pyproject.toml` — pydantic, pydantic-settings, email-validator,
+    pycountry added to deps
+  - All 7 schema files compile under py3.9 (syntax check; full validation
+    happens once Pydantic is installed in the container build)
+- 🚧 **Plan 06 — FastAPI backend skeleton** next (this is the big one:
+  async SQLAlchemy + Alembic baseline migration encoding plan 04's design,
+  structured logging, settings, OpenAPI schema, role switch-over to `app`)
 
 ---
 
