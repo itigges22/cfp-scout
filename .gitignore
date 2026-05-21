@@ -47,6 +47,9 @@ dist/
 .turbo/
 *.tsbuildinfo
 
+# TanStack Router auto-generated route tree
+apps/web/src/routeTree.gen.ts
+
 # ---------------------------------------------------------------------------
 # Build artifacts
 # ---------------------------------------------------------------------------

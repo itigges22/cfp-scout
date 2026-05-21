@@ -51,6 +51,25 @@ flowchart LR
 - Talks to LLM API via an OpenAI-compatible client. No direct network calls
   to model inference outside of LLM API.
 
+### Frontend (`apps/web` — built into the api image)
+- Vite 6 + React 19 + TypeScript strict.
+- Tailwind v4 (CSS-first config; design tokens in `src/styles/index.css`
+  under `@theme`).
+- shadcn-style primitives copied into the repo at `src/components/ui/`
+  (Button + Card so far; more per-feature).
+- TanStack Router (file-based routes under `src/routes/`; auto-generated
+  `routeTree.gen.ts` excluded from git).
+- TanStack Query for server state.
+- `openapi-fetch` consumes types generated from the api's `/api/openapi.json`
+  via `pnpm gen:api`.
+- Production: built at api-image build time (spa-builder stage of
+  `apps/api/Containerfile`) and copied to `/app/static/` — served by FastAPI's
+  `StaticFiles` mount. Same origin → no CORS in prod.
+- Dev: `cd apps/web && pnpm dev` runs Vite at `:5173` with `/api/*` proxied
+  to the api container. Hot module reload.
+- Build one-off without rebuilding the full api image: `make build-spa`
+  (uses a throwaway UBI node-22 container; output lands in `apps/api/static/`).
+
 ## Data flow
 
 ```
