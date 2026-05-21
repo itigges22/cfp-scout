@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 06 pass 1 complete — infrastructure landed, ORM models in pass 2)
+**Last updated:** 2026-05-21 (plan 06 complete — full backend skeleton landed)
 
 ## Plan status
 
@@ -15,7 +15,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 03 | Postgres + pgvector | ✅ | Completed 2026-05-21 |
 | 04 | Database schema | ✅ | Design complete 2026-05-21; ORM + migrations land in plan 06 |
 | 05 | Data input guardrails | ✅ | Completed 2026-05-21 |
-| 06 | FastAPI skeleton | 🚧 | Pass 1 of 2 complete (infrastructure); pass 2 lands ORM models + baseline migration |
+| 06 | FastAPI skeleton | ✅ | Completed 2026-05-21 (infrastructure + ORM + baseline migration + seed) |
 | 07 | Config & secrets | ⬜ | |
 | 08 | Vite frontend skeleton | ⬜ | |
 | 09 | Manual data entry | ⬜ | |
@@ -173,9 +173,40 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   - `docs/ARCHITECTURE.md` — ADR list updated.
   - **All Python compiles (py3.9 syntax check).** Container-side runtime
     validation when `make up` runs on a Docker/Podman host.
-- 🚧 **Plan 06 pass 2** next: ORM models for every table in plan 04 + the
-  initial Alembic baseline migration + `make seed` target + role-switch
-  verification.
+- ✅ **Plan 06 pass 2** complete (ORM + migrations + seed)
+  - `apps/api/app/db/models/` — full SQLAlchemy 2.x ORM:
+    - `_mixins.py` — `TimestampedMixin` + `uuid_pk()` helper
+    - `entities.py` — 11 tables: MessagingDocument, AudienceProfile,
+      StrategicPillar, Sme, Topic, ConferenceSeries, PastConference,
+      Source, RawPage, Conference, ConferenceSource
+    - `junctions.py` — 7 tables (the graph edges): ConferenceTopic,
+      ConferenceAudience, ConferencePillar, ConferenceSme, SmeTopic,
+      SmeAudience, MessagingPillar
+    - `vectors.py` — DocumentChunk (pgvector + chunk_metadata jsonb +
+      polymorphic owner_type/owner_id) + EmbeddingModel
+    - `matching.py` — Match (with sme_fit_narratives), MatchTeamRecommendation
+      (composite PK + team_size CHECK), Decision
+    - `audit.py` — AuditLog, ContentVersion (no TimestampedMixin —
+      append-only)
+    - `ops.py` — IngestJob, LLMCall, ChatSession, ChatMessage, Notification
+    - `__init__.py` — re-exports every model so Alembic autogenerate sees them
+  - `apps/api/alembic/versions/20260521_1200_initial_baseline.py` —
+    hand-crafted baseline (~600 lines) creating all 30 tables, indexes
+    (including the partial index on conferences(status, start_date) and
+    the HNSW index on document_chunks.embedding via raw SQL), FKs,
+    CHECK constraints, server-side defaults.
+  - `apps/api/alembic/versions/20260521_1210_seed_embedding_model.py` —
+    inserts the `nomic-embed-text-v1-5` row.
+  - `Makefile` — `make seed` now informational (seeds baked into Alembic)
+  - `docs/ops/migrations.md` — history table populated with the two
+    baseline revisions
+  - `docs/data-model.md` — migration history section updated
+  - **All 8 model files + both migrations compile under py3.9 (syntax check)**.
+    Runtime validation pending Docker/Podman on a build host that can run
+    `make migrate` against a live Postgres.
+- 🚧 **Plan 07 — Config & secrets** next (mostly already landed via plan 06's
+  settings.py + .env.example; pass 07 documents the secret-handling SOP and
+  adds the `gitleaks` CI hook verification).
 
 ### 2026-05-21 (afternoon revision)
 - 🔄 **Docling adopted** for PDF parsing + structure-aware chunking

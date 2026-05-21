@@ -97,8 +97,10 @@ migrate-current:  ## Show currently-applied revision
 	@$(COMPOSE) exec -T api alembic current
 
 .PHONY: seed
-seed:  ## Seed reference data — strategic_pillars, embedding_models, conference_series (plan 06 pass 2)
-	@echo "make seed: implemented in plan 06 pass 2 (once models + baseline migration land)" && exit 1
+seed:  ## Re-apply seed data — informational; seeds are baked into Alembic migrations
+	@echo "Reference-data seeds (embedding_models row) are baked into Alembic migrations."
+	@echo "Run \`make migrate\` to apply them. Team-curated data (pillars, audiences,"
+	@echo "SMEs, etc.) is entered via the XLSX workbook (plan 31)."
 
 .PHONY: db-dump
 db-dump:  ## Dump Postgres to ./backups/<timestamp>.sql.gz
