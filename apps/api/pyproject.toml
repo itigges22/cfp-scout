@@ -1,0 +1,56 @@
+# apps/api/pyproject.toml — stub. Filled in step 06.
+[project]
+name = "scout-api"
+version = "0.1.0"
+description = "Scout FastAPI service (also serves the built SPA and runs APScheduler)."
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Red Hat DAAM" }]
+
+# Runtime deps land in step 06. Listed here as placeholders for the eventual lock.
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+    "S",   # flake8-bandit
+    "TCH", # flake8-type-checking
+]
+ignore = [
+    "S101",  # use of assert in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+exclude = ["build/", "dist/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
