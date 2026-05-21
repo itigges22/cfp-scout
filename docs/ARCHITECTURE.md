@@ -97,6 +97,18 @@ validation. The same schemas are reused by the manual-entry UI (plan 09)
 and the XLSX workbook import (plan 31), so both paths apply identical rules.
 Operator runbook: [`ops/data-guardrails.md`](ops/data-guardrails.md).
 
+## Secrets
+
+Scout has one financially-sensitive secret (the LLM API key) and two
+operational ones (Postgres superuser password, `app`-role password). All
+live in `.env` on the user's machine — never in `git`, image layers, command
+lines, or logs. Defense layers: `.gitignore` blocks `.env*`; gitleaks
+pre-commit scans staged changes; pydantic `SecretStr` prevents accidental
+stringification; structlog redactor scrubs known-sensitive keys + bearer/sk-
+patterns from log records; `ENV=prod` strips tracebacks from error responses.
+Provisioning + rotation + leak response in
+[`ops/secrets.md`](ops/secrets.md).
+
 ## Glossary
 
 - **team** — <vendor> data and AI advocacy team
