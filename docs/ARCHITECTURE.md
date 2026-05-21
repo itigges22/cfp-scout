@@ -79,7 +79,7 @@ Crawl4AI / ICS / wikicfp -> raw_pages -> trafilatura + LLM extract ->
 | Graph | NetworkX in-memory + Postgres junctions | Obsidian-style derived graph |
 | LLM client | `openai` SDK pointed at LLM API base_url | Provider-agnostic |
 | Scraping | Crawl4AI + `icalendar` + dedicated wikicfp parser | No Playwright |
-| PDF | pypdf + ocrmypdf fallback | Native then OCR |
+| PDF parsing + chunking | Docling (`DocumentConverter` + `HybridChunker`) | IBM Research; layout-aware; built-in OCR; replaces pypdf + ocrmypdf + langchain-text-splitters ([ADR-0003](ADR/0003-docling-for-pdf-and-chunking.md)) |
 | Migrations | Alembic | Standard |
 
 ## Data model
@@ -113,6 +113,7 @@ See [`ADR/`](ADR/). The most consequential records:
 
 - [`ADR/0001`](ADR/0001-route-1-local-install-2-containers.md) — Route 1 + local install + 2-container architecture
 - [`ADR/0002`](ADR/0002-postgres-schemas-not-databases.md) — Logical separation via Postgres schemas (`app`/`vectors`/`audit`/`jobs`), not multiple databases
+- [`ADR/0003`](ADR/0003-docling-for-pdf-and-chunking.md) — Docling for PDF parsing + structure-aware chunking (replaces pypdf + ocrmypdf + langchain-text-splitters)
 - (more added as plans complete)
 
 ## Where things are still TBD
