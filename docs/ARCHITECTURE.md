@@ -82,6 +82,13 @@ Crawl4AI / ICS / wikicfp -> raw_pages -> trafilatura + LLM extract ->
 | PDF | pypdf + ocrmypdf fallback | Native then OCR |
 | Migrations | Alembic | Standard |
 
+## Data model
+
+The full schema — every table, column, index, and the *why* behind each —
+lives in [`data-model.md`](data-model.md). It includes a Mermaid ERD and
+per-table notes. Implementation (SQLAlchemy ORM + Alembic migrations) lands
+in plan 06.
+
 ## Glossary
 
 - **team** — <vendor> data and AI advocacy team
