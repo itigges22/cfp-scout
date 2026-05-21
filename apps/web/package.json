@@ -1,0 +1,20 @@
+{
+  "name": "scout-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Scout — Vite + React SPA. Built into the api image at deploy time.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev": "echo 'wired in step 08' && exit 1",
+    "build": "echo 'wired in step 08' && exit 1",
+    "preview": "echo 'wired in step 08' && exit 1",
+    "lint": "echo 'wired in step 08' && exit 1",
+    "test": "echo 'wired in step 08' && exit 1",
+    "gen:api": "echo 'wired in step 08' && exit 1"
+  }
+}

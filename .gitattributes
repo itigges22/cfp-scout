@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+# Generated/lock files — don't merge-conflict on them, just take theirs
+pnpm-lock.yaml -diff merge=theirs
+uv.lock -diff merge=theirs
+
+# Vendored content
+LICENSE -text
