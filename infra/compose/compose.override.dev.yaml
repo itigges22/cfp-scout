@@ -16,9 +16,19 @@ services:
       - "127.0.0.1:5432:5432"
 
   api:
-    # Live-reload: mount the app source over the image's copy.
+    # Live-reload bind mounts. With these, the only time you need to
+    # rebuild the image is when deps change in pyproject.toml or
+    # package.json (or the Containerfile itself).
+    #   - apps/api/app    → /app/app    (uvicorn --reload picks up edits in <1s)
+    #   - apps/api/alembic → /app/alembic (new migrations visible to `make migrate`
+    #                                       immediately)
+    #   - apps/api/static → /app/static (`make spa` deposits fresh JS/CSS here;
+    #                                     container serves it on the next request,
+    #                                     no container rebuild needed)
     volumes:
       - ../../apps/api/app:/app/app
+      - ../../apps/api/alembic:/app/alembic
+      - ../../apps/api/static:/app/static
     command:
       [
         "uvicorn",
@@ -34,3 +44,9 @@ services:
     environment:
       LOG_FORMAT: console
       LOG_LEVEL: DEBUG
+      # Force polling-based file watching. Bind-mount inotify events from
+      # the macOS / Podman VM host don't propagate reliably through the
+      # virtio-fs layer; uvicorn's underlying `watchfiles` library uses
+      # inotify by default and silently misses changes. Polling adds
+      # ~1s latency to reload detection but is reliable everywhere.
+      WATCHFILES_FORCE_POLLING: "true"

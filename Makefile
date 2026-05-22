@@ -35,19 +35,40 @@ help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 	@echo ""
+	@echo "FAST DEV LOOP (recommended):"
+	@echo "  1. \033[36mmake dev\033[0m              — first-time bring-up (builds SPA + starts stack with bind mounts)"
+	@echo "  2. edit Python in apps/api/app → \033[33msaves auto-reload in <1s\033[0m (uvicorn --reload)"
+	@echo "  3. edit React  in apps/web/src → run \033[36mmake spa\033[0m (~30s) → container serves new JS immediately"
+	@echo "  4. dep change (pyproject.toml / package.json / Containerfile) → \033[36mmake rebuild\033[0m"
+	@echo ""
 	@echo "Compose runtime in use: $(COMPOSE_RUNTIME)"
 	@echo "(override with COMPOSE_RUNTIME=...)"
 
 # ---------------------------------------------------------------------------
 # Stack lifecycle
 # ---------------------------------------------------------------------------
+.PHONY: dev
+dev:  ## RECOMMENDED dev workflow — builds SPA + brings up with bind mounts (uvicorn --reload)
+	@if [ ! -f apps/api/static/index.html ]; then \
+		echo "No SPA build found; running \`make spa\` first..."; \
+		$(MAKE) spa; \
+	fi
+	@$(COMPOSE) -f $(COMPOSE_OVERRIDE_DEV) up -d --build
+	@echo ""
+	@echo "OK — stack up. Backend Python edits auto-reload via uvicorn."
+	@echo "     For frontend changes: \`make spa\` (~30s) — container picks it up immediately."
+
 .PHONY: up
-up:  ## Bring the stack up in detached mode
+up:  ## Bring the stack up (production-like; no bind mounts; uses image's baked SPA)
 	@$(COMPOSE) up -d --build
 
 .PHONY: up-dev
-up-dev:  ## Bring the stack up with the dev override (live reload, host-bound Postgres)
+up-dev:  ## Bring the stack up with the dev override (bind mounts, uvicorn --reload)
 	@$(COMPOSE) -f $(COMPOSE_OVERRIDE_DEV) up -d --build
+
+.PHONY: api-restart
+api-restart:  ## Restart only the api container (use when uvicorn --reload misses a change)
+	@$(COMPOSE) -f $(COMPOSE_OVERRIDE_DEV) restart api
 
 .PHONY: down
 down:  ## Stop the stack (containers + network)
@@ -71,12 +92,20 @@ sh:  ## Open a shell in a service: make sh SERVICE=api
 	@$(COMPOSE) exec $(SERVICE) /bin/bash
 
 .PHONY: rebuild
-rebuild:  ## Force a no-cache rebuild of the api image, then bring the stack up.
-	@echo "Force-rebuilding api image (no cache)..."
+rebuild:  ## Cache-aware rebuild of the api image (use after dep changes)
+	@echo "Cache-aware rebuild of api image..."
+	@$(CONTAINER_CLI) build -f apps/api/Containerfile -t scout/api:dev .
+	@$(COMPOSE) -f $(COMPOSE_OVERRIDE_DEV) up -d
+	@echo "OK — api image rebuilt (cache-aware) + stack up."
+	@echo "    If something seems stale, try \`make rebuild-nocache\`."
+
+.PHONY: rebuild-nocache
+rebuild-nocache:  ## Nuclear option: full no-cache rebuild (~3 min)
+	@echo "Force-rebuilding api image with --no-cache (slow)..."
 	@$(COMPOSE) down 2>/dev/null || true
 	@$(CONTAINER_CLI) rmi -f localhost/scout/api:dev scout/api:dev 2>/dev/null || true
 	@$(CONTAINER_CLI) build --no-cache -f apps/api/Containerfile -t scout/api:dev .
-	@$(COMPOSE) up -d
+	@$(COMPOSE) -f $(COMPOSE_OVERRIDE_DEV) up -d
 	@echo "OK — stack up with a freshly-built api image"
 
 .PHONY: nuke
@@ -147,6 +176,9 @@ db-psql:  ## Open a psql shell against the running postgres
 # Detect docker vs podman for one-off `run` calls (build-spa, etc.).
 # COMPOSE_RUNTIME is what compose-aware targets use; CONTAINER_CLI is for plain `run`.
 CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || echo docker)
+
+.PHONY: spa
+spa: build-spa  ## Alias: build the SPA into apps/api/static (~30s)
 
 .PHONY: build-spa
 build-spa:  ## Build the Vite SPA (throwaway node container; deposits in apps/api/static)
