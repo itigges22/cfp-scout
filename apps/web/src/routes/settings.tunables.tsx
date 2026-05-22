@@ -123,7 +123,6 @@ function GroupCard({
   group: SettingSpec["group"];
   items: SettingItem[];
 }) {
-  if (items.length === 0) return null;
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
@@ -169,6 +168,8 @@ function GroupCard({
   const restartHits = items
     .filter((i) => i.spec.restart_required && i.spec.name in draft)
     .map((i) => i.spec.name);
+
+  if (items.length === 0) return null;
 
   return (
     <Card>
