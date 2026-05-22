@@ -156,9 +156,7 @@ def parse_enum(field: str, raw: Any, *, required: bool, allowed: tuple[str, ...]
             raise CellError(field, raw, "required; cell is empty")
         return None
     if s not in allowed:
-        raise CellError(
-            field, raw, f"not in allowed set {sorted(allowed)}"
-        )
+        raise CellError(field, raw, f"not in allowed set {sorted(allowed)}")
     return s
 
 

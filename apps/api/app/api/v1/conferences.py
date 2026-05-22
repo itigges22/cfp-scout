@@ -519,12 +519,16 @@ async def team_recommendations(db: DbSession, conference_id: UUID) -> dict:
         return {"conference_id": str(conference_id), "by_size": {}}
 
     rows = (
-        await db.execute(
-            select(MatchTeamRecommendation)
-            .where(MatchTeamRecommendation.match_id == match.id)
-            .order_by(MatchTeamRecommendation.team_size)
+        (
+            await db.execute(
+                select(MatchTeamRecommendation)
+                .where(MatchTeamRecommendation.match_id == match.id)
+                .order_by(MatchTeamRecommendation.team_size)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "conference_id": str(conference_id),
         "algorithm_version": ALGORITHM_VERSION,

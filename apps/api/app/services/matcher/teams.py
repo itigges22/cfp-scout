@@ -131,7 +131,8 @@ async def recommend_teams(db: AsyncSession, conference_id: UUID) -> TeamRecommen
 
     # Top-K candidates via plan-18's ranker.
     ranker = await rank_smes_for_conference(
-        db, conference_id,
+        db,
+        conference_id,
         k=settings.team_topk_candidates,
         gate=0.0,  # don't filter at the ranker level; team scoring can use everyone
     )
@@ -169,9 +170,7 @@ async def recommend_teams(db: AsyncSession, conference_id: UUID) -> TeamRecommen
 
     # Persist (idempotent on (match_id, team_size) composite PK).
     await db.execute(
-        delete(MatchTeamRecommendation).where(
-            MatchTeamRecommendation.match_id == match.id
-        )
+        delete(MatchTeamRecommendation).where(MatchTeamRecommendation.match_id == match.id)
     )
     for n, pick in out.by_size.items():
         db.add(
@@ -222,10 +221,7 @@ def _best_team_of_size(
         # Coverage breadth: 0 when conference has no topics yet (we still
         # want to recommend SOMETHING — fall back to 1.0 so individual
         # fit dominates).
-        if conf_topic_ids:
-            coverage = len(covered) / len(conf_topic_ids)
-        else:
-            coverage = 1.0
+        coverage = len(covered) / len(conf_topic_ids) if conf_topic_ids else 1.0
 
         avg_fit = sum(c.composite for c in combo) / n
 
@@ -263,7 +259,9 @@ def _best_team_of_size(
                         location_city=c.location_city,
                         covered_topics=sorted(
                             topic_name_by_id[tid]
-                            for tid in (member_topic_ids.get(UUID(c.sme_id), set()) & conf_topic_ids)
+                            for tid in (
+                                member_topic_ids.get(UUID(c.sme_id), set()) & conf_topic_ids
+                            )
                             if tid in topic_name_by_id
                         ),
                     )
@@ -293,9 +291,7 @@ def _redundancy(topic_sets: list[set[UUID]]) -> float:
     return sum(sims) / len(sims) if sims else 0.0
 
 
-def _location_redundancy(
-    sme_ids: list[UUID], sme_rows: dict[UUID, Sme], is_virtual: bool
-) -> float:
+def _location_redundancy(sme_ids: list[UUID], sme_rows: dict[UUID, Sme], is_virtual: bool) -> float:
     """Fraction of pairs sharing the same city. Zero for virtual events
     (location is meaningless) or fewer than 2 members."""
     if is_virtual or len(sme_ids) < 2:
@@ -356,9 +352,7 @@ async def _conference_topic_ids(db: AsyncSession, conference_id: UUID) -> set[UU
     return {tid for tid, active, pending in rows if active and not pending}
 
 
-async def _sme_topic_ids(
-    db: AsyncSession, sme_ids: list[UUID]
-) -> dict[UUID, set[UUID]]:
+async def _sme_topic_ids(db: AsyncSession, sme_ids: list[UUID]) -> dict[UUID, set[UUID]]:
     if not sme_ids:
         return {}
     rows = (
@@ -375,9 +369,7 @@ async def _sme_topic_ids(
 async def _sme_rows(db: AsyncSession, sme_ids: list[UUID]) -> dict[UUID, Sme]:
     if not sme_ids:
         return {}
-    rows = (
-        await db.execute(select(Sme).where(Sme.id.in_(sme_ids)))
-    ).scalars().all()
+    rows = (await db.execute(select(Sme).where(Sme.id.in_(sme_ids)))).scalars().all()
     return {r.id: r for r in rows}
 
 
@@ -385,8 +377,6 @@ async def _topic_name_index(db: AsyncSession, topic_ids: set[UUID]) -> dict[UUID
     if not topic_ids:
         return {}
     rows = (
-        await db.execute(
-            select(Topic.id, Topic.name).where(Topic.id.in_(list(topic_ids)))
-        )
+        await db.execute(select(Topic.id, Topic.name).where(Topic.id.in_(list(topic_ids))))
     ).all()
     return {tid: name for tid, name in rows}

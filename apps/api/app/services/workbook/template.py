@@ -89,8 +89,12 @@ def _build_reference_sheet(ws) -> None:
     ws.append([])
     ws.append(["Safety"])
     ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
-    ws.append(["Cells starting with =, +, -, @ are rejected on import (formula-injection defense)."])
-    ws.append(["Rows present in DB but missing from the upload are KEPT (no auto-delete from omission)."])
+    ws.append(
+        ["Cells starting with =, +, -, @ are rejected on import (formula-injection defense)."]
+    )
+    ws.append(
+        ["Rows present in DB but missing from the upload are KEPT (no auto-delete from omission)."]
+    )
     ws.append(["Formulas are never executed: cells with formulas trigger a hard error on import."])
 
     ws.column_dimensions["A"].width = 24

@@ -73,16 +73,16 @@ async def apply_diff(
     responsible for the typed-count delete confirmation.
     """
     if diff.has_errors:
-        raise ValueError(
-            f"refuse to apply: {diff.summary['errors']} errors in the diff"
-        )
+        raise ValueError(f"refuse to apply: {diff.summary['errors']} errors in the diff")
 
     set_actor_label(actor_label)  # propagates to the versioning listener
     result = ApplyResult()
 
     # Build cross-sheet lookups for SME → Topic/Audience name resolution.
     topics_by_name = {t.name.lower(): t for t in (await db.execute(select(Topic))).scalars()}
-    audiences_by_name = {a.name.lower(): a for a in (await db.execute(select(AudienceProfile))).scalars()}
+    audiences_by_name = {
+        a.name.lower(): a for a in (await db.execute(select(AudienceProfile))).scalars()
+    }
 
     # APPLY ORDER MATTERS: topics + industries + audiences first, so SME
     # rows can name-reference them within the same transaction.
@@ -109,9 +109,7 @@ async def apply_diff(
                 if tname is not None:
                     # Refresh the lookup so a same-transaction SME can find it.
                     refreshed = (
-                        await db.execute(
-                            select(Topic).where(Topic.name == tname).limit(1)
-                        )
+                        await db.execute(select(Topic).where(Topic.name == tname).limit(1))
                     ).scalar_one_or_none()
                     if refreshed is not None:
                         topics_by_name[refreshed.name.lower()] = refreshed
@@ -146,25 +144,30 @@ async def apply_diff(
     # transaction so the embed-on-commit hook sees the persisted bios.
     for sme in sme_embed_targets:
         try:
-            await embed_owner(db, owner_type="sme_bio", owner_id=sme.id,
-                              text=sme.bio, purpose="embed:workbook")
+            await embed_owner(
+                db, owner_type="sme_bio", owner_id=sme.id, text=sme.bio, purpose="embed:workbook"
+            )
             result.embeddings_enqueued += 1
-        except Exception as exc:  # noqa: BLE001 — non-fatal
+        except Exception as exc:
             log.warning("workbook.embed_sme_failed", sme_id=str(sme.id), error=str(exc))
     for aud in audience_embed_targets:
         try:
             blob = f"{aud.name}\nIndustry: {aud.industry}\n{aud.description}"
-            await embed_owner(db, owner_type="audience", owner_id=aud.id,
-                              text=blob, purpose="embed:workbook")
+            await embed_owner(
+                db, owner_type="audience", owner_id=aud.id, text=blob, purpose="embed:workbook"
+            )
             result.embeddings_enqueued += 1
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("workbook.embed_audience_failed", aud_id=str(aud.id), error=str(exc))
 
     invalidate_graph()
     log.info(
         "workbook.apply.done",
-        inserted=result.inserted, updated=result.updated, deleted=result.deleted,
-        embeddings_enqueued=result.embeddings_enqueued, actor=actor_label,
+        inserted=result.inserted,
+        updated=result.updated,
+        deleted=result.deleted,
+        embeddings_enqueued=result.embeddings_enqueued,
+        actor=actor_label,
     )
     return result
 
@@ -174,10 +177,13 @@ async def apply_diff(
 # ---------------------------------------------------------------------------
 async def _apply_pillar(db: AsyncSession, plan) -> None:
     if plan.action == "insert":
-        db.add(StrategicPillar(
-            name=plan.values["name"], description=plan.values["description"],
-            display_order=plan.values["display_order"],
-        ))
+        db.add(
+            StrategicPillar(
+                name=plan.values["name"],
+                description=plan.values["description"],
+                display_order=plan.values["display_order"],
+            )
+        )
         return
     row = await db.get(StrategicPillar, UUID(plan.scout_id))
     if row is None:
@@ -196,11 +202,15 @@ async def _apply_topic(db: AsyncSession, plan) -> str | None:
     """Returns the resulting topic name (or None on no-op)."""
     if plan.action == "insert":
         from slugify import slugify
+
         row = Topic(
             name=plan.values["name"],
-            slug=plan.values.get("slug") or slugify(plan.values["name"], lowercase=True, max_length=80),
+            slug=plan.values.get("slug")
+            or slugify(plan.values["name"], lowercase=True, max_length=80),
             aliases=plan.values.get("aliases") or [],
-            is_active=plan.values.get("is_active") if plan.values.get("is_active") is not None else True,
+            is_active=plan.values.get("is_active")
+            if plan.values.get("is_active") is not None
+            else True,
             pending_review=bool(plan.values.get("pending_review") or False),
         )
         db.add(row)
@@ -226,13 +236,16 @@ async def _apply_topic(db: AsyncSession, plan) -> str | None:
 async def _apply_audience(db: AsyncSession, plan) -> AudienceProfile | None:
     if plan.action == "insert":
         row = AudienceProfile(
-            name=plan.values["name"], industry=plan.values["industry"],
+            name=plan.values["name"],
+            industry=plan.values["industry"],
             role_seniority=plan.values["role_seniority"],
             description=plan.values["description"],
             primary_pain_points=plan.values["primary_pain_points"],
             key_messages=plan.values["key_messages"],
             exclusion_criteria=plan.values.get("exclusion_criteria") or [],
-            is_active=plan.values.get("is_active") if plan.values.get("is_active") is not None else True,
+            is_active=plan.values.get("is_active")
+            if plan.values.get("is_active") is not None
+            else True,
         )
         db.add(row)
         return row
@@ -255,7 +268,8 @@ async def _apply_audience(db: AsyncSession, plan) -> AudienceProfile | None:
 
 
 async def _apply_sme(
-    db: AsyncSession, plan,
+    db: AsyncSession,
+    plan,
     topics_by_name: dict[str, Topic],
     audiences_by_name: dict[str, AudienceProfile],
 ) -> Sme | None:
@@ -271,7 +285,11 @@ async def _apply_sme(
         if n.lower() in audiences_by_name
     ]
     external_links = {}
-    for key, col in [("linkedin", "linkedin_url"), ("github", "github_url"), ("website", "website_url")]:
+    for key, col in [
+        ("linkedin", "linkedin_url"),
+        ("github", "github_url"),
+        ("website", "website_url"),
+    ]:
         if plan.values.get(col):
             external_links[key] = plan.values[col]
 
@@ -287,7 +305,9 @@ async def _apply_sme(
             location_city=plan.values.get("location_city"),
             bio=plan.values["bio"],
             external_links=external_links,
-            is_active=plan.values.get("is_active") if plan.values.get("is_active") is not None else True,
+            is_active=plan.values.get("is_active")
+            if plan.values.get("is_active") is not None
+            else True,
         )
         db.add(row)
         await db.flush()
@@ -338,15 +358,19 @@ async def _sync_sme_junctions(
 
 async def _apply_series(db: AsyncSession, plan) -> None:
     if plan.action == "insert":
-        db.add(ConferenceSeries(
-            canonical_name=plan.values["canonical_name"],
-            aliases=plan.values.get("aliases") or [],
-            description=plan.values.get("description") or "",
-            typical_month=plan.values.get("typical_month"),
-            typical_topics=plan.values.get("typical_topics") or [],
-            homepage=plan.values.get("homepage"),
-            is_active=plan.values.get("is_active") if plan.values.get("is_active") is not None else True,
-        ))
+        db.add(
+            ConferenceSeries(
+                canonical_name=plan.values["canonical_name"],
+                aliases=plan.values.get("aliases") or [],
+                description=plan.values.get("description") or "",
+                typical_month=plan.values.get("typical_month"),
+                typical_topics=plan.values.get("typical_topics") or [],
+                homepage=plan.values.get("homepage"),
+                is_active=plan.values.get("is_active")
+                if plan.values.get("is_active") is not None
+                else True,
+            )
+        )
         return
     row = await db.get(ConferenceSeries, UUID(plan.scout_id))
     if row is None:
