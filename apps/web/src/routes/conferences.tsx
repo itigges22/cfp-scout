@@ -6,10 +6,11 @@
  * deferred to a future pass.
  */
 
-import { useQuery } from "@tanstack/react-query";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
+import { NewConferenceDialog } from "@/components/conferences/NewConferenceDialog";
 import { StatusPill } from "@/components/conferences/StatusPill";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,9 @@ type SortOpt = "score" | "date" | "name";
 function ConferencesPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [sort, setSort] = useState<SortOpt>("score");
+  const [showNewDialog, setShowNewDialog] = useState(false);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const queryKey = useMemo(
     () => ["conferences", { status, sort }] as const,
@@ -59,6 +63,8 @@ function ConferencesPage() {
       />
 
       <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => setShowNewDialog(true)}>+ New conference</Button>
+        <span className="mx-2 hidden h-5 w-px bg-border md:inline-block" />
         {STATUS_FILTERS.map((s) => (
           <Button
             key={String(s.value)}
@@ -106,6 +112,17 @@ function ConferencesPage() {
         <p className="text-xs text-fg-subtle">
           {data.items.length} of {data.total}
         </p>
+      ) : null}
+
+      {showNewDialog ? (
+        <NewConferenceDialog
+          onClose={() => setShowNewDialog(false)}
+          onCreated={(conferenceId) => {
+            setShowNewDialog(false);
+            queryClient.invalidateQueries({ queryKey: ["conferences"] });
+            navigate({ to: "/conferences/$id", params: { id: conferenceId } });
+          }}
+        />
       ) : null}
     </div>
   );
