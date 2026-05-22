@@ -185,6 +185,22 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
     conference.status = status
     await db.flush()
 
+    # Enqueue plan-19 narratives for the top-K SMEs of this conference.
+    # Idempotent (plan 19 checks existing matches.sme_fit_narratives entries
+    # before each LLM call) so retries are cheap. Local import avoids a
+    # circular dep with the tasks package.
+    if status != "quarantined" and sm.recommendations:
+        from app.scheduler import enqueue_now
+        from app.tasks.compute_sme_fit_narrative import (
+            compute_sme_fit_narrative_task,
+        )
+
+        enqueue_now(
+            compute_sme_fit_narrative_task,
+            job_id=f"narrative-{conference.id}",
+            kwargs={"conference_id": str(conference.id), "force": False},
+        )
+
     bound.info(
         "matcher.run.done",
         messaging_score=round(ms.score, 4),

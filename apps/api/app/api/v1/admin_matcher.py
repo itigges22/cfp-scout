@@ -31,6 +31,11 @@ from app.db.models.matching import Match
 from app.db.session import DbSession
 from app.scheduler import enqueue_now
 from app.services.matcher import ALGORITHM_VERSION, run_fit_match
+from app.services.matcher.sme_narrative import compute_narratives_for_top_smes
+from app.tasks.compute_sme_fit_narrative import (
+    compute_sme_fit_narrative_task,
+    recompute_narratives_for_all,
+)
 from app.tasks.run_fit_match import recompute_all_matches, run_fit_match_task
 
 log = structlog.get_logger("scout.api.admin_matcher")
@@ -67,6 +72,52 @@ async def recompute_all() -> dict:
         job_id="matcher_recompute_all_manual",
     )
     log.info("admin.matcher.recompute_all", job_id=job_id)
+    return {"queued_job_id": job_id, "algorithm_version": ALGORITHM_VERSION}
+
+
+@router.post("/narratives/regenerate/{conference_id}")
+async def regenerate_narratives(db: DbSession, conference_id: UUID) -> dict:
+    """Wipe + recompute the SME-fit narratives for this conference.
+
+    Sync run (LLM-bound; typically <2s with K=3). Use the async variant
+    below for very long-running cases.
+    """
+    log.info("admin.matcher.regenerate_narratives", conference_id=str(conference_id))
+    result = await compute_narratives_for_top_smes(db, conference_id, force=True)
+    await db.commit()
+    return result.to_stats() | {
+        "narratives": [
+            {
+                "sme_id": n.sme_id,
+                "sme_name": n.sme_name,
+                "composite": n.composite,
+                "narrative": n.narrative,
+                "cached": n.cached,
+            }
+            for n in result.narratives
+        ],
+    }
+
+
+@router.post(
+    "/narratives/regenerate-async/{conference_id}",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def regenerate_narratives_async(conference_id: UUID) -> dict:
+    job_id = enqueue_now(
+        compute_sme_fit_narrative_task,
+        job_id=f"narrative-{conference_id}",
+        kwargs={"conference_id": str(conference_id), "force": True},
+    )
+    return {"queued_job_id": job_id, "conference_id": str(conference_id)}
+
+
+@router.post("/narratives/recompute-all", status_code=status.HTTP_202_ACCEPTED)
+async def recompute_all_narratives() -> dict:
+    job_id = enqueue_now(
+        recompute_narratives_for_all,
+        job_id="narrative_recompute_all_manual",
+    )
     return {"queued_job_id": job_id, "algorithm_version": ALGORITHM_VERSION}
 
 

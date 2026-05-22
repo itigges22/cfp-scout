@@ -113,6 +113,11 @@ class Settings(BaseSettings):
     sme_w_location: float = 0.10
     sme_w_past: float = 0.05
 
+    # SME narrative (plan 19). Hard cap on how many narratives we generate
+    # per conference — cost = K LLM calls per conference. K=3 is the
+    # plan's default + acceptance criterion.
+    sme_narrative_top_k: int = Field(default=3, ge=1, le=10)
+
     decay_enabled: bool = True
 
     # ------------------------------------------------------------------

@@ -19,7 +19,9 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 
 from app.db.models.entities import Conference
+from app.db.models.matching import Match
 from app.db.session import DbSession
+from app.services.matcher import ALGORITHM_VERSION
 from app.services.matcher.sme_ranker import rank_smes_for_conference
 from app.settings import get_settings
 
@@ -139,6 +141,24 @@ async def conference_smes(
     result = await rank_smes_for_conference(
         db, conference_id, k=k, gate=settings.match_s_gate
     )
+
+    # Surface any persisted SME-fit narratives (plan 19) so the UI can show
+    # the per-SME paragraph next to the mechanical breakdown without an
+    # extra round-trip.
+    match = (
+        await db.execute(
+            select(Match)
+            .where(Match.conference_id == conference_id)
+            .where(Match.algorithm_version == ALGORITHM_VERSION)
+        )
+    ).scalar_one_or_none()
+    narratives_by_sme: dict = dict(match.sme_fit_narratives or {}) if match else {}
+
+    def _attach_narrative(b) -> dict:
+        d = b.to_dict()
+        d["narrative"] = narratives_by_sme.get(b.sme_id)
+        return d
+
     return {
         "conference_id": str(conference_id),
         "gate": settings.match_s_gate,
@@ -149,8 +169,9 @@ async def conference_smes(
             "location": settings.sme_w_location,
             "past": settings.sme_w_past,
         },
-        "above_gate": [b.to_dict() for b in result.above_gate],
-        "near_misses": [b.to_dict() for b in result.near_misses],
+        "narrative_top_k": settings.sme_narrative_top_k,
+        "above_gate": [_attach_narrative(b) for b in result.above_gate],
+        "near_misses": [_attach_narrative(b) for b in result.near_misses],
     }
 
 
