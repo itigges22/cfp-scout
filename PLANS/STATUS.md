@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 11 — embedding pipeline live + auto-embed on create verified)
+**Last updated:** 2026-05-22 (plan 12 — Docling PDF ingestion live; 12 chunks extracted from `PLANS/DAAM Scout.pdf` end-to-end)
 
 ## Plan status
 
@@ -21,7 +21,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 09 | Manual data entry | 🚧 | Backend + lists + audience CRUD + SME form + CSV drop-zone live; messaging wizard remaining |
 | 10 | LLM service layer | ✅ | Completed 2026-05-22 — dry-run verified end-to-end |
 | 11 | Embeddings & chunking | ✅ | Plain-text path live 2026-05-22; Docling chunker for PDFs lands in plan 12 |
-| 12 | PDF/RAG ingestion | ⬜ | |
+| 12 | PDF/RAG ingestion | ✅ | Completed 2026-05-22 — Docling parse + HybridChunker + embed verified end-to-end |
 | 13 | Background jobs (APScheduler) | ⬜ | |
 | 14 | Web scraper | ⬜ | |
 | 15 | Data validation & routing | ⬜ | |
@@ -470,6 +470,58 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 12 — PDF/RAG via Docling)
+- ✅ **Plan 12 complete**:
+  - `app/services/pdf/storage.py` — `validate_pdf_bytes()` enforces 25MB cap +
+    `%PDF-` magic-byte check (refuses .docx renamed `.pdf`, HTML, etc.); the
+    sha256 digest is the content-addressed key Docling caches against on
+    re-uploads. `save_pdf()` writes the bytes to the `pdf_uploads` named
+    volume with UUID filenames + `chmod 0640`.
+  - `app/services/pdf/parser.py` — singleton `DocumentConverter` +
+    `HybridChunker`; warms up on first call (deferred via lifespan hook so
+    container startup stays fast). `parse_and_chunk(path)` returns
+    `ParsedPdf(full_text, chunks, page_count)`. Per-chunk metadata extracted
+    from Docling's structural info: `section_heading`, `page_number`,
+    `content_type` (heading / table / list / paragraph). Tables retain Markdown
+    rendering so the embedder + downstream chat can read them verbatim.
+  - `app/services/pdf/pipeline.py` — `process_pdf_upload()` orchestrates:
+    validate → save → create `app.ingest_jobs` row (status=`running`) →
+    Docling run in `asyncio.to_thread` (so it doesn't block the event loop) →
+    attach to owner entity if `purpose=messaging`/`audience`/`sme_bio` →
+    bypass the plain-text chunker and feed Docling's chunks directly into
+    the LLM `embed` path (preserves metadata) → update `ingest_jobs.status`
+    + stats (bytes, sha256, page_count, markdown_chars, chunks_inserted).
+    Failures land in `ingest_jobs.last_error` with the row marked `failed`.
+  - `app/api/v1/uploads.py` — `POST /api/v1/uploads/pdf` multipart route
+    (`file` + `owner_type` + `owner_id` + `purpose`). `PdfRejected` → 422,
+    `PdfPipelineError` → 500 (with ingest_jobs.id surfaced for follow-up).
+  - `pyproject.toml` — `docling>=2.10`, `torch>=2.5`, `torchvision>=0.20`
+    added; `[tool.uv.sources]` routes torch + torchvision to the CPU-only
+    PyTorch wheel index (saves ~3GB vs the default CUDA wheels).
+- 🟢 **Verified live**: uploaded `PLANS/DAAM Scout.pdf` (4 pages, 122 KB)
+  via the new endpoint. Response: `chunks_inserted=12`, page_count=4, status
+  `complete`. DB snapshot: 12 messaging chunks with rich metadata —
+  `page_number` (1..4), `section_heading` ("INTENDED FEATURES:", "Framework :",
+  "Data Schema:", etc.) preserved on every row. Similarity search for
+  "conference finder fit matcher and SME recommendation" now returns the
+  PDF's intro paragraph as the top hit.
+- 🐛 **Four runtime fixes from real bring-up of the Docling stack**:
+  1. **CPU-only PyTorch wheels**: default `pip install torch` pulled the
+     ~3GB CUDA build. Added `[tool.uv.sources]` + an explicit `pytorch-cpu`
+     index so the image stays under 2GB. UV honours per-package indexes.
+  2. **`libGL.so.1: cannot open shared object file`** at `import docling`:
+     UBI python-312 doesn't ship Mesa / GL libs. Added `mesa-libGL
+     mesa-libGLU libglvnd-glx` via `dnf` in the runtime stage.
+  3. **Docling cache permission denied** at `/opt/app-root/src/.cache`:
+     UBI's home for the appuser is read-only at runtime. Repointed the cache
+     to `/home/scout/.cache/{huggingface,docling}` via `XDG_CACHE_HOME`,
+     `HF_HOME`, `DOCLING_CACHE_DIR`; pre-created the subtree with
+     `chown scout:scout`.
+  4. **Podman VM disk full** from layered intermediate images during the
+     repeated docling-image rebuilds (~10GB each). `podman system prune -af`
+     reclaimed 179GB. Operational note: keep `make rebuild` rare; prefer
+     `make up` when only the api source has changed.
 
 ### 2026-05-21 (afternoon revision)
 - 🔄 **Docling adopted** for PDF parsing + structure-aware chunking

@@ -81,6 +81,15 @@ FROM registry.access.redhat.com/ubi9/python-312 AS runtime
 
 USER 0
 
+# System libs Docling/OpenCV pull in transitively. Without these, importing
+# docling raises "libGL.so.1: cannot open shared object file" on PDF parse.
+RUN dnf install -y --setopt=install_weak_deps=False \
+        mesa-libGL \
+        mesa-libGLU \
+        libglvnd-glx \
+ && dnf clean all \
+ && rm -rf /var/cache/dnf
+
 # Create the runtime user. UBI python-312's default user occupies uid 1001;
 # we use 1002 to avoid the collision. Rootless Podman maps subuid to it.
 RUN useradd --uid 1002 --create-home --shell /bin/bash scout \
@@ -104,11 +113,20 @@ COPY --from=py-builder --chown=scout:scout /app/alembic.ini /app/alembic.ini
 # Copy built SPA from spa-builder.
 COPY --from=spa-builder --chown=scout:scout /build/web/dist /app/static
 
-# Make the venv the default Python.
+# Make the venv the default Python. Cache dirs are pinned under scout's home
+# so Docling / HuggingFace / etc. can write their model caches without
+# tripping on the read-only /opt/app-root/src/.cache that ships in UBI.
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    XDG_CACHE_HOME=/home/scout/.cache \
+    HF_HOME=/home/scout/.cache/huggingface \
+    DOCLING_CACHE_DIR=/home/scout/.cache/docling
+
+# Pre-create the cache subtree as scout so first model fetch doesn't EACCES.
+RUN mkdir -p /home/scout/.cache/huggingface /home/scout/.cache/docling \
+ && chown -R scout:scout /home/scout/.cache
 
 USER 1002
 

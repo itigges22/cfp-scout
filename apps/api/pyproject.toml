@@ -27,7 +27,22 @@ dependencies = [
     "openai>=1.55",
     "tenacity>=9.0",
     "httpx>=0.28",
+    "docling>=2.10",
+    # torch + torchvision pinned here so [tool.uv.sources] below can route
+    # them to the CPU-only PyTorch wheel index (~3GB smaller than the default
+    # GPU wheels, which bundle CUDA libs we'd never use on this stack).
+    "torch>=2.5",
+    "torchvision>=0.20",
 ]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = [

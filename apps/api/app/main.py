@@ -30,6 +30,7 @@ from app.api.v1 import (
     past_conferences,
     smes,
     topics,
+    uploads,
 )
 from app.lifespan import lifespan
 from app.logging import configure_logging
@@ -79,6 +80,7 @@ app.include_router(past_conferences.router)
 app.include_router(topics.router)
 app.include_router(admin_llm.router)
 app.include_router(admin_embeddings.router)
+app.include_router(uploads.router)
 
 # ---- static SPA at / (FastAPI's StaticFiles, html=True for SPA fallback) --
 if STATIC_DIR.exists():
