@@ -35,7 +35,7 @@ from app.services.workbook._schema import SHEET_SPECS, ColumnSpec, SheetSpec
 @dataclass(slots=True, frozen=True)
 class SheetRowError:
     sheet: str
-    row: int        # 1-based, matches openpyxl row numbers
+    row: int  # 1-based, matches openpyxl row numbers
     field: str
     value: Any
     message: str
@@ -68,12 +68,14 @@ def parse_workbook(content: bytes) -> ParsedWorkbook:
     result = ParsedWorkbook()
     try:
         wb = load_workbook(BytesIO(content), data_only=True, read_only=True)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         result.file_errors.append(f"could not open workbook: {exc}")
         return result
 
     visible_sheets = wb.sheetnames
-    unknown = [s for s in visible_sheets if s not in {sp.name for sp in SHEET_SPECS} and s != "Reference"]
+    unknown = [
+        s for s in visible_sheets if s not in {sp.name for sp in SHEET_SPECS} and s != "Reference"
+    ]
     result.unknown_sheets = unknown
 
     for spec in SHEET_SPECS:

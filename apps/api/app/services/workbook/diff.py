@@ -48,9 +48,9 @@ class RowPlan:
     """One row's plan after diffing — what apply.py will do with it."""
 
     sheet: str
-    row: int                 # 1-based source row (for UI error display)
-    action: str              # 'insert' / 'update' / 'delete'
-    scout_id: str | None     # set for update/delete; None for insert
+    row: int  # 1-based source row (for UI error display)
+    action: str  # 'insert' / 'update' / 'delete'
+    scout_id: str | None  # set for update/delete; None for insert
     values: dict[str, Any] = field(default_factory=dict)
 
 
@@ -59,9 +59,14 @@ class DiffResult:
     """Summary + per-sheet plans + errors. UI uses summary for the preview
     pane; apply.py walks the per-sheet plans."""
 
-    summary: dict = field(default_factory=lambda: {
-        "inserts": 0, "updates": 0, "deletes": 0, "errors": 0,
-    })
+    summary: dict = field(
+        default_factory=lambda: {
+            "inserts": 0,
+            "updates": 0,
+            "deletes": 0,
+            "errors": 0,
+        }
+    )
     by_sheet: dict[str, dict] = field(default_factory=dict)
     plans_by_sheet: dict[str, list[RowPlan]] = field(default_factory=dict)
     errors: list[SheetRowError] = field(default_factory=list)
@@ -77,7 +82,13 @@ class DiffResult:
             "summary": self.summary,
             "by_sheet": self.by_sheet,
             "errors": [
-                {"sheet": e.sheet, "row": e.row, "field": e.field, "value": e.value, "message": e.message}
+                {
+                    "sheet": e.sheet,
+                    "row": e.row,
+                    "field": e.field,
+                    "value": e.value,
+                    "message": e.message,
+                }
                 for e in self.errors
             ],
             "unknown_sheets": self.unknown_sheets,
@@ -115,29 +126,45 @@ async def compute_diff(db: AsyncSession, parsed: ParsedWorkbook) -> DiffResult:
 
             # Pre-existing check.
             if scout_id is not None and scout_id not in existing:
-                result.errors.append(SheetRowError(
-                    sheet=sheet_name, row=row_num, field="_scout_id",
-                    value=str(scout_id),
-                    message="UUID not found in DB; bad copy/paste? Leave blank to insert.",
-                ))
+                result.errors.append(
+                    SheetRowError(
+                        sheet=sheet_name,
+                        row=row_num,
+                        field="_scout_id",
+                        value=str(scout_id),
+                        message="UUID not found in DB; bad copy/paste? Leave blank to insert.",
+                    )
+                )
                 continue
 
             if action == "delete":
                 if scout_id is None:
-                    result.errors.append(SheetRowError(
-                        sheet=sheet_name, row=row_num, field="_action",
-                        value="delete", message="delete requires _scout_id of an existing row.",
-                    ))
+                    result.errors.append(
+                        SheetRowError(
+                            sheet=sheet_name,
+                            row=row_num,
+                            field="_action",
+                            value="delete",
+                            message="delete requires _scout_id of an existing row.",
+                        )
+                    )
                     continue
-                plans.append(RowPlan(
-                    sheet=sheet_name, row=row_num, action="delete", scout_id=str(scout_id),
-                ))
+                plans.append(
+                    RowPlan(
+                        sheet=sheet_name,
+                        row=row_num,
+                        action="delete",
+                        scout_id=str(scout_id),
+                    )
+                )
                 dele += 1
                 continue
 
             # Upsert path — cross-sheet validation BEFORE classifying insert vs update.
             sheet_errors = _cross_sheet_validate(
-                sheet_name=sheet_name, row_num=row_num, raw=raw,
+                sheet_name=sheet_name,
+                row_num=row_num,
+                raw=raw,
                 topics_index=topics_index,
                 audiences_index=audiences_index,
                 industries_set=industries_set,
@@ -147,21 +174,33 @@ async def compute_diff(db: AsyncSession, parsed: ParsedWorkbook) -> DiffResult:
                 continue
 
             if scout_id is None:
-                plans.append(RowPlan(
-                    sheet=sheet_name, row=row_num, action="insert",
-                    scout_id=None, values=dict(raw),
-                ))
+                plans.append(
+                    RowPlan(
+                        sheet=sheet_name,
+                        row=row_num,
+                        action="insert",
+                        scout_id=None,
+                        values=dict(raw),
+                    )
+                )
                 ins += 1
             else:
-                plans.append(RowPlan(
-                    sheet=sheet_name, row=row_num, action="update",
-                    scout_id=str(scout_id), values=dict(raw),
-                ))
+                plans.append(
+                    RowPlan(
+                        sheet=sheet_name,
+                        row=row_num,
+                        action="update",
+                        scout_id=str(scout_id),
+                        values=dict(raw),
+                    )
+                )
                 upd += 1
 
         result.plans_by_sheet[sheet_name] = plans
         result.by_sheet[sheet_name] = {
-            "inserts": ins, "updates": upd, "deletes": dele,
+            "inserts": ins,
+            "updates": upd,
+            "deletes": dele,
             "errors": sum(1 for e in result.errors if e.sheet == sheet_name),
         }
         result.summary["inserts"] += ins
@@ -180,7 +219,7 @@ def _cross_sheet_validate(
     sheet_name: str,
     row_num: int,
     raw: dict,
-    topics_index: dict[str, UUID],   # lower-case name -> UUID
+    topics_index: dict[str, UUID],  # lower-case name -> UUID
     audiences_index: dict[str, UUID],
     industries_set: set[str],
 ) -> list[SheetRowError]:
@@ -188,26 +227,38 @@ def _cross_sheet_validate(
     if sheet_name == "SMEs":
         for nm in raw.get("primary_topics") or []:
             if nm.lower() not in topics_index:
-                errs.append(SheetRowError(
-                    sheet=sheet_name, row=row_num, field="primary_topics",
-                    value=nm,
-                    message="topic not found in this workbook OR DB (case-insensitive). Add it to the Topics sheet first.",
-                ))
+                errs.append(
+                    SheetRowError(
+                        sheet=sheet_name,
+                        row=row_num,
+                        field="primary_topics",
+                        value=nm,
+                        message="topic not found in this workbook OR DB (case-insensitive). Add it to the Topics sheet first.",
+                    )
+                )
         for nm in raw.get("audience_focus") or []:
             if nm.lower() not in audiences_index:
-                errs.append(SheetRowError(
-                    sheet=sheet_name, row=row_num, field="audience_focus",
-                    value=nm,
-                    message="audience not found in this workbook OR DB. Add it to the Audiences sheet first.",
-                ))
+                errs.append(
+                    SheetRowError(
+                        sheet=sheet_name,
+                        row=row_num,
+                        field="audience_focus",
+                        value=nm,
+                        message="audience not found in this workbook OR DB. Add it to the Audiences sheet first.",
+                    )
+                )
     elif sheet_name == "Audiences":
         industry = raw.get("industry")
         if industry and industry not in industries_set:
-            errs.append(SheetRowError(
-                sheet=sheet_name, row=row_num, field="industry",
-                value=industry,
-                message="industry not in Industries sheet OR present in DB. Add to Industries first.",
-            ))
+            errs.append(
+                SheetRowError(
+                    sheet=sheet_name,
+                    row=row_num,
+                    field="industry",
+                    value=industry,
+                    message="industry not in Industries sheet OR present in DB. Add to Industries first.",
+                )
+            )
     return errs
 
 
@@ -258,9 +309,7 @@ def _industries_set(parsed: ParsedWorkbook) -> set[str]:
 async def _db_industries(db: AsyncSession) -> set[str]:
     rows = (
         await db.execute(
-            select(AudienceProfile.industry)
-            .where(AudienceProfile.is_active.is_(True))
-            .distinct()
+            select(AudienceProfile.industry).where(AudienceProfile.is_active.is_(True)).distinct()
         )
     ).all()
     return {r[0] for r in rows if r[0]}

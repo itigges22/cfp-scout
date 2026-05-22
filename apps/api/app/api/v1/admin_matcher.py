@@ -159,9 +159,7 @@ async def teams_now(db: DbSession, conference_id: UUID) -> dict:
     return result.to_dict()
 
 
-@router.post(
-    "/teams-now-async/{conference_id}", status_code=status.HTTP_202_ACCEPTED
-)
+@router.post("/teams-now-async/{conference_id}", status_code=status.HTTP_202_ACCEPTED)
 async def teams_now_async(conference_id: UUID) -> dict:
     job_id = enqueue_now(
         recommend_teams_task,

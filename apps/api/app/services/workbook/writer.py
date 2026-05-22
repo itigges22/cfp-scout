@@ -73,7 +73,11 @@ async def _rows_for_sheet(
     topics_by_id: dict,
 ) -> list[dict]:
     if spec.name == "Pillars":
-        rows = (await db.execute(select(StrategicPillar).order_by(StrategicPillar.display_order))).scalars().all()
+        rows = (
+            (await db.execute(select(StrategicPillar).order_by(StrategicPillar.display_order)))
+            .scalars()
+            .all()
+        )
         return [
             {
                 "_scout_id": fmt_uuid(r.id),
@@ -98,7 +102,11 @@ async def _rows_for_sheet(
         return [{"_scout_id": "", "_action": "", "name": fmt_str(r[0])} for r in rows if r[0]]
 
     if spec.name == "Audiences":
-        rows = (await db.execute(select(AudienceProfile).order_by(AudienceProfile.name))).scalars().all()
+        rows = (
+            (await db.execute(select(AudienceProfile).order_by(AudienceProfile.name)))
+            .scalars()
+            .all()
+        )
         return [
             {
                 "_scout_id": fmt_uuid(r.id),
@@ -163,7 +171,11 @@ async def _rows_for_sheet(
         ]
 
     if spec.name == "Series":
-        rows = (await db.execute(select(ConferenceSeries).order_by(ConferenceSeries.canonical_name))).scalars().all()
+        rows = (
+            (await db.execute(select(ConferenceSeries).order_by(ConferenceSeries.canonical_name)))
+            .scalars()
+            .all()
+        )
         return [
             {
                 "_scout_id": fmt_uuid(r.id),
@@ -199,7 +211,7 @@ def _build_reference_brief(ws) -> None:
     ws["A4"].font = Font(bold=True)
     ws["A5"] = "Importing this file with no edits is a no-op."
     ws["A6"] = "Rows present in DB but missing from your upload are KEPT (no auto-delete)."
-    ws["A7"] = 'Use _action=delete to soft-delete (requires typed-count confirm on apply).'
+    ws["A7"] = "Use _action=delete to soft-delete (requires typed-count confirm on apply)."
     ws.column_dimensions["A"].width = 80
 
 
@@ -216,16 +228,36 @@ def _write_header(ws, spec: SheetSpec) -> None:
 
 def _autosize(ws, spec: SheetSpec) -> None:
     widths = {
-        "_scout_id": 36, "_action": 10, "name": 32, "full_name": 28,
-        "canonical_name": 30, "description": 60, "bio": 80,
-        "primary_pain_points": 50, "key_messages": 50,
-        "expertise_areas": 50, "primary_topics": 36, "audience_focus": 36,
-        "aliases": 40, "typical_topics": 40, "email": 28, "team": 14,
-        "industry": 22, "role_seniority": 14, "location_country": 16,
-        "location_city": 20, "linkedin_url": 36, "github_url": 36,
-        "website_url": 36, "homepage": 36, "slug": 22,
-        "typical_month": 14, "is_active": 10, "pending_review": 16,
-        "display_order": 14, "exclusion_criteria": 36,
+        "_scout_id": 36,
+        "_action": 10,
+        "name": 32,
+        "full_name": 28,
+        "canonical_name": 30,
+        "description": 60,
+        "bio": 80,
+        "primary_pain_points": 50,
+        "key_messages": 50,
+        "expertise_areas": 50,
+        "primary_topics": 36,
+        "audience_focus": 36,
+        "aliases": 40,
+        "typical_topics": 40,
+        "email": 28,
+        "team": 14,
+        "industry": 22,
+        "role_seniority": 14,
+        "location_country": 16,
+        "location_city": 20,
+        "linkedin_url": 36,
+        "github_url": 36,
+        "website_url": 36,
+        "homepage": 36,
+        "slug": 22,
+        "typical_month": 14,
+        "is_active": 10,
+        "pending_review": 16,
+        "display_order": 14,
+        "exclusion_criteria": 36,
     }
     for idx, col in enumerate(spec.columns, start=1):
         ws.column_dimensions[get_column_letter(idx)].width = widths.get(col.name, 22)

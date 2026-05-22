@@ -19,7 +19,7 @@ The route layer enforces:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import (
@@ -27,7 +27,6 @@ from fastapi import (
     File,
     Form,
     HTTPException,
-    Query,
     Response,
     UploadFile,
     status,
@@ -45,9 +44,7 @@ from app.services.workbook import (
 log = structlog.get_logger("scout.api.config")
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
 
-_XLSX_MEDIA_TYPE = (
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 _MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
@@ -73,7 +70,7 @@ async def export_workbook(db: DbSession) -> Response:
     """Current DB state as an XLSX. Round-trip identity: re-importing
     without edits is a no-op."""
     payload = await build_current_state_workbook(db)
-    today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(tz=UTC).strftime("%Y-%m-%d")
     return Response(
         content=payload,
         media_type=_XLSX_MEDIA_TYPE,
@@ -95,8 +92,10 @@ async def preview_import(db: DbSession, file: UploadFile = File(...)) -> dict:
     diff = await compute_diff(db, parsed)
     log.info(
         "config.preview_import",
-        inserts=diff.summary["inserts"], updates=diff.summary["updates"],
-        deletes=diff.summary["deletes"], errors=diff.summary["errors"],
+        inserts=diff.summary["inserts"],
+        updates=diff.summary["updates"],
+        deletes=diff.summary["deletes"],
+        errors=diff.summary["errors"],
     )
     return diff.to_dict()
 
@@ -141,8 +140,7 @@ async def import_workbook(
         )
 
     full_label = (
-        f"{actor_label}:{file.filename}:"
-        f"{datetime.now(tz=timezone.utc).isoformat(timespec='seconds')}"
+        f"{actor_label}:{file.filename}:{datetime.now(tz=UTC).isoformat(timespec='seconds')}"
     )
     result = await apply_diff(db, diff, actor_label=full_label)
     await db.commit()

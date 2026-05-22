@@ -25,11 +25,11 @@ from app.services.workbook.template import build_empty_template
 from app.services.workbook.writer import build_current_state_workbook
 
 __all__ = [
-    "ParsedWorkbook",
-    "parse_workbook",
-    "build_empty_template",
-    "build_current_state_workbook",
     "DiffResult",
-    "compute_diff",
+    "ParsedWorkbook",
     "apply_diff",
+    "build_current_state_workbook",
+    "build_empty_template",
+    "compute_diff",
+    "parse_workbook",
 ]

@@ -20,18 +20,19 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import (
     Conference,
     ConferenceSeries,
+    ConferenceSource,
     MessagingDocument,
     PastConference,
     Sme,
@@ -160,9 +161,7 @@ async def _build(
         "conference_id": str(conference.id),
         "generated_at": now.isoformat(timespec="seconds"),
         "algorithm_version": ALGORITHM_VERSION,
-        "scout_version": settings.scout_version
-        if hasattr(settings, "scout_version")
-        else "0.1.0",
+        "scout_version": settings.scout_version if hasattr(settings, "scout_version") else "0.1.0",
         "team_size": team_size,
         # --- 1. Header -------------------------------------------------
         "header": {
@@ -246,13 +245,8 @@ async def _past_editions(db: AsyncSession, conference: Conference) -> list[dict]
     name_by_id: dict[UUID, str] = {}
     if sme_ids:
         sme_rows = (
-            (
-                await db.execute(
-                    select(Sme.id, Sme.full_name).where(Sme.id.in_(list(sme_ids)))
-                )
-            )
-            .all()
-        )
+            await db.execute(select(Sme.id, Sme.full_name).where(Sme.id.in_(list(sme_ids))))
+        ).all()
         name_by_id = {sid: name for sid, name in sme_rows}
     return [
         {
@@ -287,18 +281,15 @@ async def _matched_pillar(db: AsyncSession, conference_id: UUID) -> dict | None:
 
 async def _top_topics(db: AsyncSession, conference_id: UUID) -> list[dict]:
     rows = (
-        (
-            await db.execute(
-                select(Topic.name, Topic.slug, ConferenceTopic.weight)
-                .join(Topic, Topic.id == ConferenceTopic.topic_id)
-                .where(ConferenceTopic.conference_id == conference_id)
-                .where(Topic.is_active)
-                .order_by(ConferenceTopic.weight.desc())
-                .limit(_MAX_TOPICS)
-            )
+        await db.execute(
+            select(Topic.name, Topic.slug, ConferenceTopic.weight)
+            .join(Topic, Topic.id == ConferenceTopic.topic_id)
+            .where(ConferenceTopic.conference_id == conference_id)
+            .where(Topic.is_active)
+            .order_by(ConferenceTopic.weight.desc())
+            .limit(_MAX_TOPICS)
         )
-        .all()
-    )
+    ).all()
     return [{"name": n, "slug": s, "weight": _round(w)} for (n, s, w) in rows]
 
 
@@ -340,9 +331,7 @@ async def _attendees(
             "source": "empty",
         }
 
-    sme_rows = (
-        await db.execute(select(Sme).where(Sme.id.in_(sme_ids)))
-    ).scalars().all()
+    sme_rows = (await db.execute(select(Sme).where(Sme.id.in_(sme_ids)))).scalars().all()
     sme_by_id = {s.id: s for s in sme_rows}
 
     narratives = match.sme_fit_narratives or {}
@@ -452,10 +441,10 @@ async def _talking_points(
 
     top_ids = sorted(seen, key=lambda i: seen[i], reverse=True)[:_MAX_TALKING_DOCS]
     docs = (
-        await db.execute(
-            select(MessagingDocument).where(MessagingDocument.id.in_(top_ids))
-        )
-    ).scalars().all()
+        (await db.execute(select(MessagingDocument).where(MessagingDocument.id.in_(top_ids))))
+        .scalars()
+        .all()
+    )
     by_id = {d.id: d for d in docs}
 
     out: list[dict] = []
@@ -488,9 +477,6 @@ async def _latest_decision(db: AsyncSession, conference_id: UUID) -> Decision | 
 
 
 async def _sources_count(db: AsyncSession, conference_id: UUID) -> int:
-    from app.db.models.entities import ConferenceSource
-    from sqlalchemy import func
-
     return int(
         (
             await db.execute(
