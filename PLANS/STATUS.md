@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 29 pass 1 — security headers + SECURITY_REVIEW doc; also fixed ruff config + made first green CI run)
+**Last updated:** 2026-05-22 (plan 30 pass 1 — operator runbook + README rewrite; 14 troubleshooting scenarios documented)
 
 ## Plan status
 
@@ -39,7 +39,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 27 | Testing strategy | 🚧 | Pass 1 done 2026-05-22 (55 unit tests cover scoring, decay, extraction, narrative quote-guard, series detector; `make test-unit` runs in 1.6s). Pass 2: integration (testcontainers), Vitest, Playwright e2e, CodeQL workflow |
 | 28 | CI/CD pipeline | 🚧 | Pass 1 done 2026-05-22 (ci.yaml: api lint+unit tests+typecheck, web tsc+build+lint; codeql.yaml: weekly + per-PR security/quality; dependabot.yaml: weekly pip+npm+actions updates). Pass 2: image build + Trivy + release workflow + branch protection |
 | 29 | Security review & hardening | 🚧 | Pass 1 done 2026-05-22 (CSP/HSTS/X-Frame/Referrer/Permissions headers middleware; SECURITY_REVIEW.md threat model + consolidated checklist; ruff/format codebase-wide). Pass 2: PDF page cap, cap_drop, Trivy + license audit, optional Llama-Guard |
-| 30 | Documentation & runbook | ⬜ | |
+| 30 | Documentation & runbook | 🚧 | Pass 1 done 2026-05-22 (rewrote README with daily dev loop + routes table + docs map; new docs/ops/runbook.md covers 14 common troubleshooting scenarios). Pass 2: cold-clone walkthrough video, markdownlint CI, demo seed |
 | 31 | Configuration workbook (XLSX) | ⬜ | |
 | 32 | Multi-SME team recommendations | ⬜ | |
 | 33 | Conference brief export | ⬜ | |
