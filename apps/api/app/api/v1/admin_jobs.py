@@ -22,6 +22,7 @@ from sqlalchemy import select
 from app.db.models.ops import IngestJob
 from app.db.session import DbSession
 from app.scheduler import enqueue_now, get_scheduler
+from app.tasks.build_cfp_digest import build_cfp_digest_task
 from app.tasks.heartbeat import heartbeat as heartbeat_task
 
 log = structlog.get_logger("scout.api.admin_jobs")
@@ -132,3 +133,16 @@ async def trigger_heartbeat() -> dict:
     job_id = enqueue_now(heartbeat_task, job_id="heartbeat-manual")
     log.info("admin.jobs.heartbeat_triggered", job_id=job_id)
     return {"queued_job_id": job_id, "kind": "heartbeat"}
+
+
+@router.post("/build_cfp_digest/trigger", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_cfp_digest() -> dict:
+    """Fire the CFP digest builder immediately (plan 24).
+
+    Rate-limited to one trigger per 30s. Useful for verifying the digest
+    after edits to ``cfp_deadlines`` without waiting for the 09:00 cron.
+    """
+    _check_rate_limit("cfp_digest")
+    job_id = enqueue_now(build_cfp_digest_task, job_id="cfp-digest-manual")
+    log.info("admin.jobs.cfp_digest_triggered", job_id=job_id)
+    return {"queued_job_id": job_id, "kind": "build_cfp_digest"}

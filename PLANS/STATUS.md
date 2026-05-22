@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 23 pass 1 — conference series tracking; 35-entry seed catalog + detector + assign endpoint w/ matcher recompute)
+**Last updated:** 2026-05-22 (plan 24 pass 1 — CFP-closing digest; daily 09:00 cron, bell badge w/ bucketed dropdown + copy-to-clipboard Markdown)
 
 ## Plan status
 
@@ -33,7 +33,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 21 | Graph exploration view | 🚧 | Pass 1 done 2026-05-22 (force-directed canvas, kind/status/since filters, hover-highlight, click drawer with link to detail). Pass 2: pillar selector + entity-search autocomplete + saved views + PNG export + Louvain coloring |
 | 22 | Agent chat interface | 🚧 | Pass 1 done 2026-05-22 (sessions CRUD, RAG retrieval with friendly labels, prompt-injection wrapper, [n] citation extraction, /agent chat UI with sidebar + composer + cost meter). Pass 2: SSE streaming, /slash commands, intent classification, cancel button |
 | 23 | Conference series tracking | 🚧 | Pass 1 done 2026-05-22 (35-series seed catalog + detector w/ pg_trgm + Python trigram alias fallback + CRUD + assign/unassign + matcher recompute hook). Pass 2: /settings/series UI + "Previous editions" panel on conference detail + weekly cron |
-| 24 | CFP-closing digest | ⬜ | |
+| 24 | CFP-closing digest | ✅ | Completed 2026-05-22 (daily 09:00 cron, 0-7/8-14/15-30 buckets, score-ranked, persists in notifications, bell badge dropdown, copy-to-clipboard Markdown) |
 | 25 | Data lifecycle decay & versioning | ⬜ | |
 | 26 | Observability & diagnostics | ⬜ | |
 | 27 | Testing strategy | ⬜ | |
@@ -470,6 +470,69 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 24 — CFP-closing digest)
+- ✅ **Plan 24 complete**: daily 09:00 cron builds the CFP-closing digest,
+  bell badge in the TopBar shows the unread count, dropdown surfaces the
+  bucketed entries + a copy-to-clipboard Markdown button.
+- **Backend** (`apps/api/app/services/digest/cfp.py`):
+  - `build_cfp_digest(db)` walks every eligible conference's
+    `cfp_deadlines` JSONB array, explodes to one row per deadline,
+    filters to the next 30 days, buckets into `0_7 / 8_14 / 15_30`,
+    ranks by `overall_score DESC` then `deadline_date ASC`, caps at 10
+    per bucket. Eligible statuses: `discovered`, `needs_review*`,
+    `approved` (skips quarantined/rejected/low_messaging_fit).
+  - Top SME hint pulled from the matcher's `recommended_sme_ids[0]`
+    with name hydrated in one batched lookup.
+  - **Idempotent within a day**: marks any prior un-seen `cfp_digest`
+    notifications as seen BEFORE inserting the new one, so the bell
+    badge stays at 1 instead of accumulating.
+  - **No notification row written for empty digests** — the bell stays clean.
+  - `to_markdown(result)` — pure function used by the copy-to-clipboard
+    API endpoint.
+- **Task + cron** (`apps/api/app/tasks/build_cfp_digest.py` +
+  `apps/api/app/scheduler.py`):
+  - `build_cfp_digest_task` wrapped via `run_as_job` (`app.ingest_jobs`
+    row per run with bucket counts).
+  - Registered as APScheduler cron `cfp_digest` — daily 09:00 in
+    `settings.scheduler_timezone` (UTC default).
+- **API** (`apps/api/app/api/v1/notifications.py`):
+  - `GET  /notifications`                — paginated list (filter by kind, include_seen)
+  - `GET  /notifications/unread-count?kind=`   — bell badge count
+  - `GET  /notifications/latest?kind=`         — most-recent notification of a kind
+  - `POST /notifications/{id}/dismiss`         — mark seen
+  - `GET  /notifications/cfp-digest/markdown`  — re-render latest digest as
+    Markdown for the copy-to-clipboard button
+- **Admin trigger** (`apps/api/app/api/v1/admin_jobs.py`):
+  - `POST /admin/jobs/build_cfp_digest/trigger` — manual fire (rate-limited 1/30s)
+- **Frontend**:
+  - `apps/web/src/components/layout/TopBar.tsx` rewritten — real
+    `<NotificationBell>` with badge that polls
+    `/notifications/unread-count?kind=cfp_digest` every 60s, dropdown
+    that shows the latest digest grouped by bucket, dismiss button,
+    copy-to-clipboard button (uses `navigator.clipboard` + the markdown
+    endpoint).
+  - Each entry links to `/conferences/{id}`; ranked entries show score
+    badge inline + suggested SME name.
+- 🟢 **Verified live (no rebuild needed — uvicorn hot-reload + 12s SPA build)**:
+  - Mutated one conference's `cfp_deadlines` to add a 5-day + 12-day
+    deadline. `POST /admin/jobs/build_cfp_digest/trigger` →
+    notification persisted with `0_7=1, 8_14=1, 15_30=0`.
+  - `/notifications/unread-count?kind=cfp_digest` → `{count: 1}`.
+  - `/notifications/latest?kind=cfp_digest` → full payload with
+    bucketed entries including conference name, score (80/100),
+    deadline kind, location, top SME.
+  - `/notifications/cfp-digest/markdown` → well-formatted Markdown:
+    ```
+    # Scout CFP Digest — 2026-05-22
+    ## Closing this week (0-7 days)
+    - **Dry-Run Conference BC40C73612F7AC10** (score 80) — Submission closes 2026-05-27; suggested SME: Test SME RAG Expert
+    ## Closing next week (8-14 days)
+    - **Dry-Run Conference BC40C73612F7AC10** (score 80) — Workshop closes 2026-06-03; suggested SME: Test SME RAG Expert
+    ```
+- **Deferred to a future pass**: dashboard "CFP closing soon" expanded
+  card view (the bell dropdown already covers the same data; the
+  dashboard stat card already shows the count).
 
 ### 2026-05-22 (plan 23 pass 1 — Conference series tracking)
 - 🚧 **Plan 23 pass 1 complete**: backend wiring for year-over-year series

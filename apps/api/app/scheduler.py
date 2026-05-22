@@ -223,6 +223,7 @@ def register_jobs(scheduler: AsyncIOScheduler) -> None:
     AsyncIOScheduler eagerly imports the target function and we'd rather not
     ship broken imports.
     """
+    from app.tasks.build_cfp_digest import build_cfp_digest_task
     from app.tasks.heartbeat import heartbeat
     from app.tasks.scrape_source import poll_sources_due_for_crawl
 
@@ -242,6 +243,16 @@ def register_jobs(scheduler: AsyncIOScheduler) -> None:
         trigger="interval",
         minutes=15,
         id="scrape_poll",
+        replace_existing=True,
+    )
+    # Plan 24: daily 09:00 (scheduler timezone, default UTC) CFP digest.
+    # Builds the bell-badge notification. Idempotent within a day.
+    scheduler.add_job(
+        build_cfp_digest_task,
+        trigger="cron",
+        hour=9,
+        minute=0,
+        id="cfp_digest",
         replace_existing=True,
     )
     log.info("scheduler.jobs_registered", count=len(scheduler.get_jobs()))

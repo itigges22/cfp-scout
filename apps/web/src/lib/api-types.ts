@@ -368,6 +368,53 @@ export interface GraphResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Notifications (plan 24)
+// ---------------------------------------------------------------------------
+export interface NotificationRead {
+  id: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  seen: boolean;
+  created_at: string;
+}
+
+export interface NotificationsList {
+  items: NotificationRead[];
+  total: number;
+}
+
+export interface CfpDigestEntry {
+  conference_id: string;
+  name: string;
+  slug: string;
+  status: string;
+  overall_score: number | null;
+  deadline_kind: string;
+  deadline_date: string;
+  days_until: number;
+  top_sme_id: string | null;
+  top_sme_name: string | null;
+  website: string | null;
+  location: string | null;
+}
+
+export interface CfpDigestPayload {
+  generated_at: string;
+  buckets: {
+    "0_7"?: CfpDigestEntry[];
+    "8_14"?: CfpDigestEntry[];
+    "15_30"?: CfpDigestEntry[];
+  };
+  stats?: Record<string, number>;
+}
+
+export interface CfpDigestMarkdown {
+  markdown: string;
+  generated_at: string;
+  n_entries: number;
+}
+
+// ---------------------------------------------------------------------------
 // Agent chat (plan 22)
 // ---------------------------------------------------------------------------
 export interface AgentSession {

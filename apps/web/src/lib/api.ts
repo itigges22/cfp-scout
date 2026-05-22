@@ -26,10 +26,13 @@ import type {
   DecisionCreate,
   DecisionListResponse,
   DecisionRead,
+  CfpDigestMarkdown,
   GraphResponse,
   MessagingDocumentCreate,
   MessagingDocumentRead,
   MessagingDocumentUpdate,
+  NotificationRead,
+  NotificationsList,
   Page,
   PastConferenceCreate,
   PastConferenceImportResult,
@@ -329,6 +332,30 @@ export const graphApi = {
     }),
   invalidate: () =>
     request<void>(`${BASE}/graph/invalidate`, { method: "POST" }),
+};
+
+// ---------------------------------------------------------------------------
+// Notifications (plan 24)
+// ---------------------------------------------------------------------------
+export const notificationsApi = {
+  list: (params: { kind?: string; include_seen?: boolean; limit?: number } = {}) =>
+    request<NotificationsList>(`${BASE}/notifications`, { query: params }),
+  unreadCount: (kind?: string) =>
+    request<{ count: number; kind: string | null }>(
+      `${BASE}/notifications/unread-count`,
+      { query: kind ? { kind } : {} },
+    ),
+  latest: (kind: string, unread_only = false) =>
+    request<NotificationRead>(`${BASE}/notifications/latest`, {
+      query: { kind, unread_only },
+    }),
+  dismiss: (id: string) =>
+    request<{ id: string; seen: boolean }>(
+      `${BASE}/notifications/${id}/dismiss`,
+      { method: "POST" },
+    ),
+  cfpDigestMarkdown: () =>
+    request<CfpDigestMarkdown>(`${BASE}/notifications/cfp-digest/markdown`),
 };
 
 // ---------------------------------------------------------------------------
