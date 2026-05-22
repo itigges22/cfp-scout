@@ -1,0 +1,233 @@
+# Conference series seed catalog (plan 23).
+#
+# Loaded by the Alembic migration 20260522_2100_seed_series.py into
+# ``app.conference_series``. Edit-friendly: PRs welcome, also editable
+# via the XLSX workbook's Series sheet (plan 31).
+#
+# Schema (one entry per top-level key):
+#   canonical_name: Required. The name we render in the UI.
+#   aliases:        Optional list. Past / alternate names; matched
+#                   case-insensitively by the detector.
+#   description:    Optional. One-line summary for the settings UI.
+#   typical_month:  Optional. 1-12, the usual month of the year.
+#   typical_topics: Optional list. Hints the matcher only uses for
+#                   bootstrap (LLM-extracted topics still win once a
+#                   conference is linked).
+#   homepage:       Optional. Canonical landing page.
+
+series:
+  # ---- Academic / Research (ML/NLP/CV/DB/Sys) ----
+  - canonical_name: NeurIPS
+    aliases: [Neural Information Processing Systems, NIPS]
+    description: Top-tier ML research conference. Annual.
+    typical_month: 12
+    typical_topics: [machine learning, deep learning, neural networks, reinforcement learning]
+    homepage: https://nips.cc
+  - canonical_name: ICML
+    aliases: [International Conference on Machine Learning]
+    description: Top-tier ML research conference. Annual.
+    typical_month: 7
+    typical_topics: [machine learning, statistical learning]
+    homepage: https://icml.cc
+  - canonical_name: ICLR
+    aliases: [International Conference on Learning Representations]
+    description: Representation learning / deep learning theory + practice.
+    typical_month: 5
+    typical_topics: [representation learning, deep learning, generative models]
+    homepage: https://iclr.cc
+  - canonical_name: AAAI
+    aliases: [AAAI Conference on Artificial Intelligence]
+    description: General-purpose AI research, broad scope.
+    typical_month: 2
+    typical_topics: [artificial intelligence, machine learning, reasoning]
+    homepage: https://aaai.org
+  - canonical_name: ACL
+    aliases: [Annual Meeting of the Association for Computational Linguistics]
+    description: Premier NLP research conference.
+    typical_month: 7
+    typical_topics: [NLP, natural language processing, computational linguistics, LLM]
+    homepage: https://aclweb.org
+  - canonical_name: EMNLP
+    aliases: [Empirical Methods in Natural Language Processing]
+    description: Empirical NLP sibling to ACL.
+    typical_month: 11
+    typical_topics: [NLP, language models, dialog systems]
+    homepage: https://aclweb.org/portal
+  - canonical_name: NAACL
+    aliases: [North American Chapter of the ACL]
+    description: NA chapter of ACL; NLP research.
+    typical_month: 6
+    typical_topics: [NLP, language models]
+    homepage: https://naacl.org
+  - canonical_name: CVPR
+    aliases: [Conference on Computer Vision and Pattern Recognition]
+    description: Premier computer vision conference.
+    typical_month: 6
+    typical_topics: [computer vision, image recognition, visual representation learning]
+    homepage: https://cvpr.thecvf.com
+  - canonical_name: ICCV
+    aliases: [International Conference on Computer Vision]
+    description: Top-tier computer vision conference (alternates with ECCV).
+    typical_month: 10
+    typical_topics: [computer vision, image segmentation]
+    homepage: https://iccv.thecvf.com
+  - canonical_name: ECCV
+    aliases: [European Conference on Computer Vision]
+    description: European arm of top-tier CV research.
+    typical_month: 9
+    typical_topics: [computer vision]
+    homepage: https://eccv.ecva.net
+  - canonical_name: KDD
+    aliases: [SIGKDD, Knowledge Discovery and Data Mining]
+    description: Data mining + applied ML research.
+    typical_month: 8
+    typical_topics: [data mining, applied machine learning, knowledge discovery]
+    homepage: https://kdd.org
+  - canonical_name: WWW
+    aliases: [The Web Conference, International World Wide Web Conference]
+    description: Web technologies + information retrieval research.
+    typical_month: 5
+    typical_topics: [web, information retrieval, search]
+    homepage: https://www2024.thewebconf.org
+  - canonical_name: SIGMOD
+    aliases: [ACM SIGMOD International Conference on Management of Data]
+    description: Premier database systems research.
+    typical_month: 6
+    typical_topics: [databases, query optimization, data systems]
+    homepage: https://sigmod.org
+  - canonical_name: VLDB
+    aliases: [Very Large Data Bases]
+    description: Database systems research; complements SIGMOD.
+    typical_month: 8
+    typical_topics: [databases, scalability, query processing]
+    homepage: https://vldb.org
+  - canonical_name: OSDI
+    aliases: [USENIX Symposium on Operating Systems Design and Implementation]
+    description: Systems research; OS, distributed systems, infra.
+    typical_month: 7
+    typical_topics: [operating systems, distributed systems, systems research]
+    homepage: https://usenix.org/conference/osdi
+  - canonical_name: SOSP
+    aliases: [ACM Symposium on Operating Systems Principles]
+    description: Top-tier systems research, alternates with OSDI.
+    typical_month: 10
+    typical_topics: [operating systems, distributed systems]
+    homepage: https://sosp.org
+  - canonical_name: USENIX ATC
+    aliases: [USENIX Annual Technical Conference]
+    description: Broad systems + practice.
+    typical_month: 7
+    typical_topics: [systems, performance, infrastructure]
+    homepage: https://usenix.org/conference/atc
+
+  # ---- CNCF / Linux Foundation / Cloud Native ----
+  - canonical_name: KubeCon + CloudNativeCon NA
+    aliases: [KubeCon NA, KubeCon North America, CloudNativeCon NA]
+    description: CNCF flagship event, North America (fall).
+    typical_month: 11
+    typical_topics: [kubernetes, cloud native, containers, observability, GitOps]
+    homepage: https://events.linuxfoundation.org/kubecon-cloudnativecon-north-america/
+  - canonical_name: KubeCon + CloudNativeCon EU
+    aliases: [KubeCon EU, KubeCon Europe, CloudNativeCon EU]
+    description: CNCF flagship event, Europe (spring).
+    typical_month: 4
+    typical_topics: [kubernetes, cloud native, containers, observability, GitOps]
+    homepage: https://events.linuxfoundation.org/kubecon-cloudnativecon-europe/
+  - canonical_name: Open Source Summit NA
+    aliases: [OSS NA, Open Source Summit North America]
+    description: Linux Foundation flagship open-source event, NA.
+    typical_month: 6
+    typical_topics: [open source, linux, infrastructure, governance]
+    homepage: https://events.linuxfoundation.org/open-source-summit-north-america/
+  - canonical_name: Open Source Summit EU
+    aliases: [OSS EU, Open Source Summit Europe]
+    description: Linux Foundation flagship open-source event, Europe.
+    typical_month: 9
+    typical_topics: [open source, linux, infrastructure]
+    homepage: https://events.linuxfoundation.org/open-source-summit-europe/
+  - canonical_name: Linux Plumbers Conference
+    aliases: [LPC]
+    description: Kernel + low-level Linux development.
+    typical_month: 9
+    typical_topics: [linux kernel, systems programming]
+    homepage: https://linuxplumbersconf.org
+
+  # ---- AI / MLOps practitioner ----
+  - canonical_name: AI Engineer World's Fair
+    aliases: [AI Engineer Summit, AI Engineer Worlds Fair]
+    description: AI engineering practice + applied LLM systems.
+    typical_month: 6
+    typical_topics: [LLM, AI engineering, RAG, agents, applied AI]
+    homepage: https://ai.engineer
+  - canonical_name: MLOps World
+    aliases: []
+    description: Operationalizing ML in production.
+    typical_topics: [MLOps, model deployment, monitoring, data pipelines]
+    homepage: https://mlopsworld.com
+  - canonical_name: Hugging Face Events
+    aliases: [HF Events]
+    description: Hugging Face hosted/co-hosted gatherings.
+    typical_topics: [LLM, open models, transformers, fine-tuning]
+    homepage: https://huggingface.co/events
+  - canonical_name: Ray Summit
+    aliases: []
+    description: Distributed ML + Ray ecosystem.
+    typical_topics: [distributed ML, scaling, Ray, LLM serving]
+    homepage: https://raysummit.org
+  - canonical_name: MLSys
+    aliases: [Conference on Machine Learning and Systems]
+    description: Systems for ML + ML for systems.
+    typical_month: 5
+    typical_topics: [systems for ML, distributed training, inference]
+    homepage: https://mlsys.org
+
+  # ---- Red Hat / vendor adjacency ----
+  - canonical_name: Red Hat Summit
+    aliases: [RHSummit]
+    description: Red Hat's flagship annual event.
+    typical_month: 5
+    typical_topics: [enterprise open source, OpenShift, RHEL, hybrid cloud, AI infrastructure]
+    homepage: https://redhat.com/summit
+  - canonical_name: AnsibleFest
+    aliases: []
+    description: Ansible community + automation.
+    typical_month: 9
+    typical_topics: [automation, ansible, infrastructure as code]
+    homepage: https://redhat.com/summit/ansiblefest
+
+  # ---- General industry ----
+  - canonical_name: GTC
+    aliases: [NVIDIA GTC, GPU Technology Conference]
+    description: NVIDIA's flagship; GPU + AI infrastructure.
+    typical_month: 3
+    typical_topics: [GPU, CUDA, AI infrastructure, model training]
+    homepage: https://nvidia.com/gtc
+  - canonical_name: re:Invent
+    aliases: [AWS reInvent, AWS re-Invent]
+    description: AWS flagship developer + infrastructure event.
+    typical_month: 12
+    typical_topics: [aws, cloud, infrastructure, generative AI]
+    homepage: https://reinvent.awsevents.com
+  - canonical_name: Google Cloud Next
+    aliases: [Google Next, Cloud Next]
+    description: Google Cloud's flagship event.
+    typical_month: 4
+    typical_topics: [google cloud, generative AI, AI infrastructure]
+    homepage: https://cloud.withgoogle.com/next
+  - canonical_name: Microsoft Build
+    aliases: [MS Build]
+    description: Microsoft developer event.
+    typical_month: 5
+    typical_topics: [azure, copilot, developer tools]
+    homepage: https://build.microsoft.com
+  - canonical_name: QCon
+    aliases: [QCon SF, QCon London, QCon NY, QCon Plus]
+    description: InfoQ practitioner conference series.
+    typical_topics: [software architecture, distributed systems, engineering leadership]
+    homepage: https://qconferences.com
+  - canonical_name: Strange Loop
+    aliases: []
+    description: "Polyglot programming + systems thinking (note: paused; kept for past attendance)."
+    typical_month: 9
+    typical_topics: [programming languages, distributed systems, computing]
+    homepage: https://thestrangeloop.com

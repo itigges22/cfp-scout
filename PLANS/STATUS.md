@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 22 pass 1 — agent chat live; RAG retrieval + citations + session persistence at /agent)
+**Last updated:** 2026-05-22 (plan 23 pass 1 — conference series tracking; 35-entry seed catalog + detector + assign endpoint w/ matcher recompute)
 
 ## Plan status
 
@@ -32,7 +32,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 20 | Dashboard & review UI | 🚧 | Pass 1 done 2026-05-22 (dashboard stat cards + top-5 + conferences list with filter/sort + detail with score/SME/sources/decision panels + decisions API). Pass 2: bulk actions, CSV export, sources/review-queue UI, saved views, keyboard shortcuts, react-flow graph viz |
 | 21 | Graph exploration view | 🚧 | Pass 1 done 2026-05-22 (force-directed canvas, kind/status/since filters, hover-highlight, click drawer with link to detail). Pass 2: pillar selector + entity-search autocomplete + saved views + PNG export + Louvain coloring |
 | 22 | Agent chat interface | 🚧 | Pass 1 done 2026-05-22 (sessions CRUD, RAG retrieval with friendly labels, prompt-injection wrapper, [n] citation extraction, /agent chat UI with sidebar + composer + cost meter). Pass 2: SSE streaming, /slash commands, intent classification, cancel button |
-| 23 | Conference series tracking | ⬜ | |
+| 23 | Conference series tracking | 🚧 | Pass 1 done 2026-05-22 (35-series seed catalog + detector w/ pg_trgm + Python trigram alias fallback + CRUD + assign/unassign + matcher recompute hook). Pass 2: /settings/series UI + "Previous editions" panel on conference detail + weekly cron |
 | 24 | CFP-closing digest | ⬜ | |
 | 25 | Data lifecycle decay & versioning | ⬜ | |
 | 26 | Observability & diagnostics | ⬜ | |
@@ -470,6 +470,62 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 23 pass 1 — Conference series tracking)
+- 🚧 **Plan 23 pass 1 complete**: backend wiring for year-over-year series
+  linkage. Seed catalog ships 35 known AI/ML/cloud-native/RH-adjacent series.
+  Frontend (`/settings/series` + "Previous editions" panel) is pass 2.
+- **Seed catalog** (`db/seeds/conference_series.yaml`): 35 entries covering
+  the academic ML circuit (NeurIPS, ICML, ICLR, AAAI, ACL, EMNLP, NAACL,
+  CVPR, ICCV, ECCV, KDD, WWW, SIGMOD, VLDB, OSDI, SOSP, USENIX ATC, MLSys),
+  CNCF / Linux Foundation (KubeCon NA + EU, OSS NA + EU, Linux Plumbers),
+  AI practitioner (AI Engineer World's Fair, MLOps World, Hugging Face,
+  Ray Summit), Red Hat (Summit, AnsibleFest), and industry (GTC, re:Invent,
+  Google Cloud Next, Microsoft Build, QCon, Strange Loop). Per-row:
+  canonical_name, aliases[], description, typical_month, typical_topics[],
+  homepage.
+- **Migration** (`20260522_2100_seed_series.py`): idempotent loader. Reads
+  the YAML from `/app/db/seeds/conference_series.yaml`, INSERTs with
+  `ON CONFLICT (canonical_name) DO NOTHING`. Container build now copies
+  `db/seeds` into both the py-builder and runtime stages.
+- **Detector** (`app/services/series/detector.py`):
+  - `strip_year_and_edition(name)` removes year + season + edition markers
+    ("NeurIPS 2026" → "NeurIPS", "AAAI 2027 Spring" → "AAAI").
+  - `suggest_series_for_unlinked(threshold, limit)` queries every unlinked
+    eligible conference, calls Postgres `similarity(canonical_name,
+    stripped)` for canonical matching, falls back to a Python trigram
+    Jaccard for aliases (avoids N*M SQL round-trips at this scale).
+    Returns ranked `SeriesSuggestion`s; sorted highest-confidence first.
+  - **No auto-link** by design — series assignments shift SME scores,
+    human-in-loop is required.
+- **CRUD + assignment** (`app/services/series/crud.py`):
+  - `create_series` / `update_series` / `deactivate_series` — full CRUD
+    with audit-log + graph invalidation.
+  - `assign_conference_to_series` + `unassign_conference_from_series` —
+    set/clear `conferences.series_id`, audit, invalidate the graph,
+    **enqueue `run_fit_match_task`** for the affected conference so the
+    past-attendance bonus is reflected in the dashboard within seconds.
+- **API** (`app/api/v1/conference_series.py`):
+  - `GET    /conference-series`                    — list with member counts
+  - `GET    /conference-series/{id}`               — detail + members
+  - `POST   /conference-series`                    — create
+  - `PATCH  /conference-series/{id}`               — edit
+  - `DELETE /conference-series/{id}`               — deactivate
+  - `GET    /conference-series/suggestions`        — detector
+  - `POST   /conference-series/{id}/assign`        — link conference
+  - `POST   /conference-series/{id}/unassign`      — unlink
+- **Deps**: `pyyaml>=6.0` (seed loader).
+- 🟢 **Verified live**:
+  - Migration applied → 35 rows in `app.conference_series`.
+  - `/api/v1/conference-series` returns the list with `member_count`.
+  - `/suggestions` returned 3 ranked candidates for our 3 dry-run
+    conferences (low confidence as expected since "Dry-Run Conference XXX"
+    doesn't match real series names — would score 0.9+ on real scraped
+    "NeurIPS 2027" or "ICML 2028").
+  - `POST /{id}/assign` linked one conference to AAAI; series detail page
+    returned it as a member; `app.ingest_jobs` got a fresh
+    `run_fit_match` row for that conference.
+  - `POST /{id}/unassign` cleared the link cleanly.
 
 ### 2026-05-22 (plan 22 pass 1 — Agent chat interface)
 - 🚧 **Plan 22 pass 1 complete**: read-only RAG chat panel at `/agent`.

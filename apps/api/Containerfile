@@ -72,6 +72,11 @@ COPY apps/api/app ./app
 COPY apps/api/alembic ./alembic
 COPY apps/api/alembic.ini ./alembic.ini
 
+# Plan-23 seed catalog (conference series). The migration looks for it
+# at /app/db/seeds/conference_series.yaml; copy it in here so `make migrate`
+# can populate the seed rows without needing the host filesystem.
+COPY db/seeds ./db/seeds
+
 # ============================================================================
 # Stage 3: runtime
 # ----------------------------------------------------------------------------
@@ -109,6 +114,9 @@ COPY --from=py-builder --chown=scout:scout /app/app /app/app
 # runs `alembic upgrade head` from /app, where these files live.
 COPY --from=py-builder --chown=scout:scout /app/alembic /app/alembic
 COPY --from=py-builder --chown=scout:scout /app/alembic.ini /app/alembic.ini
+
+# Seed catalog (plan 23) forwarded into the runtime stage.
+COPY --from=py-builder --chown=scout:scout /app/db /app/db
 
 # Copy built SPA from spa-builder.
 COPY --from=spa-builder --chown=scout:scout /build/web/dist /app/static
