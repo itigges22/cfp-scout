@@ -413,4 +413,4 @@ def _chunks(text: str, size: int) -> list[str]:
 
 
 # Convenience: instantiating ChatMessage from plain dicts in callers
-ChatMessage  # noqa: F401  (re-export for callers via the package __init__)
+ChatMessage

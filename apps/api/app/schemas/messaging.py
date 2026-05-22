@@ -48,7 +48,7 @@ class MessagingDocumentBase(StrictBase):
     is_active: bool = True
 
     @model_validator(mode="after")
-    def _check_source_type_consistency(self) -> "MessagingDocumentBase":
+    def _check_source_type_consistency(self) -> MessagingDocumentBase:
         # `file_path` is set by the PDF upload flow (plan 12), not by this
         # schema. We just make sure the source_type matches what callers can
         # legitimately set here. PDF uploads go through a different endpoint.
@@ -60,7 +60,7 @@ class MessagingDocumentCreate(MessagingDocumentBase):
     PDF source rows are created via the upload endpoint in plan 12."""
 
     @model_validator(mode="after")
-    def _require_structured_on_create(self) -> "MessagingDocumentCreate":
+    def _require_structured_on_create(self) -> MessagingDocumentCreate:
         if self.source_type is not MessagingSourceType.STRUCTURED:
             raise ValueError(
                 "Use POST /api/v1/uploads/pdf to create PDF-source messaging documents. "

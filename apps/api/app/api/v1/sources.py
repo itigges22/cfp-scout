@@ -14,7 +14,6 @@ The admin UI for managing sources lands in plan 14 pass 2.
 
 from __future__ import annotations
 
-from typing import Annotated
 from uuid import UUID
 
 import structlog
@@ -58,9 +57,7 @@ async def create_source(db: DbSession, payload: SourceCreate) -> SourceRead:
 
 
 @router.patch("/{source_id}", response_model=SourceRead)
-async def update_source(
-    db: DbSession, source_id: UUID, payload: SourceUpdate
-) -> SourceRead:
+async def update_source(db: DbSession, source_id: UUID, payload: SourceUpdate) -> SourceRead:
     row = await source_service.update_source(db, source_id, payload)
     await db.commit()
     return SourceRead.model_validate(row)

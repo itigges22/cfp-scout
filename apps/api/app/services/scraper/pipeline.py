@@ -23,7 +23,7 @@ endpoint unreachable) DO raise so the task runner records a failed
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -75,9 +75,7 @@ async def crawl_source(db: AsyncSession, source_id: UUID) -> CrawlResult:
     if source is None:
         raise SourceNotFoundError(f"No source {source_id!s}")
     if not source.enabled:
-        raise SourceDisabledError(
-            f"Source {source.name!r} ({source.id}) is disabled."
-        )
+        raise SourceDisabledError(f"Source {source.name!r} ({source.id}) is disabled.")
 
     bound = log.bind(source_id=str(source.id), source_name=source.name, kind=source.kind)
     bound.info("scraper.crawl.start", url=source.url)
@@ -95,10 +93,8 @@ async def crawl_source(db: AsyncSession, source_id: UUID) -> CrawlResult:
 
     async with make_async_client(user_agent=settings.scraper_user_agent) as client:
         try:
-            candidate_urls = await discover_urls(
-                kind=source.kind, url=source.url, client=client
-            )
-        except Exception as exc:  # noqa: BLE001 — discovery failure is a hard fail
+            candidate_urls = await discover_urls(kind=source.kind, url=source.url, client=client)
+        except Exception as exc:
             bound.error("scraper.discovery_failed", error=str(exc))
             raise
 
@@ -145,7 +141,7 @@ async def crawl_source(db: AsyncSession, source_id: UUID) -> CrawlResult:
                     }
                 )
 
-    source.last_crawled_at = datetime.now(tz=timezone.utc)
+    source.last_crawled_at = datetime.now(tz=UTC)
     await db.flush()
 
     # Enqueue plan-15 extraction for each newly-fetched raw_page. Local

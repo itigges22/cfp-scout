@@ -138,9 +138,7 @@ async def compute_narratives_for_top_smes(
 
     # Re-rank fresh so we narrate the current top-K, not whatever
     # recommended_sme_ids on the match row was at last compute.
-    ranker = await rank_smes_for_conference(
-        db, conference.id, k=k, gate=settings.match_s_gate
-    )
+    ranker = await rank_smes_for_conference(db, conference.id, k=k, gate=settings.match_s_gate)
     top: list[SmeBreakdown] = (ranker.above_gate or ranker.near_misses)[:k]
 
     existing: dict = dict(match.sme_fit_narratives or {})
@@ -175,9 +173,7 @@ async def compute_narratives_for_top_smes(
             bound.warning("narrative.sme_missing", sme_id=b.sme_id)
             continue
 
-        narrative = await _generate_one(
-            db=db, conference=conference, sme=sme, breakdown=b
-        )
+        narrative = await _generate_one(db=db, conference=conference, sme=sme, breakdown=b)
         existing[b.sme_id] = narrative
         out.append(
             NarrativePerSme(
@@ -234,7 +230,7 @@ async def _generate_one(
         )
         try:
             resp = await get_llm_client().chat(req, db=db)
-        except Exception as exc:  # noqa: BLE001 — non-fatal
+        except Exception as exc:
             log.warning(
                 "narrative.llm_failed",
                 sme_id=str(sme.id),

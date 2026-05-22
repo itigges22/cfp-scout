@@ -66,8 +66,8 @@ VERSIONED_ENTITY_TYPES: Final[dict[str, str]] = {
 
 # Attribute names we never include in the diff (no signal, lots of noise).
 _IGNORED_ATTRS: Final[set[str]] = {
-    "updated_at",   # bumped by onupdate=now() on every UPDATE; tautological in diff
-    "created_at",   # never changes after insert
+    "updated_at",  # bumped by onupdate=now() on every UPDATE; tautological in diff
+    "created_at",  # never changes after insert
 }
 
 
@@ -143,9 +143,7 @@ def _on_before_flush(session: Session, flush_context, instances) -> None:
 
     new_rows: list[ContentVersion] = []
     for obj in list(session.dirty):
-        entity_type = VERSIONED_ENTITY_TYPES.get(
-            getattr(obj.__table__, "name", "")
-        )
+        entity_type = VERSIONED_ENTITY_TYPES.get(getattr(obj.__table__, "name", ""))
         if entity_type is None:
             continue
         if not session.is_modified(obj, include_collections=False):
@@ -210,9 +208,7 @@ def _changed_fields(obj: Any) -> dict[str, dict[str, Any]]:
     return changes
 
 
-def _next_version_number(
-    session: Session, entity_type: str, entity_id: uuid.UUID
-) -> int:
+def _next_version_number(session: Session, entity_type: str, entity_id: uuid.UUID) -> int:
     """SELECT max(version_number)+1 — small N per entity, cheap query."""
     from app.db.models.audit import ContentVersion
 

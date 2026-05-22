@@ -44,4 +44,3 @@ async def readyz(db: DbSession) -> JSONResponse:
             content={"ok": False, "reason": "database_unreachable"},
         )
     return JSONResponse(status_code=status.HTTP_200_OK, content={"ok": True})
-

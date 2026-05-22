@@ -224,13 +224,9 @@ async def list_conferences(
     LEFT JOINs the latest matches row (by algorithm_version) so the list
     can render scores without an N+1 round-trip.
     """
-    stmt = (
-        select(Conference, Match)
-        .outerjoin(
-            Match,
-            (Match.conference_id == Conference.id)
-            & (Match.algorithm_version == ALGORITHM_VERSION),
-        )
+    stmt = select(Conference, Match).outerjoin(
+        Match,
+        (Match.conference_id == Conference.id) & (Match.algorithm_version == ALGORITHM_VERSION),
     )
     if status_in:
         stmt = stmt.where(Conference.status.in_(status_in))
@@ -251,19 +247,12 @@ async def list_conferences(
         stmt = stmt.order_by(Conference.name.asc())
 
     # Count the conferences (not the joined rows).
-    count_stmt = (
-        select(func.count(Conference.id))
-        .where(
-            Conference.status.in_(status_in)
-            if status_in
-            else Conference.status != "quarantined"
-        )
+    count_stmt = select(func.count(Conference.id)).where(
+        Conference.status.in_(status_in) if status_in else Conference.status != "quarantined"
     )
     total = (await db.execute(count_stmt)).scalar_one()
 
-    rows = (
-        await db.execute(stmt.offset((page - 1) * per_page).limit(per_page))
-    ).all()
+    rows = (await db.execute(stmt.offset((page - 1) * per_page).limit(per_page))).all()
 
     items: list[ConferenceListItem] = []
     for conf, match in rows:
@@ -326,9 +315,7 @@ async def conference_smes(
             detail=f"No conference {conference_id}",
         )
     settings = get_settings()
-    result = await rank_smes_for_conference(
-        db, conference_id, k=k, gate=settings.match_s_gate
-    )
+    result = await rank_smes_for_conference(db, conference_id, k=k, gate=settings.match_s_gate)
 
     # Surface any persisted SME-fit narratives (plan 19) so the UI can show
     # the per-SME paragraph next to the mechanical breakdown without an
@@ -410,13 +397,17 @@ async def conference_sources(db: DbSession, conference_id: UUID) -> dict:
         )
 
     rows = (
-        await db.execute(
-            select(RawPage)
-            .join(ConferenceSource, ConferenceSource.raw_page_id == RawPage.id)
-            .where(ConferenceSource.conference_id == conference_id)
-            .order_by(RawPage.fetched_at.desc())
+        (
+            await db.execute(
+                select(RawPage)
+                .join(ConferenceSource, ConferenceSource.raw_page_id == RawPage.id)
+                .where(ConferenceSource.conference_id == conference_id)
+                .order_by(RawPage.fetched_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "conference_id": str(conference_id),
         "sources": [
@@ -492,12 +483,16 @@ async def create_decision(
 async def list_decisions(db: DbSession, conference_id: UUID) -> dict:
     """Decision history for this conference (newest first)."""
     rows = (
-        await db.execute(
-            select(Decision)
-            .where(Decision.conference_id == conference_id)
-            .order_by(Decision.decided_at.desc())
+        (
+            await db.execute(
+                select(Decision)
+                .where(Decision.conference_id == conference_id)
+                .order_by(Decision.decided_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "conference_id": str(conference_id),
         "decisions": [DecisionRead.model_validate(r).model_dump(mode="json") for r in rows],

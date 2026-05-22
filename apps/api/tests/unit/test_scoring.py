@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from app.services.matcher._scoring import (
     apply_chunk_decay,
     clamp01,
@@ -86,13 +85,13 @@ class TestApplyChunkDecay:
         assert apply_chunk_decay(0.8, chunk) == pytest.approx(0.8)
 
     def test_fresh_chunk_returns_near_raw(self) -> None:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         chunk = _StubChunk(created_at=now, last_used_at=now)
         assert apply_chunk_decay(0.8, chunk) == pytest.approx(0.8, rel=0.01)
 
     def test_one_half_life_drops_score(self) -> None:
         # 60-day-old chunk → freshness ≈ 0.5 → 0.8 × (0.85 + 0.15*0.5) ≈ 0.74
-        old = datetime.now(tz=timezone.utc) - timedelta(days=60)
+        old = datetime.now(tz=UTC) - timedelta(days=60)
         chunk = _StubChunk(created_at=old, last_used_at=old)
         result = apply_chunk_decay(0.8, chunk)
         assert 0.72 < result < 0.76
@@ -100,15 +99,15 @@ class TestApplyChunkDecay:
     def test_very_old_chunk_floors_at_alpha(self) -> None:
         # Many half-lives old → freshness → 0 → multiplier → alpha (0.85)
         # → 0.8 × 0.85 = 0.68
-        ancient = datetime.now(tz=timezone.utc) - timedelta(days=3650)
+        ancient = datetime.now(tz=UTC) - timedelta(days=3650)
         chunk = _StubChunk(created_at=ancient, last_used_at=ancient)
         result = apply_chunk_decay(0.8, chunk)
         assert result == pytest.approx(0.68, abs=0.01)
 
     def test_uses_last_used_at_when_more_recent(self) -> None:
         # Created long ago but recently used → still ~fresh.
-        old_created = datetime.now(tz=timezone.utc) - timedelta(days=365)
-        recent_use = datetime.now(tz=timezone.utc) - timedelta(hours=1)
+        old_created = datetime.now(tz=UTC) - timedelta(days=365)
+        recent_use = datetime.now(tz=UTC) - timedelta(hours=1)
         chunk = _StubChunk(created_at=old_created, last_used_at=recent_use)
         result = apply_chunk_decay(0.8, chunk)
         assert result == pytest.approx(0.8, rel=0.01)

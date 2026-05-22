@@ -25,12 +25,12 @@ from app.services.graph.query import (
 from app.services.graph.viz import to_node_link
 
 __all__ = [
-    "load_graph",
-    "invalidate",
-    "to_node_link",
     "candidate_smes_for_conference",
-    "upcoming_conferences_for_sme",
-    "pillar_coverage",
-    "neighborhood",
     "full_graph_for_view",
+    "invalidate",
+    "load_graph",
+    "neighborhood",
+    "pillar_coverage",
+    "to_node_link",
+    "upcoming_conferences_for_sme",
 ]

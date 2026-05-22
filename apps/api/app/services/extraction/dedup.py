@@ -42,11 +42,7 @@ def year_for(start_date: date | None) -> int | None:
     return start_date.year if start_date else None
 
 
-async def find_duplicate(
-    db: AsyncSession, *, slug: str
-) -> Conference | None:
+async def find_duplicate(db: AsyncSession, *, slug: str) -> Conference | None:
     """Return an existing conference row with this slug, or None."""
-    result = await db.execute(
-        select(Conference).where(Conference.slug == slug)
-    )
+    result = await db.execute(select(Conference).where(Conference.slug == slug))
     return result.scalar_one_or_none()

@@ -52,23 +52,23 @@ async def history_for_entity(
     if entity_type not in VERSIONED_ENTITY_TYPES.values():
         raise HTTPException(
             status_code=400,
-            detail=(
-                f"entity_type must be one of {sorted(VERSIONED_ENTITY_TYPES.values())}"
-            ),
+            detail=(f"entity_type must be one of {sorted(VERSIONED_ENTITY_TYPES.values())}"),
         )
     rows = (
-        await db.execute(
-            select(ContentVersion)
-            .where(ContentVersion.entity_type == entity_type)
-            .where(ContentVersion.entity_id == entity_id)
-            .order_by(ContentVersion.version_number.asc())
-            .limit(limit)
+        (
+            await db.execute(
+                select(ContentVersion)
+                .where(ContentVersion.entity_type == entity_type)
+                .where(ContentVersion.entity_id == entity_id)
+                .order_by(ContentVersion.version_number.asc())
+                .limit(limit)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "entity_type": entity_type,
         "entity_id": str(entity_id),
-        "versions": [
-            ContentVersionRead.model_validate(r).model_dump(mode="json") for r in rows
-        ],
+        "versions": [ContentVersionRead.model_validate(r).model_dump(mode="json") for r in rows],
     }

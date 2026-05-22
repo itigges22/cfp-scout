@@ -15,4 +15,4 @@ Public surface:
 
 from app.services.agent.service import AgentReply, Citation, ask
 
-__all__ = ["ask", "AgentReply", "Citation"]
+__all__ = ["AgentReply", "Citation", "ask"]

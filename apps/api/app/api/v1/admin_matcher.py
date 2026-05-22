@@ -51,9 +51,7 @@ async def run_now(db: DbSession, conference_id: UUID) -> dict:
     return result.to_stats()
 
 
-@router.post(
-    "/run-now-async/{conference_id}", status_code=status.HTTP_202_ACCEPTED
-)
+@router.post("/run-now-async/{conference_id}", status_code=status.HTTP_202_ACCEPTED)
 async def run_now_async(conference_id: UUID) -> dict:
     job_id = enqueue_now(
         run_fit_match_task,
@@ -124,10 +122,10 @@ async def recompute_all_narratives() -> dict:
 @router.get("/matches/recent")
 async def recent_matches(db: DbSession, limit: int = Query(default=50, ge=1, le=500)) -> dict:
     rows = (
-        await db.execute(
-            select(Match).order_by(Match.computed_at.desc()).limit(limit)
-        )
-    ).scalars().all()
+        (await db.execute(select(Match).order_by(Match.computed_at.desc()).limit(limit)))
+        .scalars()
+        .all()
+    )
     return {
         "algorithm_version": ALGORITHM_VERSION,
         "limit": limit,

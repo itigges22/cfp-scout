@@ -18,7 +18,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from app.db.session import DbSession
 from app.services.pdf import process_pdf_upload
-from app.services.pdf.pipeline import PdfPipelineError, SUPPORTED_OWNER_TYPES
+from app.services.pdf.pipeline import SUPPORTED_OWNER_TYPES, PdfPipelineError
 from app.services.pdf.storage import PdfRejected
 
 log = structlog.get_logger("scout.api.uploads")

@@ -43,9 +43,7 @@ ExtractedName = Annotated[
 ShortFreeText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
 ]
-Topic = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=2, max_length=100)
-]
+Topic = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=100)]
 
 
 # ---------------------------------------------------------------------------
@@ -82,20 +80,16 @@ class ExtractedConference(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
 
-    location_city: Annotated[
-        str, StringConstraints(strip_whitespace=True, max_length=120)
-    ] | None = None
+    location_city: (
+        Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)] | None
+    ) = None
     # ISO-3166-1 alpha-2 (upper). Validator enforces.
-    location_country: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=2, max_length=2)
-    ] | None = None
+    location_country: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=2)] | None
+    ) = None
     is_virtual: bool = False
-    venue: Annotated[
-        str, StringConstraints(strip_whitespace=True, max_length=200)
-    ] | None = None
-    website: Annotated[
-        str, StringConstraints(strip_whitespace=True, max_length=500)
-    ] | None = None
+    venue: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] | None = None
+    website: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
 
     cfp_open_at: date | None = None
     cfp_close_at: date | None = None

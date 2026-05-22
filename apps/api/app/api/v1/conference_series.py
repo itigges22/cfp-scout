@@ -134,9 +134,7 @@ async def list_suggestions(
 ) -> dict:
     """Run the detector + return ranked (conference, series, confidence)
     suggestions for human review."""
-    suggestions = await suggest_series_for_unlinked(
-        db, threshold=threshold, limit=limit
-    )
+    suggestions = await suggest_series_for_unlinked(db, threshold=threshold, limit=limit)
     return {
         "threshold": threshold,
         "limit": limit,
@@ -152,12 +150,16 @@ async def get_series(db: DbSession, series_id: UUID) -> dict:
         raise HTTPException(status_code=404, detail=f"No conference_series {series_id}")
 
     members = (
-        await db.execute(
-            select(Conference)
-            .where(Conference.series_id == series_id)
-            .order_by(Conference.start_date.asc().nullslast())
+        (
+            await db.execute(
+                select(Conference)
+                .where(Conference.series_id == series_id)
+                .order_by(Conference.start_date.asc().nullslast())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     return {
         **SeriesRead.model_validate(row).model_dump(mode="json"),
@@ -194,9 +196,7 @@ async def post_series(db: DbSession, payload: SeriesCreate) -> SeriesRead:
 
 
 @router.patch("/{series_id}", response_model=SeriesRead)
-async def patch_series(
-    db: DbSession, series_id: UUID, payload: SeriesUpdate
-) -> SeriesRead:
+async def patch_series(db: DbSession, series_id: UUID, payload: SeriesUpdate) -> SeriesRead:
     row = await update_series(
         db,
         series_id,
@@ -227,9 +227,7 @@ async def delete_series(db: DbSession, series_id: UUID) -> dict:
 async def assign(db: DbSession, series_id: UUID, body: AssignBody) -> dict:
     """Link a conference to this series. Triggers a matcher recompute
     (past-attendance bonus may shift). Returns updated conference fields."""
-    conf = await assign_conference_to_series(
-        db, series_id, body.conference_id, actor_label="api"
-    )
+    conf = await assign_conference_to_series(db, series_id, body.conference_id, actor_label="api")
     await db.commit()
     return {
         "conference_id": str(conf.id),
@@ -255,9 +253,7 @@ async def unassign(db: DbSession, series_id: UUID, body: AssignBody) -> dict:
                 f"{series_id} (currently linked to {conf.series_id})."
             ),
         )
-    conf = await unassign_conference_from_series(
-        db, body.conference_id, actor_label="api"
-    )
+    conf = await unassign_conference_from_series(db, body.conference_id, actor_label="api")
     await db.commit()
     return {
         "conference_id": str(conf.id),

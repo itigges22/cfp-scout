@@ -75,8 +75,7 @@ def _build_sync_dsn() -> str:
         # database_url didn't use ``+asyncpg`` — caller passed a non-standard
         # form. Fail loud rather than silently using the wrong driver.
         raise RuntimeError(
-            "DATABASE_URL must use the ``postgresql+asyncpg://`` scheme; "
-            f"got {async_url!r}"
+            f"DATABASE_URL must use the ``postgresql+asyncpg://`` scheme; got {async_url!r}"
         )
     return sync_url
 
@@ -293,7 +292,7 @@ def enqueue_now(
         trigger="date",  # run immediately
         kwargs=kwargs or {},
         id=job_id,
-        replace_existing=True if job_id else False,
+        replace_existing=bool(job_id),
         misfire_grace_time=300,
     )
     return job.id

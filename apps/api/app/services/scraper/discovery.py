@@ -14,7 +14,6 @@ Pass 2 will add ``sitemap``, ``ics``, ``wikicfp``, ``api``.
 from __future__ import annotations
 
 import urllib.parse
-from typing import Iterable
 
 import feedparser
 import httpx

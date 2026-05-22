@@ -44,43 +44,43 @@ from app.db.models.ops import (
 from app.db.models.vectors import DocumentChunk, EmbeddingModel
 
 __all__ = [
-    "Base",
-    "TimestampedMixin",
-    "uuid_pk",
     # entities
     "AudienceProfile",
-    "Conference",
-    "ConferenceSeries",
-    "ConferenceSource",
-    "MessagingDocument",
-    "PastConference",
-    "RawPage",
-    "Sme",
-    "Source",
-    "StrategicPillar",
-    "Topic",
-    # junctions
-    "ConferenceAudience",
-    "ConferencePillar",
-    "ConferenceSme",
-    "ConferenceTopic",
-    "MessagingPillar",
-    "SmeAudience",
-    "SmeTopic",
-    # vectors
-    "DocumentChunk",
-    "EmbeddingModel",
-    # matching
-    "Decision",
-    "Match",
-    "MatchTeamRecommendation",
     # audit
     "AuditLog",
-    "ContentVersion",
+    "Base",
     # ops
     "ChatMessage",
     "ChatSession",
+    "Conference",
+    # junctions
+    "ConferenceAudience",
+    "ConferencePillar",
+    "ConferenceSeries",
+    "ConferenceSme",
+    "ConferenceSource",
+    "ConferenceTopic",
+    "ContentVersion",
+    # matching
+    "Decision",
+    # vectors
+    "DocumentChunk",
+    "EmbeddingModel",
     "IngestJob",
     "LLMCall",
+    "Match",
+    "MatchTeamRecommendation",
+    "MessagingDocument",
+    "MessagingPillar",
     "Notification",
+    "PastConference",
+    "RawPage",
+    "Sme",
+    "SmeAudience",
+    "SmeTopic",
+    "Source",
+    "StrategicPillar",
+    "TimestampedMixin",
+    "Topic",
+    "uuid_pk",
 ]

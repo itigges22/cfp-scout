@@ -74,9 +74,7 @@ class _SSRFGuardedTransport(httpx.AsyncHTTPTransport):
     check fires anew.
     """
 
-    async def handle_async_request(
-        self, request: httpx.Request
-    ) -> httpx.Response:
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         host = request.url.host
         if not _is_public_address(host):
             log.warning("scraper.ssrf_blocked", url=str(request.url))

@@ -19,7 +19,8 @@ import re
 from dataclasses import asdict, dataclass
 
 import structlog
-from sqlalchemy import select, text as sql_text
+from sqlalchemy import select
+from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import Conference, ConferenceSeries
@@ -55,10 +56,10 @@ class SeriesSuggestion:
     conference_name: str
     series_id: str
     canonical_name: str
-    matched_via: str        # "canonical" / "alias"
-    matched_value: str       # the alias string or the canonical name
-    stripped_name: str       # debug — what we compared against
-    confidence: float        # 0..1, pg_trgm similarity
+    matched_via: str  # "canonical" / "alias"
+    matched_value: str  # the alias string or the canonical name
+    stripped_name: str  # debug — what we compared against
+    confidence: float  # 0..1, pg_trgm similarity
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -94,22 +95,26 @@ async def suggest_series_for_unlinked(
     """
     # Pull every unlinked, eligible conference.
     confs = (
-        await db.execute(
-            select(Conference)
-            .where(Conference.series_id.is_(None))
-            .where(~Conference.status.in_(list(_INELIGIBLE_STATUSES)))
+        (
+            await db.execute(
+                select(Conference)
+                .where(Conference.series_id.is_(None))
+                .where(~Conference.status.in_(list(_INELIGIBLE_STATUSES)))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not confs:
         return []
 
     # Pull every active series with its aliases. Tiny N (low hundreds at
     # most) so we can iterate in Python rather than build a CROSS JOIN.
     series_rows = (
-        await db.execute(
-            select(ConferenceSeries).where(ConferenceSeries.is_active.is_(True))
-        )
-    ).scalars().all()
+        (await db.execute(select(ConferenceSeries).where(ConferenceSeries.is_active.is_(True))))
+        .scalars()
+        .all()
+    )
     if not series_rows:
         return []
 

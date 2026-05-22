@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.services.series.detector import strip_year_and_edition
 
 

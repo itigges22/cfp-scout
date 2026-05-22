@@ -30,10 +30,10 @@ __all__ = [
     "CHUNK_HALF_LIFE_DAYS",
     "CONFERENCE_HALF_LIFE_DAYS",
     "DECAY_ALPHA",
+    "VERSIONED_ENTITY_TYPES",
     "apply_decay_multiplier",
     "compute_freshness",
-    "run_decay_pass",
-    "VERSIONED_ENTITY_TYPES",
     "register_versioning_listeners",
+    "run_decay_pass",
     "set_actor_label",
 ]

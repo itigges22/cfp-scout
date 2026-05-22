@@ -206,14 +206,18 @@ async def _recent_history(
 ) -> list[ChatMessage]:
     """Most-recent N turns (oldest first, excluding the just-added user row)."""
     rows = (
-        await db.execute(
-            select(ChatMessage)
-            .where(ChatMessage.session_id == session_id)
-            .where(ChatMessage.id != exclude)
-            .order_by(ChatMessage.created_at.desc())
-            .limit(HISTORY_TURNS)
+        (
+            await db.execute(
+                select(ChatMessage)
+                .where(ChatMessage.session_id == session_id)
+                .where(ChatMessage.id != exclude)
+                .order_by(ChatMessage.created_at.desc())
+                .limit(HISTORY_TURNS)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     rows.reverse()
     return list(rows)
 
@@ -221,9 +225,7 @@ async def _recent_history(
 _CITATION_RE = re.compile(r"\[(\d{1,3})\]")
 
 
-def _extract_citations(
-    text: str, snippets: list[RetrievedSnippet]
-) -> list[Citation]:
+def _extract_citations(text: str, snippets: list[RetrievedSnippet]) -> list[Citation]:
     """Map [n] marks in the assistant's reply back to RetrievedSnippet rows.
 
     Indices outside the snippet range are dropped silently (model

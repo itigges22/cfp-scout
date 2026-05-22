@@ -57,9 +57,7 @@ class RobotsCache:
         parsed = urllib.parse.urlsplit(url)
         # robots.txt is per scheme+host(+port).
         host_key = parsed.netloc
-        robots_url = urllib.parse.urlunsplit(
-            (parsed.scheme, parsed.netloc, "/robots.txt", "", "")
-        )
+        robots_url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/robots.txt", "", ""))
         return host_key, robots_url
 
     async def _fetch_robots(

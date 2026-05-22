@@ -82,6 +82,7 @@ def _canned_agent_chat(req: ChatRequest, fingerprint: str) -> str:
             break
     # Count how many [n] snippets the prompt actually included.
     import re as _re
+
     indices = sorted({int(m.group(1)) for m in _re.finditer(r"^\[(\d{1,3})\]\s", user_msg, _re.M)})
     if not indices:
         return (
@@ -225,4 +226,4 @@ def _text_to_vector(text: str) -> list[float]:
 
 # Suppress unused-time warning — `time` is exported for testability and
 # possible future use.
-_ = time  # noqa: F841
+_ = time

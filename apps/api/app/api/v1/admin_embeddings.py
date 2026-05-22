@@ -13,11 +13,10 @@ embeddings happen automatically on entity creation.
 
 from __future__ import annotations
 
-from typing import Annotated
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
@@ -49,7 +48,9 @@ class EmbedOwnerRequest(BaseModel):
     """Persist chunks against a real owner. Idempotent (replaces prior chunks)."""
 
     model_config = ConfigDict(extra="forbid")
-    owner_type: str = Field(..., description="messaging / audience / conference / sme_bio / raw_page")
+    owner_type: str = Field(
+        ..., description="messaging / audience / conference / sme_bio / raw_page"
+    )
     owner_id: UUID
     text: str
     purpose: str | None = None

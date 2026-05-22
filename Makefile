@@ -205,7 +205,7 @@ test-unit:  ## Run the api unit suite inside the running api container
 	fi
 	@echo "Bootstrapping pip + dev test deps into the live venv (idempotent)..."
 	@$(CONTAINER_CLI) exec scout-api python -c 'import pip' 2>/dev/null \
-	  || $(CONTAINER_CLI) exec scout-api python -m ensurepip --quiet
+	  || $(CONTAINER_CLI) exec scout-api python -m ensurepip >/dev/null
 	@$(CONTAINER_CLI) exec scout-api python -m pip install --quiet pytest pytest-asyncio
 	@echo "Running unit tests..."
 	@$(CONTAINER_CLI) exec -e PYTHONPATH=/app scout-api python -m pytest /app/tests/unit -q

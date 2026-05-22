@@ -51,10 +51,7 @@ def _load_overrides() -> dict[str, Price]:
         return {}
     try:
         data = json.loads(raw)
-        return {
-            name: Price(float(p["input"]), float(p["output"]))
-            for name, p in data.items()
-        }
+        return {name: Price(float(p["input"]), float(p["output"])) for name, p in data.items()}
     except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
         log.warning("llm_prices_json.invalid", error=str(exc))
         return {}

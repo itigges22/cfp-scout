@@ -59,9 +59,7 @@ class TopicBase(StrictBase):
         for item in value:
             stripped = item.strip()
             if not (2 <= len(stripped) <= 60):
-                raise ValueError(
-                    f"alias '{item}': must be 2-60 chars (after stripping whitespace)"
-                )
+                raise ValueError(f"alias '{item}': must be 2-60 chars (after stripping whitespace)")
         return [item.strip() for item in value]
 
 

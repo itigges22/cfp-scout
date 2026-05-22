@@ -107,10 +107,10 @@ async def _build_graph() -> nx.Graph:
         # ---- Nodes ---------------------------------------------------
         # Conferences (excluding quarantined — they're inert to matching).
         confs = (
-            await session.execute(
-                select(Conference).where(Conference.status != "quarantined")
-            )
-        ).scalars().all()
+            (await session.execute(select(Conference).where(Conference.status != "quarantined")))
+            .scalars()
+            .all()
+        )
         for c in confs:
             graph.add_node(
                 _nid("conference", c.id),
@@ -137,9 +137,7 @@ async def _build_graph() -> nx.Graph:
             )
 
         # SMEs (active only).
-        smes = (
-            await session.execute(select(Sme).where(Sme.is_active.is_(True)))
-        ).scalars().all()
+        smes = (await session.execute(select(Sme).where(Sme.is_active.is_(True)))).scalars().all()
         for s in smes:
             graph.add_node(
                 _nid("sme", s.id),
@@ -150,10 +148,14 @@ async def _build_graph() -> nx.Graph:
 
         # Audiences (active only).
         auds = (
-            await session.execute(
-                select(AudienceProfile).where(AudienceProfile.is_active.is_(True))
+            (
+                await session.execute(
+                    select(AudienceProfile).where(AudienceProfile.is_active.is_(True))
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for a in auds:
             graph.add_node(
                 _nid("audience", a.id),
@@ -175,10 +177,14 @@ async def _build_graph() -> nx.Graph:
 
         # Messaging documents (active only).
         msgs = (
-            await session.execute(
-                select(MessagingDocument).where(MessagingDocument.is_active.is_(True))
+            (
+                await session.execute(
+                    select(MessagingDocument).where(MessagingDocument.is_active.is_(True))
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for m in msgs:
             graph.add_node(
                 _nid("messaging", m.id),
@@ -188,8 +194,8 @@ async def _build_graph() -> nx.Graph:
 
         # Sources.
         srcs = (
-            await session.execute(select(Source).where(Source.enabled.is_(True)))
-        ).scalars().all()
+            (await session.execute(select(Source).where(Source.enabled.is_(True)))).scalars().all()
+        )
         for src in srcs:
             graph.add_node(
                 _nid("source", src.id),
@@ -269,8 +275,9 @@ async def _build_graph() -> nx.Graph:
         from app.db.models.entities import RawPage  # local: avoid top-level cycle risk
 
         rollup_q = await session.execute(
-            select(ConferenceSource.conference_id, RawPage.source_id)
-            .join(RawPage, RawPage.id == ConferenceSource.raw_page_id)
+            select(ConferenceSource.conference_id, RawPage.source_id).join(
+                RawPage, RawPage.id == ConferenceSource.raw_page_id
+            )
         )
         for conf_id, src_id in rollup_q.all():
             _safe_add_edge(

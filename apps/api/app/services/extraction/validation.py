@@ -23,7 +23,6 @@ import pycountry
 
 from app.services.extraction.schema import ExtractedConference
 
-
 # ---------------------------------------------------------------------------
 # Confidence tuning knobs. Easy to grep + tweak after first 50 conferences.
 # ---------------------------------------------------------------------------
@@ -146,9 +145,7 @@ def _structural_confidence(e: ExtractedConference) -> float:
 # ---------------------------------------------------------------------------
 # Rule set
 # ---------------------------------------------------------------------------
-def _apply_rules(
-    e: ExtractedConference, *, today: date
-) -> list[RuleResult]:
+def _apply_rules(e: ExtractedConference, *, today: date) -> list[RuleResult]:
     rs: list[RuleResult] = []
 
     # 1. date ordering

@@ -71,7 +71,7 @@ async def extract(
 
     try:
         resp = await get_llm_client().chat(req, db=db)
-    except Exception as exc:  # noqa: BLE001 — surface as routed failure
+    except Exception as exc:
         log.warning("extraction.llm_call_failed", error=str(exc))
         return None, f"llm_call_failed: {exc}"
 

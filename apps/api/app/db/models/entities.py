@@ -36,7 +36,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.models._mixins import TimestampedMixin, uuid_pk
 
-
 # ===========================================================================
 # Manual inputs — team-curated reference data.
 # ===========================================================================
@@ -66,9 +65,7 @@ class MessagingDocument(TimestampedMixin, Base):
     )
 
     raw_content: Mapped[str | None] = mapped_column(Text)
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true")
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
 
 
 class AudienceProfile(TimestampedMixin, Base):
@@ -90,9 +87,7 @@ class AudienceProfile(TimestampedMixin, Base):
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )
 
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true")
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
 
 
 class StrategicPillar(TimestampedMixin, Base):
@@ -144,9 +139,7 @@ class Sme(TimestampedMixin, Base):
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
 
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true")
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
 
 
 class Topic(TimestampedMixin, Base):
@@ -167,9 +160,7 @@ class Topic(TimestampedMixin, Base):
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )
 
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true")
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     pending_review: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
@@ -187,17 +178,13 @@ class ConferenceSeries(TimestampedMixin, Base):
     aliases: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )
-    description: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default=text("''")
-    )
+    description: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
     typical_month: Mapped[int | None] = mapped_column(SmallInteger)
     typical_topics: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )
     homepage: Mapped[str | None] = mapped_column(Text)
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true")
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
 
 
 class PastConference(TimestampedMixin, Base):
@@ -243,13 +230,11 @@ class Source(TimestampedMixin, Base):
     url: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
 
-    enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true")
-    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     # DateTime with timezone — the 15-min "due for crawl" check needs sub-day
     # precision, which a Date column would round away. Migrated 2026-05-22 in
     # the same migration that bumped raw_pages.fetched_at to DateTime.
-    last_crawled_at: Mapped["datetime | None"] = mapped_column(DateTime(timezone=True))
+    last_crawled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     crawl_cadence: Mapped[str] = mapped_column(
         # Stored as interval; SQLAlchemy returns timedelta.
         # Use Text here to keep the ORM type simple at the app layer for now;
@@ -329,9 +314,7 @@ class Conference(TimestampedMixin, Base):
     location_city: Mapped[str | None] = mapped_column(String(120))
     location_country: Mapped[str | None] = mapped_column(String(2))
 
-    is_virtual: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
-    )
+    is_virtual: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     venue: Mapped[str | None] = mapped_column(String(200))
     website: Mapped[str | None] = mapped_column(Text)
 
@@ -363,9 +346,7 @@ class Conference(TimestampedMixin, Base):
         ForeignKey("app.conference_series.id", ondelete="SET NULL"),
     )
 
-    freshness_score: Mapped[float] = mapped_column(
-        nullable=False, server_default=text("1.0")
-    )
+    freshness_score: Mapped[float] = mapped_column(nullable=False, server_default=text("1.0"))
 
 
 class ConferenceSource(Base):

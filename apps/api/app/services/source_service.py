@@ -86,9 +86,7 @@ async def create_source(db: AsyncSession, payload: SourceCreate) -> Source:
     return row
 
 
-async def update_source(
-    db: AsyncSession, source_id: UUID, payload: SourceUpdate
-) -> Source:
+async def update_source(db: AsyncSession, source_id: UUID, payload: SourceUpdate) -> Source:
     row = await get_source(db, source_id)
     before = model_to_audit_dict(row)
 

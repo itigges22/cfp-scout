@@ -33,9 +33,7 @@ log = structlog.get_logger("scout.tasks.narrative")
 
 async def _do_compute(*, conference_id: str, force: bool = False) -> dict[str, Any]:
     async with get_session_factory()() as session:
-        result = await compute_narratives_for_top_smes(
-            session, UUID(conference_id), force=force
-        )
+        result = await compute_narratives_for_top_smes(session, UUID(conference_id), force=force)
         await session.commit()
     return result.to_stats()
 
@@ -57,9 +55,7 @@ async def _do_recompute_all() -> dict[str, Any]:
     enqueued: list[str] = []
     async with get_session_factory()() as session:
         rows = (
-            await session.execute(
-                select(Conference.id).where(Conference.status != "quarantined")
-            )
+            await session.execute(select(Conference.id).where(Conference.status != "quarantined"))
         ).all()
     for (cid,) in rows:
         enqueue_now(

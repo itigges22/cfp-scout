@@ -13,9 +13,9 @@ Plan 12 will add:
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import AsyncIterator
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import FastAPI
@@ -46,7 +46,7 @@ def _redacted_settings_dump(settings) -> dict[str, object]:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Yielded once per app boot. Startup before yield; shutdown after."""
     global PROCESS_START_TIME
-    PROCESS_START_TIME = datetime.now(tz=timezone.utc)
+    PROCESS_START_TIME = datetime.now(tz=UTC)
     settings = get_settings()
     log.info("scout.starting", config=_redacted_settings_dump(settings))
 

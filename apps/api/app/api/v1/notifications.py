@@ -14,7 +14,6 @@ per-user scoping.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
 from uuid import UUID
 
 import structlog
@@ -83,9 +82,7 @@ async def list_notifications(
 
 
 @router.get("/unread-count")
-async def unread_count(
-    db: DbSession, kind: str | None = Query(default=None)
-) -> dict:
+async def unread_count(db: DbSession, kind: str | None = Query(default=None)) -> dict:
     """Bell-badge count. Filterable by kind so the UI can spin separate badges."""
     stmt = select(func.count(Notification.id)).where(Notification.seen.is_(False))
     if kind:

@@ -13,10 +13,6 @@ matcher's past-attendance bonus to assign without human confirmation. The
 detector only suggests; the API caller commits.
 """
 
-from app.services.series.detector import (
-    SeriesSuggestion,
-    suggest_series_for_unlinked,
-)
 from app.services.series.crud import (
     assign_conference_to_series,
     create_series,
@@ -24,13 +20,17 @@ from app.services.series.crud import (
     unassign_conference_from_series,
     update_series,
 )
+from app.services.series.detector import (
+    SeriesSuggestion,
+    suggest_series_for_unlinked,
+)
 
 __all__ = [
     "SeriesSuggestion",
-    "suggest_series_for_unlinked",
     "assign_conference_to_series",
-    "unassign_conference_from_series",
     "create_series",
-    "update_series",
     "deactivate_series",
+    "suggest_series_for_unlinked",
+    "unassign_conference_from_series",
+    "update_series",
 ]

@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from app.services.lifecycle.decay import (
     DECAY_ALPHA,
     apply_decay_multiplier,
@@ -18,32 +17,30 @@ class TestComputeFreshness:
         assert compute_freshness(reference_time=None, half_life_days=60) == 1.0
 
     def test_future_reference_is_one(self) -> None:
-        future = datetime.now(tz=timezone.utc) + timedelta(days=7)
+        future = datetime.now(tz=UTC) + timedelta(days=7)
         assert compute_freshness(reference_time=future, half_life_days=60) == 1.0
 
     def test_zero_age_is_one(self) -> None:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         assert compute_freshness(reference_time=now, half_life_days=60, now=now) == 1.0
 
     def test_one_half_life_is_half(self) -> None:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         old = now - timedelta(days=60)
         result = compute_freshness(reference_time=old, half_life_days=60, now=now)
         assert result == pytest.approx(0.5, abs=0.001)
 
     def test_two_half_lives_is_quarter(self) -> None:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         old = now - timedelta(days=120)
         result = compute_freshness(reference_time=old, half_life_days=60, now=now)
         assert result == pytest.approx(0.25, abs=0.001)
 
     def test_naive_datetime_treated_as_utc(self) -> None:
         # A reference_time without tzinfo should be coerced, not crash.
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         old_naive = (now - timedelta(days=60)).replace(tzinfo=None)
-        result = compute_freshness(
-            reference_time=old_naive, half_life_days=60, now=now
-        )
+        result = compute_freshness(reference_time=old_naive, half_life_days=60, now=now)
         assert result == pytest.approx(0.5, abs=0.001)
 
 

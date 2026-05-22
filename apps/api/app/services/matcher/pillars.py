@@ -48,17 +48,17 @@ class PillarStageResult:
     matched_pillar_name: str | None
 
 
-async def stage_b_pillar_alignment(
-    db: AsyncSession, conference_id: UUID
-) -> PillarStageResult:
+async def stage_b_pillar_alignment(db: AsyncSession, conference_id: UUID) -> PillarStageResult:
     """Compute pillar alignment for ``conference_id``.
 
     Returns the per-pillar breakdown + the matched (top) pillar — the
     rationale stage uses both.
     """
     pillars = (
-        await db.execute(select(StrategicPillar).order_by(StrategicPillar.display_order))
-    ).scalars().all()
+        (await db.execute(select(StrategicPillar).order_by(StrategicPillar.display_order)))
+        .scalars()
+        .all()
+    )
     if not pillars:
         # See module docstring: don't penalize when the team hasn't seeded
         # pillars yet.
@@ -71,13 +71,17 @@ async def stage_b_pillar_alignment(
         )
 
     conf_chunks = (
-        await db.execute(
-            select(DocumentChunk).where(
-                DocumentChunk.owner_type == "conference",
-                DocumentChunk.owner_id == conference_id,
+        (
+            await db.execute(
+                select(DocumentChunk).where(
+                    DocumentChunk.owner_type == "conference",
+                    DocumentChunk.owner_id == conference_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not conf_chunks:
         log.info("matcher.pillars.no_conference_chunks", conference_id=str(conference_id))
         return PillarStageResult(
@@ -113,7 +117,7 @@ async def stage_b_pillar_alignment(
         ),
         db=db,
     )
-    for pillar, vec in zip(pillars, desc_embed.vectors):
+    for pillar, vec in zip(pillars, desc_embed.vectors, strict=False):
         pillar_desc_vecs[pillar.id] = vec
 
     per_pillar: list[PillarHit] = []
@@ -161,6 +165,6 @@ def _cosine(a, b) -> float:
     if a is None or b is None:
         return 0.0
     s = 0.0
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):
         s += float(x) * float(y)
     return clamp01(s)

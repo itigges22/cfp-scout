@@ -61,7 +61,7 @@ async def generate_rationale(
     )
     try:
         resp = await get_llm_client().chat(req, db=db)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("matcher.rationale.failed", error=str(exc))
         return ""
     text = (resp.content or "").strip()
