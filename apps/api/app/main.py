@@ -30,6 +30,7 @@ from app.api.v1 import (
     admin_matcher,
     agent,
     audiences,
+    conference_series,
     conferences,
     graph,
     health,
@@ -86,6 +87,7 @@ app.include_router(audiences.router)
 app.include_router(smes.router)
 app.include_router(past_conferences.router)
 app.include_router(conferences.router)
+app.include_router(conference_series.router)
 app.include_router(sources.router)
 app.include_router(graph.router)
 app.include_router(topics.router)

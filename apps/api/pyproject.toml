@@ -46,6 +46,9 @@ dependencies = [
     # both heavier than we need for static-only crawling.
     "feedparser>=6.0",
     "selectolax>=0.3",
+    # PyYAML is used by the plan-23 series seed migration (db/seeds/
+    # conference_series.yaml). Tiny dep, widely-used + battle-tested.
+    "pyyaml>=6.0",
     # Extraction (plan 15): trafilatura strips boilerplate from scraped HTML
     # before the LLM sees the page; python-slugify generates conferences.slug.
     "trafilatura>=1.12",
