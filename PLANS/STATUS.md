@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 13 — APScheduler in-process; heartbeat job firing + persisting across restarts)
+**Last updated:** 2026-05-22 (plan 14 pass 1 — scraper foundation; live crawl of huggingface.co/events landed 37 raw_pages rows)
 
 ## Plan status
 
@@ -23,7 +23,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 11 | Embeddings & chunking | ✅ | Plain-text path live 2026-05-22; Docling chunker for PDFs lands in plan 12 |
 | 12 | PDF/RAG ingestion | ✅ | Completed 2026-05-22 — Docling parse + HybridChunker + embed verified end-to-end |
 | 13 | Background jobs (APScheduler) | ✅ | Completed 2026-05-22 — heartbeat firing + jobstore persists across restarts |
-| 14 | Web scraper | ⬜ | |
+| 14 | Web scraper | 🚧 | Pass 1 done 2026-05-22 (rss + page kinds, SSRF guard, robots, politeness, content-hash dedup, source CRUD, scrape cron). Pass 2: sitemap/ICS/wikicfp parsers + admin UI |
 | 15 | Data validation & routing | ⬜ | |
 | 16 | Knowledge graph | ⬜ | |
 | 17 | Fit matcher algorithm | ⬜ | |
@@ -470,6 +470,96 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 14 pass 1 — Web scraper foundation)
+- 🚧 **Plan 14 pass 1 complete**: HTTP-only scraper, two source kinds, full
+  source CRUD, scheduler integration, end-to-end verified.
+- **Deliberate deviation from the plan title (Crawl4AI Only)**: Crawl4AI's
+  dep tree is heavier than we need for static-only crawling, and even its
+  HTTP-only mode pulls in optional Playwright wiring. The spirit of the
+  plan (no JS, polite, hash-dedup, SSRF-guarded) is fully preserved via
+  ``httpx`` + ``feedparser`` + ``selectolax``. ADR-worthy; lighter for now.
+- **Scraper package** (`app/services/scraper/`):
+  - `client.py` — `make_async_client()` returns a Scout-branded
+    `httpx.AsyncClient` whose transport (`_SSRFGuardedTransport`) resolves
+    every request's hostname and refuses non-public IPs
+    (`ipaddress.ip_address.is_global` check). Fires on each redirect target
+    too. ``SSRFProtectionError`` exposed for callers that want to special-case.
+  - `politeness.py` —
+    - `RobotsCache` (24h TTL, per-host asyncio.Lock to serialize first fetch,
+      treats unreachable/404 robots as permissive)
+    - `RateLimiter` (per-host token bucket; configured by
+      `Source.politeness_delay_seconds` before any request goes out)
+  - `discovery.py` — kind dispatch:
+    - `rss` via feedparser (handles RSS + Atom)
+    - `page` via selectolax (lexbor parser; same-host filter; HTTP(S)-only)
+    - Hard cap of 100 URLs per discovery run (plan acceptance criterion)
+  - `fetch.py` — `fetch_one(url, ...)` is the leaf:
+    robots check → rate-limit acquire → conditional GET (If-None-Match /
+    If-Modified-Since from any prior fetch) → SHA-256 → dedup-by-hash (a
+    cross-URL match bumps `raw_pages.fetched_at` instead of re-writing) →
+    `<storage>/raw_pages/<source_id>/<sha256>.html` (0640) → insert
+    `raw_pages` row with parse_status='needs_js_render' if the visible-text
+    length is < 500 chars. Caps body at 5 MB. Per-URL failures are
+    aggregated, not raised.
+  - `storage.py` — `compute_sha256` + `save_raw_body` (idempotent on
+    re-save of identical bytes).
+  - `pipeline.py` — `crawl_source(db, source_id)` orchestrates: load Source
+    row → enforce enabled-check → create one shared client + politeness
+    helpers → call discovery → fan-out fetch → update Source.last_crawled_at
+    → return aggregated `CrawlResult` stats.
+- **Source CRUD** (`api/v1/sources.py` + `services/source_service.py` +
+  `schemas/source.py`):
+  - GET list (filterable by `enabled`, `kind`)
+  - POST create (Pydantic-strict, ``extra='forbid'``, cadence allow-list
+    regex `^\d{1,4} (minute|hour|day|week)s?$`)
+  - GET / PATCH / DELETE single
+  - POST `/{id}/crawl-now` enqueues an ad-hoc scrape via the scheduler
+    (job_id `scrape-<source_id>`; APScheduler's `max_instances=1` collapses
+    rapid retriggers)
+- **Cron wiring**: `app/scheduler.py` now registers two jobs — the existing
+  10-min heartbeat plus a new 15-min `poll_sources_due_for_crawl` cron.
+  The poll task uses
+  ``last_crawled_at IS NULL OR last_crawled_at < now() - crawl_cadence::interval``
+  to find due sources, then enqueues one scrape per via `enqueue_now`.
+- **Schema migration** (`20260522_1500_scraper.py`):
+  bumped `sources.last_crawled_at` and `raw_pages.fetched_at` from
+  `DATE` → `TIMESTAMPTZ`. The 15-min cron cadence needs sub-day precision;
+  the prior date columns would have rounded all times to "today".
+- **Latent bug fix across all entity services**: the timestamped mixin sets
+  `onupdate=func.now()` on `updated_at`. After `await db.flush()`, SQLAlchemy
+  marks that column expired so it can re-read the server-computed value.
+  Any sibling code that synchronously touched the row (notably
+  `model_to_audit_dict(obj)` to capture the post-update audit-after snapshot)
+  triggered a `MissingGreenlet` error and surfaced as HTTP 503 from the
+  RFC 7807 handler. Fix: `await db.refresh(obj)` immediately after flush in
+  every update + soft-delete path. Applied to `source_service`,
+  `audience_service`, `sme_service`, `messaging_service`,
+  `past_conference_service`, `topic_service` (both update and approve/reject).
+- **Deps**: `feedparser>=6.0`, `selectolax>=0.3`.
+- 🟢 **Verified live**:
+  - SSRF rejects `http://127.0.0.1:1/` and `http://169.254.169.254/` with
+    `SSRFProtectionError` BEFORE any TCP attempt.
+  - Created source for `https://huggingface.co/events`, kind=page, 2s
+    politeness; `crawl-now` ran in 73s, fetched 37 same-host pages from the
+    discovered link set, all 200s, 0 errors, files visible in
+    `/var/lib/scout/storage/raw_pages/<source_id>/<sha>.html` (0640).
+  - Re-crawl one minute later: 1 cache hit (304) + 36 dynamic-HTML diffs
+    (HuggingFace's Next.js serves non-deterministic HTML — content-hash
+    correctly distinguishes them). The 304 path proves conditional-GET wiring.
+  - Created a source pointing at `http://127.0.0.1:8000/`, kind=page →
+    `crawl-now` enqueued, scheduler fired it, `ingest_jobs.error_text` got
+    `SSRFProtectionError: Refusing to send request to non-public host...`.
+  - Audience `PUT /audience-profiles/{id}` updates work post-fix (was 503
+    before; latent across all entity-update paths).
+- 🐛 **Two fixes from real-world bring-up**:
+  1. `httpx.AsyncHTTPTransport` SSRF check needed to fire BEFORE the TCP
+     dial (a redirect could still resolve to a private IP). Implementation
+     resolves the host via `socket.getaddrinfo` inside
+     `handle_async_request` before delegating to the parent class.
+  2. Per-source DELETE (soft-delete) initially 503'd with MissingGreenlet —
+     same root cause as the entity-update bug above. Fixed at the same time
+     across every service.
 
 ### 2026-05-22 (plan 13 — Background jobs / APScheduler)
 - ✅ **Plan 13 complete**: in-process APScheduler against a Postgres jobstore.

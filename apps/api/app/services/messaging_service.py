@@ -143,6 +143,9 @@ async def update_messaging_document(
     for key, value in payload.model_dump().items():
         setattr(obj, key, value)
     await db.flush()
+    # TimestampedMixin.updated_at has onupdate=func.now(); flush expires it
+    # so a synchronous model_to_audit_dict access would trip MissingGreenlet.
+    await db.refresh(obj)
 
     await write_audit(
         db,
@@ -173,6 +176,7 @@ async def deactivate_messaging_document(
     before = model_to_audit_dict(obj)
     obj.is_active = False
     await db.flush()
+    await db.refresh(obj)  # see update_messaging_document
 
     await write_audit(
         db,

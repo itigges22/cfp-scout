@@ -39,6 +39,13 @@ dependencies = [
     # rest of the app rides asyncpg, but APScheduler 3.x is sync-only.
     "apscheduler[sqlalchemy]>=3.10",
     "psycopg[binary]>=3.2",
+    # Scraper (plan 14): no Playwright. We do HTTP-only fetching via httpx
+    # (already in deps), feed parsing via feedparser, HTML parsing via
+    # selectolax (very fast lexbor-based parser, much smaller than lxml).
+    # Crawl4AI was considered but its dep tree + Playwright optional path are
+    # both heavier than we need for static-only crawling.
+    "feedparser>=6.0",
+    "selectolax>=0.3",
 ]
 
 [tool.uv.sources]

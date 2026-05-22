@@ -120,6 +120,8 @@ async def update_past_conference(
     for key, value in payload.model_dump().items():
         setattr(obj, key, value)
     await db.flush()
+    # See audience_service.update_audience_profile for the rationale.
+    await db.refresh(obj)
 
     await write_audit(
         db,

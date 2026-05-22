@@ -112,6 +112,8 @@ async def update_topic(
     for key, value in data.items():
         setattr(obj, key, value)
     await db.flush()
+    # See audience_service.update_audience_profile for the rationale.
+    await db.refresh(obj)
 
     await write_audit(
         db,
@@ -140,6 +142,7 @@ async def approve_topic(
     obj.pending_review = False
     obj.is_active = True
     await db.flush()
+    await db.refresh(obj)  # see update_topic
 
     await write_audit(
         db,
@@ -168,6 +171,7 @@ async def reject_topic(
 
     obj.is_active = False
     await db.flush()
+    await db.refresh(obj)  # see update_topic
 
     await write_audit(
         db,

@@ -164,6 +164,10 @@ async def update_sme(
     for key, value in data.items():
         setattr(obj, key, value)
     await db.flush()
+    # See audience_service.update_audience_profile: refresh after flush so
+    # the next model_to_audit_dict access doesn't trip MissingGreenlet on
+    # the expired onupdate=now() updated_at column.
+    await db.refresh(obj)
 
     await write_audit(
         db,
@@ -193,6 +197,7 @@ async def deactivate_sme(
     before = model_to_audit_dict(obj)
     obj.is_active = False
     await db.flush()
+    await db.refresh(obj)  # see update_sme
 
     await write_audit(
         db,
