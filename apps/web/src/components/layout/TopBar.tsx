@@ -146,7 +146,7 @@ function DigestDropdown({
     <div
       role="dialog"
       aria-label="Notifications"
-      className="absolute right-0 top-full z-50 mt-2 w-[420px] max-w-[92vw] rounded-lg border border-border bg-surface-1 shadow-xl"
+      className="absolute right-0 top-full z-50 mt-2 w-[420px] max-w-[92vw] rounded-lg border border-border bg-surface-3 shadow-xl"
     >
       <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2.5">
         <span className="text-xs uppercase tracking-wider text-fg-subtle">
@@ -182,7 +182,7 @@ function DigestDropdown({
         )}
       </div>
       {latest ? (
-        <p className="border-t border-border-subtle px-4 py-2 text-[10px] text-fg-subtle">
+        <p className="border-t border-border-subtle px-4 py-2 text-xs text-fg-muted">
           Generated{" "}
           {new Date(
             (latest.payload as unknown as CfpDigestPayload).generated_at ??
@@ -227,7 +227,7 @@ function DigestBody({ payload }: { payload: CfpDigestPayload }) {
         if (entries.length === 0) return null;
         return (
           <section key={key}>
-            <h4 className="mb-1.5 px-1 text-[11px] font-medium uppercase tracking-wider text-fg-subtle">
+            <h4 className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wider text-fg-muted">
               {BUCKET_TITLES[key]}
             </h4>
             <ul className="flex flex-col gap-1">
@@ -259,9 +259,9 @@ function DigestEntryRow({ e }: { e: CfpDigestEntry }) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{e.name}</p>
-            <p className="text-[11px] text-fg-muted">
+            <p className="text-xs text-fg-muted">
               <span className="capitalize">{kindLabel}</span> closes{" "}
-              <span className="tabular-nums">{e.deadline_date}</span>{" "}
+              <span className="font-medium text-fg tabular-nums">{e.deadline_date}</span>{" "}
               <span className="text-fg-subtle">
                 ({e.days_until} day{e.days_until === 1 ? "" : "s"})
               </span>

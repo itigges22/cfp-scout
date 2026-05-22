@@ -15,8 +15,10 @@
   /* Canvas + surface */
   --color-canvas: #0e0e10;        /* page background */
   --color-surface: #18181b;       /* cards, panels */
+  --color-surface-1: #1d1d21;     /* slightly raised: list rows, composer */
   --color-surface-2: #232328;     /* elevated cards, hover */
-  --color-surface-3: #2a2a30;     /* most-elevated; popovers */
+  --color-surface-3: #2a2a30;     /* most-elevated; popovers, dropdowns */
+  --color-border-subtle: #25252b; /* barely-there separator inside cards */
   --color-border: #2e2e35;        /* hairline */
   --color-border-strong: #3f3f47; /* visible dividers */
 

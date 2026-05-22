@@ -208,11 +208,11 @@ function ScorePanel({
         <ScoreRow label="Pillar alignment" value={match.pillar_score} />
         <ScoreRow label="SME match" value={match.sme_score} />
         {match.rationale_text ? (
-          <div className="mt-2 rounded-md border border-border-subtle bg-surface-2 p-3 text-sm text-fg-muted">
-            <p className="mb-1 text-[10px] uppercase tracking-wider text-fg-subtle">
+          <div className="mt-2 rounded-md border border-border-subtle bg-surface-2 p-3 text-sm text-fg">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-muted">
               Rationale
             </p>
-            <p className="italic">{match.rationale_text}</p>
+            <p>{match.rationale_text}</p>
           </div>
         ) : null}
       </CardContent>
@@ -322,7 +322,7 @@ function SmeCard({ b }: { b: SmeBreakdown }) {
             <span className="text-xl font-semibold">{Math.round(b.composite * 100)}</span>
             <span className="text-xs text-fg-muted">/ 100</span>
           </div>
-          <span className="text-[10px] uppercase tracking-wider text-fg-subtle">composite</span>
+          <span className="text-xs font-medium uppercase tracking-wider text-fg-muted">composite</span>
         </div>
       </div>
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-5">
@@ -337,7 +337,7 @@ function SmeCard({ b }: { b: SmeBreakdown }) {
           <Badge variant="muted" className="self-start">
             AI-generated
           </Badge>
-          <p className="text-sm italic text-fg-muted">{b.narrative}</p>
+          <p className="text-sm text-fg">{b.narrative}</p>
         </div>
       ) : null}
     </div>
@@ -347,9 +347,9 @@ function SmeCard({ b }: { b: SmeBreakdown }) {
 function DimBar({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <div className="mb-1 flex items-baseline justify-between text-[11px]">
+      <div className="mb-1 flex items-baseline justify-between text-xs">
         <span className="text-fg-muted">{label}</span>
-        <span className="tabular-nums">{Math.round(value * 100)}</span>
+        <span className="font-medium text-fg tabular-nums">{Math.round(value * 100)}</span>
       </div>
       <Progress value={value} size="sm" />
     </div>
@@ -507,7 +507,7 @@ function DecisionPanel({
 
         {history.length > 0 ? (
           <div className="mt-3">
-            <p className="mb-2 text-[10px] uppercase tracking-wider text-fg-subtle">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">
               History
             </p>
             <ul className="space-y-1 text-xs text-fg-muted">
