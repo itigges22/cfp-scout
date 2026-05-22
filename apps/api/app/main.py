@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import (
+    admin_embeddings,
     admin_llm,
     audiences,
     health,
@@ -77,6 +78,7 @@ app.include_router(smes.router)
 app.include_router(past_conferences.router)
 app.include_router(topics.router)
 app.include_router(admin_llm.router)
+app.include_router(admin_embeddings.router)
 
 # ---- static SPA at / (FastAPI's StaticFiles, html=True for SPA fallback) --
 if STATIC_DIR.exists():
