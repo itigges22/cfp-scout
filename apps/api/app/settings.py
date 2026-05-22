@@ -103,6 +103,16 @@ class Settings(BaseSettings):
     match_w_pillar: float = 0.35
     match_w_sme: float = 0.30
 
+    # SME matcher (plan 18) per-dimension weights. Sum must equal 1.0; the
+    # validator below enforces. Per-dimension breakdown surfaces in
+    # /api/v1/conferences/{id}/smes so users can see why an SME ranked
+    # where they did.
+    sme_w_topic: float = 0.30
+    sme_w_audience: float = 0.25
+    sme_w_bio: float = 0.30
+    sme_w_location: float = 0.10
+    sme_w_past: float = 0.05
+
     decay_enabled: bool = True
 
     # ------------------------------------------------------------------
@@ -159,6 +169,22 @@ class Settings(BaseSettings):
         if abs(total - 1.0) > 0.001:
             raise ValueError(
                 f"MATCH_W_MESSAGING + MATCH_W_PILLAR + MATCH_W_SME must sum to 1.0; got {total}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _sme_matcher_weights_sum_to_one(self) -> "Settings":
+        total = (
+            self.sme_w_topic
+            + self.sme_w_audience
+            + self.sme_w_bio
+            + self.sme_w_location
+            + self.sme_w_past
+        )
+        if abs(total - 1.0) > 0.001:
+            raise ValueError(
+                "SME_W_TOPIC + SME_W_AUDIENCE + SME_W_BIO + SME_W_LOCATION + "
+                f"SME_W_PAST must sum to 1.0; got {total}"
             )
         return self
 

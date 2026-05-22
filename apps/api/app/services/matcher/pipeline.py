@@ -116,7 +116,7 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
     pl: PillarStageResult = await stage_b_pillar_alignment(db, conference.id)
 
     # ---- Stage C: SMEs ----------------------------------------------
-    sm: SmeStageResult = await stage_c_sme_match(conference.id, gate=settings.match_s_gate)
+    sm: SmeStageResult = await stage_c_sme_match(db, conference.id, gate=settings.match_s_gate)
 
     # ---- Overall + status -------------------------------------------
     overall = clamp01(
