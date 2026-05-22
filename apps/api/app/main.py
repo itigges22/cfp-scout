@@ -26,6 +26,7 @@ from app.api.v1 import (
     admin_extraction,
     admin_jobs,
     admin_llm,
+    admin_matcher,
     audiences,
     graph,
     health,
@@ -88,6 +89,7 @@ app.include_router(admin_llm.router)
 app.include_router(admin_embeddings.router)
 app.include_router(admin_extraction.router)
 app.include_router(admin_jobs.router)
+app.include_router(admin_matcher.router)
 app.include_router(uploads.router)
 
 # ---- static SPA at / (FastAPI's StaticFiles, html=True for SPA fallback) --

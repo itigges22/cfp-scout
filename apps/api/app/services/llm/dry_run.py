@@ -40,6 +40,8 @@ def fake_chat(req: ChatRequest) -> ChatResponse:
     fingerprint = _hash_messages(req.messages)
     if req.purpose == "extract:conference":
         content = _canned_extract_conference(req, fingerprint)
+    elif req.purpose == "rationale:match":
+        content = _canned_match_rationale(req, fingerprint)
     else:
         content = (
             f"[dry-run] chat response for purpose={req.purpose!r}, "
@@ -56,6 +58,29 @@ def fake_chat(req: ChatRequest) -> ChatResponse:
         cost_usd=0.0,
         latency_ms=1,
         request_id=str(uuid.uuid4()),
+    )
+
+
+def _canned_match_rationale(req: ChatRequest, fingerprint: str) -> str:
+    """Deterministic rationale text for plan 17 in dry-run mode.
+
+    Echoes a couple of facts from the prompt so a human reading the dry-run
+    output can verify the pipeline wired the right snippets, without needing
+    a real LLM.
+    """
+    # Peek at the user message for the conference name and pillar mention so
+    # the canned text feels grounded.
+    user_msg = next((m.content for m in req.messages if m.role == "user"), "")
+    conf_name = "the conference"
+    for line in user_msg.splitlines():
+        if line.startswith("Conference:"):
+            conf_name = line.split(":", 1)[1].strip()
+            break
+    return (
+        f"[dry-run rationale] {conf_name} aligns with the product's messaging "
+        f"based on the supplied evidence snippets (fingerprint {fingerprint[:8]}). "
+        "Recommended SMEs come from the in-memory graph's topic + audience overlap. "
+        "Real LLM rationale lands when LLM_DRY_RUN=false."
     )
 
 

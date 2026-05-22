@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 16 pass 1 — knowledge graph live; candidate-SME ranking from real Conference↔Topic↔SME triangle)
+**Last updated:** 2026-05-22 (plan 17 — fit matcher live; 3-stage gate + rationale + bulk recompute, all 3 conferences scored)
 
 ## Plan status
 
@@ -26,7 +26,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 14 | Web scraper | 🚧 | Pass 1 done 2026-05-22 (rss + page kinds, SSRF guard, robots, politeness, content-hash dedup, source CRUD, scrape cron). Pass 2: sitemap/ICS/wikicfp parsers + admin UI |
 | 15 | Data validation & routing | 🚧 | Pass 1 done 2026-05-22 (extract→validate→route→persist; slug dedup; topic normalization). Pass 2: pg_trgm fuzzy dedup + field-merge + content_versions + quarantine_reasons table |
 | 16 | Knowledge graph | 🚧 | Pass 1 done 2026-05-22 (NetworkX loader + 60s cache + 5 queries + viz; junction-write backfill for SME + extraction). Pass 2: pillar coverage seeded after plan 17, full-graph view in plan 21 |
-| 17 | Fit matcher algorithm | ⬜ | |
+| 17 | Fit matcher algorithm | ✅ | Completed 2026-05-22 (3-stage gate, conference-on-extract embed, rationale, bulk recompute, auto-enqueue from extraction; algorithm_version=matcher.v1.0) |
 | 18 | SME matcher | ⬜ | |
 | 19 | SME fit narrative | ⬜ | |
 | 20 | Dashboard & review UI | ⬜ | |
@@ -470,6 +470,75 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 17 — Fit matcher algorithm)
+- ✅ **Plan 17 complete**: 3-stage gate (messaging → pillars → SMEs) +
+  rationale + persistence + auto-enqueue + bulk recompute, end-to-end
+  verified on the existing 3 conferences.
+- **Matcher package** (`app/services/matcher/`):
+  - `_scoring.py` — `clamp01`, `topk_mean`, `topk_max`, `cosine_from_distance`.
+    Pure functions; trivially testable.
+  - `messaging.py` (**Stage A**) — pulls all conference chunks +
+    messaging chunks, cross-pairs, top-K mean cosine (K=10). Returns score
+    + top-K snippets for the rationale stage. Falls back to score=0
+    cleanly when conference has no chunks (signals the embed-on-extract
+    hook didn't run).
+  - `pillars.py` (**Stage B**) — embeds each pillar description once
+    (`embed:pillar_desc`), joins with `messaging_pillars` evidence,
+    computes per-pillar top-K mean, overall = max. **Graceful degrade**:
+    no pillars seeded → score=1.0 so the matcher doesn't reject every
+    conference before the team has entered pillars via plan 31's XLSX.
+  - `smes.py` (**Stage C**) — uses plan 16's
+    `candidate_smes_for_conference` (graph topic + audience overlap).
+    Plan 18 will swap in a richer combined score; the interface is fixed.
+  - `rationale.py` — single chat call → 2-3 sentence rationale.
+    Prompt-injection hardened: evidence wrapped in
+    `<evidence>...</evidence>` with the same system-prompt rules as
+    plan 15 extraction.
+  - `pipeline.py` — `run_fit_match(db, conference_id)` orchestrator;
+    weighted overall = `0.35*m + 0.35*p + 0.30*s`; status assignment by
+    first-failing-gate (`low_messaging_fit` →
+    `needs_review_pillar` → `needs_sme_review` → `approved`);
+    UPSERT into `matches` keyed by `(conference_id, algorithm_version)`.
+    `ALGORITHM_VERSION = "matcher.v1.0"`.
+- **Conference embed-on-extract** (`app/services/extraction/pipeline.py`):
+  appended step 11 `_conference_embed_text(c)` — short structural blob
+  (name + topics + cfp_topics + location + venue) embedded under
+  `owner_type='conference'`. Non-fatal; admin can re-embed via
+  `/admin/embeddings/embed-owner`. Stage A reads these chunks.
+- **Auto-enqueue from extraction**: extraction's step 12 enqueues
+  `run_fit_match_task` after persist (job_id `match-<conf_id>`; APScheduler's
+  `max_instances=1` dedupes rapid retriggers). Quarantined extractions skipped.
+- **Task wiring** (`app/tasks/run_fit_match.py`):
+  - `run_fit_match_task(conference_id)` — one conference; tracked via
+    `run_as_job` into `app.ingest_jobs`.
+  - `recompute_all_matches()` — fans out one task per non-quarantined
+    conference; single ingest_jobs row for the fan-out itself.
+- **Dry-run rationale** (`app/services/llm/dry_run.py`): added
+  `purpose='rationale:match'` canned response so end-to-end works without
+  a real MaaS key.
+- **Admin endpoints** (`app/api/v1/admin_matcher.py`):
+  - `POST /admin/matcher/run-now/{cid}`        — sync run
+  - `POST /admin/matcher/run-now-async/{cid}`  — enqueue
+  - `POST /admin/matcher/recompute-all`        — bulk fan-out
+  - `GET  /admin/matcher/matches/recent`       — paginated inspection
+- 🟢 **Verified live (dry-run)**:
+  - First run on a conference without chunks → `messaging_score=0`,
+    `pillar_score=1.0` (no pillars seeded), `sme_score=1.0`,
+    `overall=0.65` (= 0.35*0 + 0.35*1 + 0.30*1), status `low_messaging_fit`.
+  - Re-parse the source raw_page → conference chunk written →
+    matcher run again: `messaging_score=0.70`, overall=0.895,
+    status `approved`, rationale persisted (279 chars), 1 recommended
+    SME (our test rag/llm expert).
+  - `/admin/matcher/recompute-all` → fan-out enqueued one task per
+    non-quarantined conference; all 3 ran in <35ms each. Two
+    conferences without chunks scored 0.35 = `low_messaging_fit`; the
+    third (with chunks) re-scored at 0.895 = `approved`.
+  - One matches row per (conference, algorithm_version) — UPSERT path
+    confirmed: re-runs update the existing row's scores rather than
+    inserting duplicates.
+  - `conferences.status` updated by the matcher (e.g. `needs_review` →
+    `approved` after the gates passed).
 
 ### 2026-05-22 (plan 16 pass 1 — Knowledge graph)
 - 🚧 **Plan 16 pass 1 complete**: NetworkX-backed in-memory graph over the
