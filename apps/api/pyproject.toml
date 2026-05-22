@@ -46,6 +46,10 @@ dependencies = [
     # both heavier than we need for static-only crawling.
     "feedparser>=6.0",
     "selectolax>=0.3",
+    # Extraction (plan 15): trafilatura strips boilerplate from scraped HTML
+    # before the LLM sees the page; python-slugify generates conferences.slug.
+    "trafilatura>=1.12",
+    "python-slugify>=8.0",
 ]
 
 [tool.uv.sources]
