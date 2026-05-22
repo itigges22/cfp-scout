@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 17 — fit matcher live; 3-stage gate + rationale + bulk recompute, all 3 conferences scored)
+**Last updated:** 2026-05-22 (plan 18 — SME matcher mechanical score; 5-dimension per-SME breakdown live via /conferences/{id}/smes)
 
 ## Plan status
 
@@ -27,7 +27,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 15 | Data validation & routing | 🚧 | Pass 1 done 2026-05-22 (extract→validate→route→persist; slug dedup; topic normalization). Pass 2: pg_trgm fuzzy dedup + field-merge + content_versions + quarantine_reasons table |
 | 16 | Knowledge graph | 🚧 | Pass 1 done 2026-05-22 (NetworkX loader + 60s cache + 5 queries + viz; junction-write backfill for SME + extraction). Pass 2: pillar coverage seeded after plan 17, full-graph view in plan 21 |
 | 17 | Fit matcher algorithm | ✅ | Completed 2026-05-22 (3-stage gate, conference-on-extract embed, rationale, bulk recompute, auto-enqueue from extraction; algorithm_version=matcher.v1.0) |
-| 18 | SME matcher | ⬜ | |
+| 18 | SME matcher | ✅ | Completed 2026-05-22 (5-dim breakdown: topic/audience Jaccard, bio cosine, location proximity, past-attendance; /conferences/{id}/smes endpoint with above-gate + near-misses) |
 | 19 | SME fit narrative | ⬜ | |
 | 20 | Dashboard & review UI | ⬜ | |
 | 21 | Graph exploration view | ⬜ | |
@@ -470,6 +470,62 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 18 — SME matcher mechanical score)
+- ✅ **Plan 18 complete**: refined Stage C with a five-dimension weighted
+  breakdown per (conference, SME). Per-SME scores surface via a new
+  `/api/v1/conferences/{id}/smes` endpoint with above-gate + near-misses.
+- **New code**:
+  - `app/services/matcher/_continents.py` — ISO-3166 alpha-2 → continent
+    map (NA/SA/EU/AS/OC/AF) covering ~50 conference-likely countries.
+    Unknown codes default to "different continent" (explicit fallback).
+  - `app/services/matcher/sme_ranker.py` —
+    `rank_smes_for_conference(db, conference_id, k, gate)`:
+    - **Topic overlap**: Jaccard between `conference_topics` (active +
+      non-pending) and `sme_topics`. 0 if either set is empty.
+    - **Audience overlap**: Jaccard between `conference_audiences` and
+      `sme_audiences`. Stays 0 until plan 16 pass 2 / plan 17 pass 2
+      populates conference-side audience edges.
+    - **Bio similarity**: mean of top-3 cosines between conference
+      chunks (`owner_type='conference'`) and SME bio chunks
+      (`owner_type='sme_bio'`).
+    - **Location proximity**: virtual or same-country → 1.0,
+      same-continent → 0.6, otherwise → 0.3.
+    - **Past attendance**: 1.0 if the SME is in
+      `past_conferences.attended_sme_ids` for the candidate's series.
+      Plan 23 wires the series linkage; until then this stays 0.
+    - Composite = sum of dimension * env weight; clamped to [0, 1].
+    - Returns `RankerResult(above_gate, near_misses)`. `near_misses` =
+      candidates within 0.10 of the gate; when nothing clears the gate,
+      surfaces the top-K instead so the dashboard still has candidates.
+    - Filters out `is_active=false` (acceptance criterion).
+  - `app/services/matcher/smes.py` — rewritten to delegate to the new
+    ranker while keeping the `SmeStageResult` shape that the plan-17
+    pipeline already consumes.
+  - `app/api/v1/conferences.py` — new router:
+    - `GET /conferences` (paginated; filterable by status; default
+      excludes quarantined)
+    - `GET /conferences/{id}`
+    - `GET /conferences/{id}/smes?k=5` — full breakdown JSON with
+      `above_gate`, `near_misses`, gate, weights.
+- **Settings**: `Settings.sme_w_{topic,audience,bio,location,past}` with
+  defaults `0.30/0.25/0.30/0.10/0.05` and a `model_validator` that fails
+  startup if they don't sum to 1.0. Documented in `.env` next to the
+  existing MATCH_W_* weights.
+- 🟢 **Verified live (dry-run)**:
+  - Approved conference (has chunks + matching topics + US-based SME):
+    `topic_overlap=1.0, audience=0.0, bio=1.0, location=1.0, past=0.0` →
+    composite `0.7` → above gate (0.5).
+  - Low-fit conference (no chunks, no matching topics):
+    `topic=0, audience=0, bio=0, location=1.0, past=0` → composite `0.1`
+    → surfaced in `near_misses` (still actionable for the admin).
+  - `is_external` flag flips correctly when `team != 'DAAM'` (UI hint).
+  - Matcher Stage C `sme_score` dropped from `1.0` (graph-only signal)
+    to `0.7` (mechanical composite) for the approved conference — overall
+    re-computed to `0.805` (= 0.35·0.7 + 0.35·1.0 + 0.30·0.7). Conference
+    still routes to `approved` (all gates pass).
+  - Sum-to-one weight validator confirmed by visual code path + the
+    parallel `match_w_*` validator pattern.
 
 ### 2026-05-22 (plan 17 — Fit matcher algorithm)
 - ✅ **Plan 17 complete**: 3-stage gate (messaging → pillars → SMEs) +

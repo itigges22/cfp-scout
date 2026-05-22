@@ -28,6 +28,7 @@ from app.api.v1 import (
     admin_llm,
     admin_matcher,
     audiences,
+    conferences,
     graph,
     health,
     messaging,
@@ -82,6 +83,7 @@ app.include_router(messaging.router)
 app.include_router(audiences.router)
 app.include_router(smes.router)
 app.include_router(past_conferences.router)
+app.include_router(conferences.router)
 app.include_router(sources.router)
 app.include_router(graph.router)
 app.include_router(topics.router)
