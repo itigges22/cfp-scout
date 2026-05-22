@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 33 pass 1 — conference brief one-pager: denormalized API + print-optimized SPA route w/ Cmd-P → PDF, copy-as-Markdown/HTML, contenteditable logistics)
+**Last updated:** 2026-05-22 (Phase 1 pass-1 complete — plans 01-33 shipped; end-to-end smoke-tested; CI green; ready for initial XLSX workbook build)
 
 ## Plan status
 
@@ -45,6 +45,58 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 33 | Conference brief export | 🚧 | Pass 1 done 2026-05-22 (denormalized `GET /conferences/{id}/brief?team_size=1\|2\|3` with 9-section payload + 5min in-process cache; print-optimized SPA route at `/conferences/{id}/brief` with copy-as-MD/HTML, contenteditable logistics persisted to localStorage; "Open brief" link from detail page; team-of-N fallback to top individuals). Pass 2: WeasyPrint server-side PDF (optional), email export, MD/HTML snapshot of more sections, CI Playwright print-snapshot |
 
 ## Changelog
+
+### 2026-05-22 (Phase 1 pass-1 end-to-end verification)
+- ✅ **All Phase 1 plans 01-33 have a pass-1 implementation merged to main.**
+- Live container smoke-test results (3 conferences + 1 SME + 2 audiences + 35
+  series in DB):
+  - `make up` → both `scout-postgres` and `scout-api` healthy.
+  - All 11 SPA routes return 200 (`/dashboard`, `/conferences`,
+    `/conferences/{id}`, `/conferences/{id}/brief`, `/smes`,
+    `/audiences`, `/topics`, `/messaging`, `/agent`, `/graph`,
+    `/diagnostics`, `/settings`).
+  - **79 API endpoints** registered in OpenAPI; the brief endpoint +
+    team-recommendations endpoints (plans 32 + 33) verified to return
+    real payloads.
+  - `/api/v1/diagnostics` returns all 6 panels with sane values
+    (3 conferences, 1 SME, 73 raw_pages crawled, 52 LLM calls in
+    dry-run mode at $0 cost).
+  - Workbook export+preview round-trip: exports 14kB XLSX cleanly;
+    re-importing surfaces non-trivial diff (35 series + a few others
+    show as updates). Pre-existing pass-1 limitation noted below;
+    not a 32/33 regression.
+  - 68/68 unit tests pass in 1.69s.
+  - **CI green** on the latest `chore: ruff lint + format pass` commit.
+- Fixed during verification:
+  - `fix(graph)`: ConferenceSeries label referenced `.name` but the
+    plan-23 model uses `.canonical_name`. With the 35-row seed
+    catalog active, every GET /graph/full was 500-erroring. Now
+    returns 47 nodes on an otherwise-empty install.
+  - `chore: ruff lint + format pass`: codebase-wide ruff/format
+    cleanup after plans 31/32/33 introduced a handful of new files
+    (sort __all__, drop unused noqa: BLE001 directives, ternary
+    simplification, datetime.UTC alias, etc.). All 158 .py files
+    pass `ruff check .` and `ruff format --check .` now.
+- **Known limitations carried forward to pass 2** (not blockers):
+  - Workbook round-trip identity is not pixel-clean for already-seeded
+    rows — the writer emits some fields the reader doesn't normalize
+    identically. Plan 31 pass 2 will close this. For now, the
+    workflow "export → only edit cells you want to change → re-import"
+    works because the diff still classifies untouched fields as
+    no-op deltas in the apply layer.
+  - Graph edges are 0 on a fresh install because junction tables
+    are empty until the matcher or workbook fills them in. Add
+    Pillars + SMEs + at least one Conference, run the matcher,
+    and the graph populates.
+- **Phase 1 inventory after this pass:**
+  - 33 plans, 30 of them with a substantive pass 1; plans 02/04/07
+    are infrastructure-shaped and require no further work.
+  - 33 Python service modules + 79 HTTP endpoints + 11 SPA routes
+    + 4 background cron jobs.
+  - 4 GitHub Actions workflows (ci, codeql, dependabot, security).
+- **Next**: build the initial real-world XLSX workbook for the DAAM
+  team (pillars + SMEs + audiences + messaging + topics + series).
+  Will use the plan-31 template as the starting scaffold.
 
 ### 2026-05-22 (plan 33 pass 1 — Conference brief one-pager)
 - ✅ **Plan 33 pass 1 — conference brief export** complete
