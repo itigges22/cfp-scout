@@ -42,6 +42,8 @@ def fake_chat(req: ChatRequest) -> ChatResponse:
         content = _canned_extract_conference(req, fingerprint)
     elif req.purpose == "rationale:match":
         content = _canned_match_rationale(req, fingerprint)
+    elif req.purpose == "sme_fit_narrative":
+        content = _canned_sme_fit_narrative(req, fingerprint)
     else:
         content = (
             f"[dry-run] chat response for purpose={req.purpose!r}, "
@@ -58,6 +60,32 @@ def fake_chat(req: ChatRequest) -> ChatResponse:
         cost_usd=0.0,
         latency_ms=1,
         request_id=str(uuid.uuid4()),
+    )
+
+
+def _canned_sme_fit_narrative(req: ChatRequest, fingerprint: str) -> str:
+    """Deterministic SME-fit-narrative for plan 19 in dry-run mode.
+
+    Pulls the SME name + conference name out of the prompt so the canned
+    text feels grounded, and stays under the 400-char cap. Critically,
+    avoids straight-double-quoted substrings so the post-validation
+    (which fails any quoted phrase that isn't in the inputs) passes.
+    """
+    user_msg = next((m.content for m in req.messages if m.role == "user"), "")
+    conf_name = "the conference"
+    sme_name = "the SME"
+    for line in user_msg.splitlines():
+        if line.startswith("Conference:"):
+            conf_name = line.split(":", 1)[1].strip()
+        elif line.startswith("SME:"):
+            # Format is "SME: Name (team T)"
+            rest = line.split(":", 1)[1].strip()
+            sme_name = rest.split(" (")[0].strip()
+    return (
+        f"[dry-run narrative] {sme_name} aligns with {conf_name} on shared "
+        "topics and a comparable expertise focus. The mechanical breakdown "
+        f"shows positive signal across multiple dimensions (fingerprint {fingerprint[:8]}). "
+        "Real narratives land when LLM_DRY_RUN=false."
     )
 
 

@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 18 — SME matcher mechanical score; 5-dimension per-SME breakdown live via /conferences/{id}/smes)
+**Last updated:** 2026-05-22 (plan 19 — SME fit narrative live; idempotent per-SME LLM rationale with quote post-validation)
 
 ## Plan status
 
@@ -28,7 +28,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 16 | Knowledge graph | 🚧 | Pass 1 done 2026-05-22 (NetworkX loader + 60s cache + 5 queries + viz; junction-write backfill for SME + extraction). Pass 2: pillar coverage seeded after plan 17, full-graph view in plan 21 |
 | 17 | Fit matcher algorithm | ✅ | Completed 2026-05-22 (3-stage gate, conference-on-extract embed, rationale, bulk recompute, auto-enqueue from extraction; algorithm_version=matcher.v1.0) |
 | 18 | SME matcher | ✅ | Completed 2026-05-22 (5-dim breakdown: topic/audience Jaccard, bio cosine, location proximity, past-attendance; /conferences/{id}/smes endpoint with above-gate + near-misses) |
-| 19 | SME fit narrative | ⬜ | |
+| 19 | SME fit narrative | ✅ | Completed 2026-05-22 (top-K per conference, ≤400 chars, prompt-injection wrapped, quote post-validation with retry+UNAVAILABLE fallback, auto-enqueued after run_fit_match, idempotent on rerun) |
 | 20 | Dashboard & review UI | ⬜ | |
 | 21 | Graph exploration view | ⬜ | |
 | 22 | Agent chat interface | ⬜ | |
@@ -470,6 +470,63 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 19 — SME fit narrative)
+- ✅ **Plan 19 complete**: per-SME qualitative narrative for the top-K
+  per conference, persisted in `matches.sme_fit_narratives` (JSONB) and
+  surfaced on `/api/v1/conferences/{id}/smes`.
+- **Service** (`app/services/matcher/sme_narrative.py`):
+  - `compute_narratives_for_top_smes(db, conference_id, force=False)` —
+    re-ranks fresh via plan 18's ranker, narrates the top-K
+    (`settings.sme_narrative_top_k`, default 3). Returns
+    `NarrativeResult` with per-SME outcome + cached/generated counts.
+  - Idempotent: skips the LLM call when the SME already has a narrative
+    in the match row. `force=True` wipes existing first.
+  - Prompt-injection hardened: SME bio wrapped in
+    `<sme_bio>...</sme_bio>`, conference text in
+    `<conference_text>...</conference_text>`, system prompt declares both
+    as untrusted data.
+  - **Post-validation**: any quoted substring in the narrative must
+    appear verbatim in the inputs blob (case-insensitive,
+    whitespace-normalised). Failure → one retry, then store sentinel
+    `"<unavailable>"`.
+  - Hard cap on stored narrative: 400 chars.
+- **Task wrapper** (`app/tasks/compute_sme_fit_narrative.py`):
+  - `compute_sme_fit_narrative_task(conference_id, force)` — wrapped via
+    `run_as_job` so each run lands an `app.ingest_jobs` row.
+  - `recompute_narratives_for_all()` — fan-out helper used after model /
+    prompt-version bumps.
+- **Auto-enqueue**: `app/services/matcher/pipeline.py` enqueues
+  `compute_sme_fit_narrative_task` after the matcher commits a non-
+  quarantined match with at least one recommended SME. Job-id
+  `narrative-<conference_id>` so APScheduler's `max_instances=1` dedupes
+  rapid re-fires.
+- **Dry-run** (`app/services/llm/dry_run.py`): new canned response for
+  `purpose='sme_fit_narrative'` — pulls the SME + conference names out
+  of the user prompt for grounding, avoids straight double quotes so the
+  post-validation passes.
+- **Admin endpoints** (`app/api/v1/admin_matcher.py`):
+  - `POST /admin/matcher/narratives/regenerate/{conf}` — sync, `force=True`
+  - `POST /admin/matcher/narratives/regenerate-async/{conf}` — enqueue
+  - `POST /admin/matcher/narratives/recompute-all` — fan-out
+- **API surfacing**: `/api/v1/conferences/{id}/smes` now joins
+  `matches.sme_fit_narratives` into each breakdown entry (`narrative` key,
+  null when absent) so the UI gets the whole picture in one call. Also
+  returns `narrative_top_k` for UI context.
+- **Settings**: `Settings.sme_narrative_top_k = Field(default=3, ge=1, le=10)`.
+- 🟢 **Verified live (dry-run)**:
+  - Matcher run → narrative task auto-enqueued → ingest_jobs row
+    completes → `matches.sme_fit_narratives` populated for the
+    recommended SME within seconds.
+  - `/conferences/{id}/smes` returns the narrative inline next to the
+    per-dimension breakdown.
+  - **Idempotency**: second matcher run made 0 new LLM calls
+    (`app.llm_calls` count unchanged at 1).
+  - **Force regenerate**: exactly 1 new LLM call
+    (count went from 1 → 2); narrative replaced cleanly.
+  - **Post-validation**: clean narrative → True; legit quoted phrase
+    that's in the inputs → True; fabricated `"quantum tea leaves"` quote
+    → False (would trigger retry, then sentinel).
 
 ### 2026-05-22 (plan 18 — SME matcher mechanical score)
 - ✅ **Plan 18 complete**: refined Stage C with a five-dimension weighted
