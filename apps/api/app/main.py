@@ -32,6 +32,7 @@ from app.api.v1 import (
     audiences,
     conference_series,
     conferences,
+    diagnostics,
     graph,
     health,
     messaging,
@@ -101,6 +102,7 @@ app.include_router(admin_matcher.router)
 app.include_router(agent.router)
 app.include_router(notifications.router)
 app.include_router(versions.router)
+app.include_router(diagnostics.router)
 app.include_router(uploads.router)
 
 # ---- static SPA at / -----------------------------------------------------

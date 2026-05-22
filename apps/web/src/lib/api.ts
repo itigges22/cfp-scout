@@ -27,6 +27,8 @@ import type {
   DecisionListResponse,
   DecisionRead,
   CfpDigestMarkdown,
+  DiagnosticsResponse,
+  DiagnosticsRetryResponse,
   GraphResponse,
   MessagingDocumentCreate,
   MessagingDocumentRead,
@@ -394,4 +396,18 @@ export const agentApi = {
       method: "POST",
       body: { content, k },
     }),
+};
+
+// ---------------------------------------------------------------------------
+// Diagnostics (plan 26)
+// ---------------------------------------------------------------------------
+export const diagnosticsApi = {
+  get: () => request<DiagnosticsResponse>(`${BASE}/diagnostics`),
+  refresh: () =>
+    request<void>(`${BASE}/diagnostics/refresh`, { method: "POST" }),
+  retryJob: (job_id: string) =>
+    request<DiagnosticsRetryResponse>(
+      `${BASE}/diagnostics/jobs/${job_id}/retry`,
+      { method: "POST" },
+    ),
 };

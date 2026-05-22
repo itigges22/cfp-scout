@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 25 pass 1 — Ebbinghaus decay + content versioning; daily cron, before_flush listener, field-level diffs, /versions endpoint)
+**Last updated:** 2026-05-22 (plan 26 pass 1 — /diagnostics live; 6-panel aggregator, retry-failed-job button, 30s cache, freshness histogram)
 
 ## Plan status
 
@@ -35,7 +35,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 23 | Conference series tracking | 🚧 | Pass 1 done 2026-05-22 (35-series seed catalog + detector w/ pg_trgm + Python trigram alias fallback + CRUD + assign/unassign + matcher recompute hook). Pass 2: /settings/series UI + "Previous editions" panel on conference detail + weekly cron |
 | 24 | CFP-closing digest | ✅ | Completed 2026-05-22 (daily 09:00 cron, 0-7/8-14/15-30 buckets, score-ranked, persists in notifications, bell badge dropdown, copy-to-clipboard Markdown) |
 | 25 | Data lifecycle decay & versioning | 🚧 | Pass 1 done 2026-05-22 (daily decay cron + freshness math + before_flush versioning listener + GET /versions endpoint). Pass 2: wire decay into pillar + SME ranker cosines, restore-version mutation, history viewer UI |
-| 26 | Observability & diagnostics | ⬜ | |
+| 26 | Observability & diagnostics | 🚧 | Pass 1 done 2026-05-22 (6-panel aggregator @ /api/v1/diagnostics, 30s cache, /diagnostics page w/ auto-refresh, per-job retry, freshness histogram). Pass 2: WARN events on threshold crossing, optional OTel exporter |
 | 27 | Testing strategy | ⬜ | |
 | 28 | CI/CD pipeline | ⬜ | |
 | 29 | Security review & hardening | ⬜ | |
@@ -470,6 +470,70 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 26 pass 1 — Observability & diagnostics)
+- 🚧 **Plan 26 pass 1 complete**: single-call `/api/v1/diagnostics`
+  aggregator + new `/diagnostics` frontend page with six panels (LLM,
+  Jobs, Scraper, Data, Digest, System). 30-second in-memory cache, opt-in
+  30s client-side auto-refresh, per-failed-job retry button.
+- **Backend** (`apps/api/app/services/diagnostics/aggregator.py`):
+  - **LLM panel**: MTD + last-24h `{calls, tokens, cost_usd}`, last-24h
+    breakdown by `purpose`, budget bar vs `LLM_MONTHLY_BUDGET_USD` with
+    `threshold_warn` at ≥80%, last 10 `llm_calls.error` rows.
+  - **Jobs panel**: currently-running ingest_jobs with elapsed seconds,
+    failed-24h list with first-line error preview, status counts by kind,
+    APScheduler `next_run_time` for every registered cron.
+  - **Scraper panel**: per-source list with `last_crawled_at`, fetched
+    page count (`raw_pages` join), enabled + robots flags; JS-blocked
+    page count (`parse_status='needs_js_render'`); disabled-sources list.
+  - **Data panel**: conferences-by-status, active SME count + coverage
+    metrics (no_topics, no_audiences, short_bio), audience count,
+    pending topics, series count + unlinked-conference count,
+    active embedding model, **freshness histogram** (from plan 25's
+    `conference_freshness_histogram` helper), `decay_enabled` flag.
+  - **Digest panel**: latest `cfp_digest` notification's
+    generated_at + bucket counts + seen flag.
+  - **System panel**: postgres version + db size, storage path + disk
+    usage, process uptime (lifespan records `PROCESS_START_TIME`), env.
+  - 30s in-memory cache + asyncio lock for safe rebuild.
+- **API** (`apps/api/app/api/v1/diagnostics.py`):
+  - `GET  /diagnostics` — full payload, cached.
+  - `POST /diagnostics/refresh` — invalidate the cache (204).
+  - `POST /diagnostics/jobs/{id}/retry` — re-enqueue by reading
+    `ingest_jobs.kind` + `stats`. Knows the kwarg shape for
+    scrape_source, parse_raw_page, run_fit_match, sme_fit_narrative,
+    build_cfp_digest, run_decay_pass, heartbeat. Rate-limited 1/10s per
+    job-id (429 with explicit wait time).
+- **Frontend** (`apps/web/src/routes/diagnostics.tsx`): replaced the
+  placeholder with a real 6-card grid. Generated-at timestamp + "force
+  refresh" button + auto-refresh checkbox (default on). LLM card has
+  the budget bar with progress + by-purpose table. Jobs card has the
+  retry button inline on each failed row. Data card has the freshness
+  histogram as a tiny inline bar chart + pending-topic shortcut
+  badge linking to `/topics`. System card formats uptime/bytes.
+- **TS types** (`api-types.ts`): `DiagnosticsResponse` + `DiagnosticsRetryResponse`.
+- **Lifespan** (`app/lifespan.py`): records `PROCESS_START_TIME` so the
+  System panel can render uptime without shelling to /proc.
+- 🟢 **Verified live** (no rebuild — uvicorn hot-reload + 13s SPA build):
+  - `GET /api/v1/diagnostics` returns the full payload; 11ms warm
+    (well under plan-spec 500ms threshold).
+  - LLM panel shows 41 mtd calls / 20821 tokens / $0 (dry-run);
+    pct_used=0; 17 distinct purposes in the by-purpose breakdown.
+  - Jobs panel shows 0 running, 3 failed in last 24h (the SSRF test +
+    permission-pre-grant decay test from earlier plans), 4 next cron
+    fires (heartbeat, scrape_poll, decay_pass, cfp_digest).
+  - Data panel: 3 conferences (`approved`+2 `low_messaging_fit`),
+    embedding model `nomic-embed-text-v1-5` 768d, freshness histo all
+    3 in the highest bucket.
+  - Digest panel: latest digest with 2 entries.
+  - System panel: db_size_pretty="10239 kB", uptime ticking.
+  - `POST /diagnostics/jobs/{id}/retry` → 202 with new queued_job_id;
+    second call within 10s → 429 with "wait 9.9s" message.
+  - `POST /diagnostics/refresh` → 204; subsequent GET rebuilds.
+- **Deferred to pass 2**: structured WARN log events at threshold
+  crossings (budget 80%, repeated source failure, etc.), optional OTel
+  exporter, throughput sparkline chart (current panel shows per-kind
+  counts instead).
 
 ### 2026-05-22 (plan 25 pass 1 — Decay + content versioning)
 - 🚧 **Plan 25 pass 1 complete**: two unrelated lifecycle features in one

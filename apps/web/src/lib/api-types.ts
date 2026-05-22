@@ -368,6 +368,130 @@ export interface GraphResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Diagnostics (plan 26)
+// ---------------------------------------------------------------------------
+export interface DiagnosticsResponse {
+  generated_at: string;
+  cache_ttl_seconds: number;
+  llm: {
+    month_to_date: { calls: number; tokens: number; cost_usd: number };
+    last_24h: { calls: number; tokens: number; cost_usd: number };
+    budget: {
+      limit_usd: number | null;
+      spent_usd: number;
+      pct_used: number | null;
+      threshold_warn: boolean;
+    };
+    by_purpose_24h: Array<{
+      purpose: string;
+      calls: number;
+      tokens: number;
+      cost_usd: number;
+    }>;
+    recent_errors: Array<{
+      at: string | null;
+      model: string;
+      purpose: string;
+      error: string;
+    }>;
+  };
+  jobs: {
+    running: Array<{
+      id: string;
+      kind: string;
+      started_at: string | null;
+      elapsed_seconds: number | null;
+    }>;
+    failed_24h: Array<{
+      id: string;
+      kind: string;
+      started_at: string | null;
+      finished_at: string | null;
+      error_preview: string | null;
+    }>;
+    by_kind_24h: Record<string, Record<string, number>>;
+    next_fires: Array<{
+      id: string;
+      name: string;
+      next_run_time: string | null;
+    }>;
+  };
+  scraper: {
+    sources: Array<{
+      id: string;
+      name: string;
+      kind: string;
+      enabled: boolean;
+      robots_allowed: boolean;
+      last_crawled_at: string | null;
+      pages_fetched: number;
+      politeness_delay_seconds: number;
+    }>;
+    js_blocked_pages: number;
+    disabled_sources: Array<{ id: string; name: string }>;
+  };
+  data: {
+    conferences_by_status: Record<string, number>;
+    smes: {
+      total_active: number;
+      no_topics: number;
+      no_audiences: number;
+      short_bio: number;
+    };
+    audiences_active: number;
+    pending_topics: number;
+    series: { active_count: number; unlinked_conferences: number };
+    embedding_model: {
+      name: string;
+      dimension: number;
+      provider: string;
+    } | null;
+    freshness_histogram: {
+      buckets: number;
+      edges: number[];
+      counts: number[];
+      total: number;
+    };
+    decay_enabled: boolean;
+  };
+  digest: {
+    latest:
+      | {
+          id: string;
+          created_at: string;
+          generated_at: string | null;
+          seen: boolean;
+          bucket_counts: Record<string, number>;
+          total_entries: number;
+        }
+      | null;
+  };
+  system: {
+    postgres: {
+      version: string;
+      db_size_pretty: string;
+      db_size_bytes: number;
+    };
+    storage_path: string;
+    disk_usage: {
+      path: string;
+      total_bytes: number;
+      used_bytes: number;
+      free_bytes: number;
+    } | null;
+    process_started_at: string | null;
+    uptime_seconds: number | null;
+    env: string;
+  };
+}
+
+export interface DiagnosticsRetryResponse {
+  queued_job_id: string;
+  original_ingest_job_id: string;
+  kind: string;
+}
+
+// ---------------------------------------------------------------------------
 // Notifications (plan 24)
 // ---------------------------------------------------------------------------
 export interface NotificationRead {

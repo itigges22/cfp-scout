@@ -14,6 +14,7 @@ Plan 12 will add:
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import AsyncIterator
 
 import structlog
@@ -26,6 +27,9 @@ from app.services.lifecycle import register_versioning_listeners
 from app.settings import get_settings
 
 log = structlog.get_logger("scout.lifespan")
+
+# Recorded at startup; consumed by plan 26's /diagnostics for uptime.
+PROCESS_START_TIME: datetime | None = None
 
 
 def _redacted_settings_dump(settings) -> dict[str, object]:
@@ -41,6 +45,8 @@ def _redacted_settings_dump(settings) -> dict[str, object]:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Yielded once per app boot. Startup before yield; shutdown after."""
+    global PROCESS_START_TIME
+    PROCESS_START_TIME = datetime.now(tz=timezone.utc)
     settings = get_settings()
     log.info("scout.starting", config=_redacted_settings_dump(settings))
 
