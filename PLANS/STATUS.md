@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (Phase 1 pass-1 complete — plans 01-33 shipped; end-to-end smoke-tested; CI green; ready for initial XLSX workbook build)
+**Last updated:** 2026-05-22 (UX feedback round 1 — fixed notification dropdown transparency + small/low-contrast text + grayed-out buttons; added manual conference create with auto-rank; added editable settings UI at /settings/tunables for all 27 runtime knobs)
 
 ## Plan status
 
@@ -45,6 +45,67 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 33 | Conference brief export | 🚧 | Pass 1 done 2026-05-22 (denormalized `GET /conferences/{id}/brief?team_size=1\|2\|3` with 9-section payload + 5min in-process cache; print-optimized SPA route at `/conferences/{id}/brief` with copy-as-MD/HTML, contenteditable logistics persisted to localStorage; "Open brief" link from detail page; team-of-N fallback to top individuals). Pass 2: WeasyPrint server-side PDF (optional), email export, MD/HTML snapshot of more sections, CI Playwright print-snapshot |
 
 ## Changelog
+
+### 2026-05-22 (UX feedback round 1)
+User-reported pain points + audit-driven fixes. Five parallel research
+agents found root causes; three commits landed the fixes.
+
+- **Notification popup was transparent**. Root cause: `bg-surface-1`
+  and `border-border-subtle` were undefined Tailwind tokens; Tailwind
+  silently dropped them, leaving the dropdown with no background. Fixed
+  by adding the two missing CSS variables to `apps/web/src/styles/index.css`
+  and escalating the notification dropdown to `bg-surface-3` (the
+  popover-intent token).
+- **Small / low-contrast text** across the SPA. Bumped 10px/11px body
+  text to 12px (`text-xs`), upgraded `text-slate-500` italic prose to
+  unstyled `text-slate-700`, and replaced `text-fg-subtle` with
+  `text-fg-muted`/`text-fg` for data the user needs to scan (composite
+  score labels, dimension bars, rationale paragraph, agent session cost,
+  CFP-digest deadline rows).
+- **Grayed-out buttons + dead-end links**. Removed three intentionally-
+  disabled settings cards (Sources / Series / Workbook). Replaced the
+  Workbook card with an inline functional block (Download template /
+  Export current / Upload & preview with per-sheet diff table + confirm-
+  deletes-aware Apply). Wired the hardcoded-`disabled` Messaging "New"
+  button to a new `/messaging/new` form route that POSTs to the existing
+  `POST /api/v1/messaging-documents` endpoint.
+- **Manual conference create + auto-rank**:
+  - Backend: `POST /api/v1/conferences` with server-derived slug, 409 on
+    duplicate, audit log, graph cache invalidation, and **synchronous
+    matcher run** so the response includes the score. Failure surfaces
+    as `match_error`; the conference is still created.
+  - Frontend: `NewConferenceDialog` opened by a "+ New conference"
+    button on the conferences list. On success navigates to the detail
+    page so the user sees scores + recommended SMEs immediately.
+  - Verified locally: created "Manual Test Conference 2027" → got back
+    `match.overall_score=0.03` (low_messaging_fit) because the only
+    seeded SME doesn't match the topics — correct behavior.
+- **Editable settings UI**: every runtime tunable in
+  `apps/api/app/settings.py` (27 of them — LLM key, dry-run, monthly
+  budget, matcher gates + weights, SME ranker weights, team
+  recommendation weights, decay flag, scraper politeness, log level)
+  exposed at `/settings/tunables`:
+  - Backend: `app.app_setting_overrides` table (singleton-style
+    key/JSON-value); `app/services/settings_overrides.py` loads
+    on startup + merges via `Settings(**overrides)` inside
+    `get_settings()` (lru_cache'd, cleared on every successful PATCH).
+  - Three endpoints: `GET /api/v1/admin/settings` (with secrets
+    masked to last 4 chars), `PATCH /api/v1/admin/settings`
+    (partial update, validated against the full Settings model so
+    invariants like "matcher weights sum to 1.0" are enforced),
+    `DELETE /api/v1/admin/settings/{name}` (drop override, revert to
+    env default).
+  - SPA panel groups settings by domain, marks the four restart-
+    required keys (`llm_api_key`, `llm_base_url`, `llm_chat_model`,
+    `scraper_user_agent`, `log_format`) with a yellow chip and a
+    banner before save. Per-key "Reset to default" affordance.
+  - Verified locally: PATCH `{match_w_messaging: 0.8}` correctly
+    rejected with HTTP 422 ("MATCH_W_MESSAGING + MATCH_W_PILLAR +
+    MATCH_W_SME must sum to 1.0; got 1.45"). PATCH
+    `{decay_enabled: false}` succeeds and is visible in the GET
+    response with the actor_label + timestamp.
+- Tests: 68/68 unit tests pass. CI green on the preceding commit; the
+  P3 commit will run after this push.
 
 ### 2026-05-22 (Phase 1 pass-1 end-to-end verification)
 - ✅ **All Phase 1 plans 01-33 have a pass-1 implementation merged to main.**

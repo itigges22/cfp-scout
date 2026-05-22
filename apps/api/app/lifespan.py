@@ -62,6 +62,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Re-raise so uvicorn exits non-zero and compose restarts us.
         raise
 
+    # Load runtime settings overrides from the DB (P3 UX work). Done after
+    # the DB probe so we don't try to read a table that doesn't exist yet.
+    try:
+        from app.db.session import get_session_factory
+        from app.services import settings_overrides
+
+        async with get_session_factory()() as session:
+            await settings_overrides.load_from_db(session)
+        get_settings.cache_clear()
+        # Re-dump settings now that overrides have merged in.
+        log.info(
+            "scout.settings_overrides.ready",
+            count=len(settings_overrides.current()),
+        )
+    except Exception as exc:
+        log.warning("scout.settings_overrides.load_failed", error=str(exc))
+
     # Plan 25: register the content-versioning SQLAlchemy event listener.
     # Idempotent — safe to call on every boot. Done BEFORE the scheduler
     # so any startup task that mutates versioned entities gets logged.

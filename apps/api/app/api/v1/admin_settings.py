@@ -1,0 +1,524 @@
+"""/api/v1/admin/settings — read + tune runtime configuration (P3 UX).
+
+Exposes the runtime-tunable subset of ``app/settings.py`` as a UI-driven
+control panel. Each setting carries a kind (`int`/`float`/`bool`/`str`/
+`secret`), a domain group (LLM / matcher / SME / team / decay / scraper
+/ logging), a current value, and a ``restart_required`` flag that the UI
+surfaces as a warning where applicable.
+
+Endpoints:
+  * ``GET    /api/v1/admin/settings``     — read all exposed settings
+  * ``PATCH  /api/v1/admin/settings``     — write a partial update,
+                                             validated against the full
+                                             Settings model
+  * ``DELETE /api/v1/admin/settings/{name}`` — drop an override
+                                                (reverts to env-defined
+                                                default)
+"""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+
+import structlog
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, ConfigDict
+
+from app.db.session import DbSession
+from app.services import settings_overrides
+from app.settings import Settings, get_settings
+
+log = structlog.get_logger("scout.api.admin_settings")
+router = APIRouter(prefix="/api/v1/admin/settings", tags=["admin.settings"])
+
+
+SettingKind = Literal["int", "float", "bool", "str", "secret", "list_str"]
+SettingGroup = Literal["llm", "matcher", "sme", "team", "decay", "scraper", "logging"]
+
+
+class SettingSpec(BaseModel):
+    name: str
+    kind: SettingKind
+    group: SettingGroup
+    label: str
+    description: str
+    restart_required: bool = False
+    min_value: float | None = None
+    max_value: float | None = None
+    enum_values: list[str] | None = None
+
+
+# ---------------------------------------------------------------------------
+# What we expose. NOT exposed: DB creds, storage path, env, scheduler tz,
+# CORS, safety classifier (Phase 2). Those are install-time concerns.
+# ---------------------------------------------------------------------------
+SPECS: list[SettingSpec] = [
+    # LLM ---------------------------------------------------------------
+    SettingSpec(
+        name="llm_api_key",
+        kind="secret",
+        group="llm",
+        label="LLM API key",
+        description="Maas/OpenAI-compatible API key. Stored encrypted at rest "
+        "is a future feature; today the value lands in plain text in the DB.",
+        restart_required=True,
+    ),
+    SettingSpec(
+        name="llm_base_url",
+        kind="str",
+        group="llm",
+        label="LLM base URL",
+        description="OpenAI-compatible endpoint (e.g. https://maas.example/v1).",
+        restart_required=True,
+    ),
+    SettingSpec(
+        name="llm_chat_model",
+        kind="str",
+        group="llm",
+        label="Chat model",
+        description="Default chat model name. Per-purpose overrides below take precedence.",
+        restart_required=True,
+    ),
+    SettingSpec(
+        name="llm_dry_run",
+        kind="bool",
+        group="llm",
+        label="Dry-run mode",
+        description="If true, the LLM client returns canned responses and never calls the network. Useful when the key is bad or you want to demo without spending budget.",
+    ),
+    SettingSpec(
+        name="llm_monthly_budget_usd",
+        kind="float",
+        group="llm",
+        label="Monthly budget (USD)",
+        description="Soft cap on LLM spend per calendar month. Calls past this point are refused with a 429.",
+        min_value=0,
+        max_value=10_000,
+    ),
+    # Matcher gates -----------------------------------------------------
+    SettingSpec(
+        name="match_m_gate",
+        kind="float",
+        group="matcher",
+        label="Messaging fit gate",
+        description="Stage A threshold. Below this, the conference is marked low_messaging_fit.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="match_p_gate",
+        kind="float",
+        group="matcher",
+        label="Pillar alignment gate",
+        description="Stage B threshold. Below this, status flips to needs_review_pillar.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="match_s_gate",
+        kind="float",
+        group="matcher",
+        label="SME match gate",
+        description="Stage C threshold. Below this, status flips to needs_sme_review.",
+        min_value=0,
+        max_value=1,
+    ),
+    # Matcher weights (must sum to 1.0; validator on Settings enforces it)
+    SettingSpec(
+        name="match_w_messaging",
+        kind="float",
+        group="matcher",
+        label="Weight: messaging",
+        description="Component weight in overall_score. Sum of matcher weights must equal 1.0.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="match_w_pillar",
+        kind="float",
+        group="matcher",
+        label="Weight: pillar",
+        description="Component weight in overall_score. Sum of matcher weights must equal 1.0.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="match_w_sme",
+        kind="float",
+        group="matcher",
+        label="Weight: SME",
+        description="Component weight in overall_score. Sum of matcher weights must equal 1.0.",
+        min_value=0,
+        max_value=1,
+    ),
+    # SME ranker weights (must sum to 1.0) ------------------------------
+    SettingSpec(
+        name="sme_w_topic",
+        kind="float",
+        group="sme",
+        label="Weight: topic overlap",
+        description="Topic-Jaccard contribution to the SME composite. SME weights must sum to 1.0.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="sme_w_audience",
+        kind="float",
+        group="sme",
+        label="Weight: audience overlap",
+        description="Audience-Jaccard contribution. SME weights must sum to 1.0.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="sme_w_bio",
+        kind="float",
+        group="sme",
+        label="Weight: bio similarity",
+        description="Cosine-similarity contribution. SME weights must sum to 1.0.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="sme_w_location",
+        kind="float",
+        group="sme",
+        label="Weight: location",
+        description="Geo-proximity contribution. SME weights must sum to 1.0.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="sme_w_past",
+        kind="float",
+        group="sme",
+        label="Weight: past attendance",
+        description="Bonus for SMEs who attended this conference's series before. SME weights must sum to 1.0.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="sme_narrative_top_k",
+        kind="int",
+        group="sme",
+        label="Narrative top-K",
+        description="LLM call budget per conference for SME-fit narratives.",
+        min_value=1,
+        max_value=10,
+    ),
+    # Team recommendations (plan 32) -----------------------------------
+    SettingSpec(
+        name="team_topk_candidates",
+        kind="int",
+        group="team",
+        label="Team candidate pool size",
+        description="Top-K SMEs to enumerate teams from. Larger K = more combos = slower.",
+        min_value=2,
+        max_value=30,
+    ),
+    SettingSpec(
+        name="team_w_individual",
+        kind="float",
+        group="team",
+        label="Weight: avg individual fit",
+        description="Team composite weight on the mean per-SME score.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="team_w_coverage",
+        kind="float",
+        group="team",
+        label="Weight: coverage breadth",
+        description="Team composite weight on the fraction of conference topics covered.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="team_w_redundancy",
+        kind="float",
+        group="team",
+        label="Penalty: topic redundancy",
+        description="Subtracted from team composite for overlapping experts.",
+        min_value=0,
+        max_value=1,
+    ),
+    SettingSpec(
+        name="team_w_location",
+        kind="float",
+        group="team",
+        label="Penalty: location redundancy",
+        description="Subtracted from team composite if every pick is in the same city (in-person only).",
+        min_value=0,
+        max_value=1,
+    ),
+    # Decay -------------------------------------------------------------
+    SettingSpec(
+        name="decay_enabled",
+        kind="bool",
+        group="decay",
+        label="Decay enabled",
+        description="If false, freshness is stuck at 1.0 and the daily decay cron short-circuits.",
+    ),
+    # Scraper -----------------------------------------------------------
+    SettingSpec(
+        name="scraper_default_politeness_seconds",
+        kind="int",
+        group="scraper",
+        label="Default politeness (seconds)",
+        description="Min delay between requests to the same host. Per-source overrides exist.",
+        min_value=1,
+        max_value=60,
+    ),
+    SettingSpec(
+        name="scraper_user_agent",
+        kind="str",
+        group="scraper",
+        label="User-Agent",
+        description="Sent on every outbound scrape. Identify yourself; some hosts block defaults.",
+        restart_required=True,
+    ),
+    # Logging -----------------------------------------------------------
+    SettingSpec(
+        name="log_level",
+        kind="str",
+        group="logging",
+        label="Log level",
+        description="Python logging level. Takes effect on next request after change.",
+        enum_values=["DEBUG", "INFO", "WARNING", "ERROR"],
+    ),
+    SettingSpec(
+        name="log_format",
+        kind="str",
+        group="logging",
+        label="Log format",
+        description="json (default; for prod log shippers) or console (human-readable).",
+        enum_values=["json", "console"],
+        restart_required=True,
+    ),
+]
+_BY_NAME: dict[str, SettingSpec] = {s.name: s for s in SPECS}
+
+
+# ---------------------------------------------------------------------------
+# Read
+# ---------------------------------------------------------------------------
+class SettingValue(BaseModel):
+    spec: SettingSpec
+    value: Any  # masked for secrets
+    masked: bool = False
+    is_overridden: bool = False
+    overridden_at: str | None = None
+    actor_label: str | None = None
+
+
+class SettingsResponse(BaseModel):
+    items: list[SettingValue]
+
+
+def _mask(name: str, raw: Any) -> tuple[Any, bool]:
+    """Return (display_value, masked). Show last 4 chars for non-empty
+    secrets so users can sanity-check they have the right key without
+    leaking it."""
+    if not raw:
+        return ("", False)
+    s = str(raw)
+    if len(s) <= 4:
+        return ("***", True)
+    return (f"***{s[-4:]}", True)
+
+
+@router.get("", response_model=SettingsResponse)
+async def list_settings(db: DbSession) -> SettingsResponse:
+    settings = get_settings()
+    from sqlalchemy import select as _sel
+
+    from app.db.models.ops import AppSettingOverride
+
+    rows = (await db.execute(_sel(AppSettingOverride))).scalars().all()
+    overrides_meta = {r.name: (r.updated_at, r.actor_label) for r in rows}
+
+    items: list[SettingValue] = []
+    for spec in SPECS:
+        raw_value = getattr(settings, spec.name, None)
+        if hasattr(raw_value, "get_secret_value"):
+            raw_value = raw_value.get_secret_value()
+        if spec.kind == "secret":
+            display, masked = _mask(spec.name, raw_value)
+        else:
+            display, masked = raw_value, False
+        meta = overrides_meta.get(spec.name)
+        items.append(
+            SettingValue(
+                spec=spec,
+                value=display,
+                masked=masked,
+                is_overridden=spec.name in overrides_meta,
+                overridden_at=meta[0].isoformat() if meta else None,
+                actor_label=meta[1] if meta else None,
+            )
+        )
+    return SettingsResponse(items=items)
+
+
+# ---------------------------------------------------------------------------
+# Write
+# ---------------------------------------------------------------------------
+class PatchRequest(BaseModel):
+    """Partial update. Keys must be in ``SPECS``."""
+
+    model_config = ConfigDict(extra="allow")
+
+    actor_label: str = "admin"
+
+
+class PatchResponse(BaseModel):
+    updated: list[str]
+    restart_required_for: list[str]
+    items: list[SettingValue]
+
+
+@router.patch("", response_model=PatchResponse)
+async def patch_settings(db: DbSession, payload: PatchRequest) -> PatchResponse:
+    """Apply a partial update. Unknown keys → 400. Values that would
+    break a Settings validator (e.g. weights not summing to 1.0) → 422.
+    """
+    raw = payload.model_dump()
+    actor_label = str(raw.pop("actor_label", "admin"))[:120]
+
+    unknown = [k for k in raw if k not in _BY_NAME]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"unknown setting names: {sorted(unknown)}",
+        )
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="no settings provided",
+        )
+
+    coerced: dict[str, Any] = {}
+    for name, value in raw.items():
+        coerced[name] = _coerce(_BY_NAME[name], value)
+
+    # Validate the FULL settings shape with the new values applied. This
+    # catches Settings-level invariants like "matcher weights must sum to
+    # 1.0" that no single PATCH could verify in isolation.
+    candidate = {**settings_overrides.current(), **coerced}
+    try:
+        Settings(**candidate)  # type: ignore[arg-type]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"settings validator rejected the patch: {exc}",
+        ) from exc
+
+    # Persist + register each override.
+    for name, value in coerced.items():
+        await settings_overrides.upsert(
+            db,
+            name=name,
+            value=value,
+            actor_label=actor_label,
+        )
+    await db.commit()
+    get_settings.cache_clear()
+
+    restart_keys = [name for name in coerced if _BY_NAME[name].restart_required]
+    log.info(
+        "admin.settings.patched",
+        names=list(coerced),
+        actor=actor_label,
+        restart_required=restart_keys,
+    )
+
+    # Build the response payload via the same shape as GET.
+    response = await list_settings(db)
+    return PatchResponse(
+        updated=list(coerced),
+        restart_required_for=restart_keys,
+        items=response.items,
+    )
+
+
+@router.delete("/{name}")
+async def reset_setting(db: DbSession, name: str) -> dict:
+    if name not in _BY_NAME:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"unknown setting: {name}",
+        )
+    deleted = await settings_overrides.remove(db, name=name)
+    await db.commit()
+    get_settings.cache_clear()
+    return {"name": name, "deleted": deleted}
+
+
+# ---------------------------------------------------------------------------
+# Coercion
+# ---------------------------------------------------------------------------
+def _coerce(spec: SettingSpec, raw: Any) -> Any:
+    """Convert a JSON body field to the storage shape for the override."""
+    if raw is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{spec.name}: null not allowed (use DELETE to reset)",
+        )
+    if spec.kind == "bool":
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            return raw.lower() in ("true", "1", "yes", "on")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{spec.name}: expected boolean",
+        )
+    if spec.kind == "int":
+        try:
+            v = int(raw)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{spec.name}: expected integer",
+            ) from exc
+        _bounds_check(spec, v)
+        return v
+    if spec.kind == "float":
+        try:
+            v = float(raw)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{spec.name}: expected number",
+            ) from exc
+        _bounds_check(spec, v)
+        return v
+    if spec.kind == "list_str":
+        if not isinstance(raw, list):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{spec.name}: expected list of strings",
+            )
+        return [str(x) for x in raw]
+    # str / secret
+    v = str(raw).strip()
+    if spec.enum_values is not None and v not in spec.enum_values:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{spec.name}: must be one of {spec.enum_values}",
+        )
+    return v
+
+
+def _bounds_check(spec: SettingSpec, value: float) -> None:
+    if spec.min_value is not None and value < spec.min_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{spec.name}: {value} < min {spec.min_value}",
+        )
+    if spec.max_value is not None and value > spec.max_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{spec.name}: {value} > max {spec.max_value}",
+        )

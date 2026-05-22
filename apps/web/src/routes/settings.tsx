@@ -26,6 +26,11 @@ function SettingsPage() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <SettingsLink
+          to="/settings/tunables"
+          title="Tunables & API keys"
+          description="LLM API key + budget, matcher gates and weights, SME and team scoring weights, decay, scraper politeness, logging. Most changes apply immediately; a few require an api restart."
+        />
+        <SettingsLink
           to="/topics"
           title="Topic review"
           description="LLM-discovered topics pending admin approval. Approve to add to the active vocabulary; reject to deactivate."
