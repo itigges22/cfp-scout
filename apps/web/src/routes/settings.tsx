@@ -1,8 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -23,24 +22,32 @@ function SettingsPage() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <SettingsLink
-          title="Sources"
-          description="Crawl targets (RSS / sitemap / page / ICS / wikicfp). Plan 14."
-        />
-        <SettingsLink
+          to="/topics"
           title="Topic review"
-          description="LLM-discovered topics pending admin approval. Plan 15."
+          description="LLM-discovered topics pending admin approval. Approve to add to the active vocabulary; reject to deactivate. Plan 15 populates the queue."
         />
         <SettingsLink
-          title="Conference series"
-          description="Year-over-year linkage suggestions. Plan 23."
-        />
-        <SettingsLink
-          title="Import / Export workbook"
-          description="Round-trip the team's reference data via XLSX. Plan 31."
-        />
-        <SettingsLink
+          to="/past-conferences"
           title="Past conferences"
-          description="Single-row + CSV import. Plan 09."
+          description="History of who attended what. Powers the past-attendance signal in the SME matcher. Manual entry + CSV import (next pass)."
+        />
+        <SettingsLink
+          to="/settings"
+          title="Sources"
+          description="Crawl targets (RSS / sitemap / page / ICS / wikicfp). UI lands in plan 14."
+          disabled
+        />
+        <SettingsLink
+          to="/settings"
+          title="Conference series"
+          description="Year-over-year linkage suggestions. UI lands in plan 23."
+          disabled
+        />
+        <SettingsLink
+          to="/settings"
+          title="Import / Export workbook"
+          description="Round-trip the team's reference data via XLSX. UI lands in plan 31."
+          disabled
         />
       </div>
 
@@ -59,13 +66,35 @@ function SettingsPage() {
   );
 }
 
-function SettingsLink({ title, description }: { title: string; description: string }) {
-  return (
-    <Card>
+function SettingsLink({
+  to,
+  title,
+  description,
+  disabled,
+}: {
+  to: string;
+  title: string;
+  description: string;
+  disabled?: boolean;
+}) {
+  const card = (
+    <Card
+      className={
+        disabled
+          ? "opacity-50"
+          : "transition-colors hover:border-border-strong hover:bg-surface-2"
+      }
+    >
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
     </Card>
+  );
+  if (disabled) return card;
+  return (
+    <Link to={to} className="block">
+      {card}
+    </Link>
   );
 }

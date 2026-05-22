@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 09 backend complete; UI wizards land next)
+**Last updated:** 2026-05-21 (plan 09 UI pass 1: list pages + audience CRUD live; wizards next)
 
 ## Plan status
 
@@ -18,7 +18,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 06 | FastAPI skeleton | ✅ | Completed 2026-05-21 (infrastructure + ORM + baseline migration + seed) |
 | 07 | Config & secrets | ✅ | Completed 2026-05-21. Implementation done in plan 06; this pass added the operator runbook. |
 | 08 | Vite frontend skeleton | ✅ | Completed 2026-05-21 |
-| 09 | Manual data entry | 🚧 | Backend CRUD landed 2026-05-21; UI wizards next pass |
+| 09 | Manual data entry | 🚧 | Backend + UI list pages live; messaging wizard + SME form + CSV drop-zone next pass |
 | 10 | LLM service layer | ⬜ | |
 | 11 | Embeddings & chunking | ⬜ | |
 | 12 | PDF/RAG ingestion | ⬜ | |
@@ -292,9 +292,33 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
     asyncpg in a temp venv. **32 routes** registered including 27 from this
     pass. Pydantic Create-schema instantiation + rejection-of-bad-input both
     behave as designed.
-- 🚧 **Plan 09 — Manual data entry, UI pass** next (multi-step wizards for
-  messaging + audience entry; form pages for SME + past conferences; topic
-  review queue; CSV drop-zone). All consume the 27 endpoints landed in this pass.
+- 🚧 **Plan 09 UI pass 1** complete — typed API client + list pages + 1 full CRUD flow
+  - **Typed API client**: `apps/web/src/lib/api-types.ts` (hand-mirrored from
+    plan-05 Pydantic schemas — replaced when `pnpm gen:api` runs) + a thin
+    fetch-based `lib/api.ts` with grouped resource helpers (messagingApi,
+    audiencesApi, smesApi, pastConferencesApi, topicsApi) + an `ApiError`
+    class that surfaces RFC 7807 problem+json with a `fieldErrors()` helper
+    for form rendering.
+  - **shadcn primitives added**: Input, Textarea, Label, Badge (cva-driven
+    with default/accent/success/warning/danger/muted), Skeleton, Table
+    (with TableHeader/Body/Row/Head/Cell).
+  - **Reusable**: `components/Pagination.tsx`; `hooks/useDebouncedValue.ts`
+    (300ms default; pairs with TanStack Query keys for incremental search).
+  - **List pages (live data, filter, paginate, soft-delete)**:
+    `/messaging`, `/smes` (with DAAM/Non-DAAM tab filter), `/topics`
+    (with pending/approved/all tab filter + approve/reject buttons on
+    pending rows), `/past-conferences`. All show loading skeletons, an
+    error box on failure, and a sensible empty state.
+  - **Full audience CRUD flow at `/audiences`**: list + search + paginate
+    + soft-delete + a create dialog (inline overlay) with field-level
+    validation error display sourced from the api's RFC 7807 `errors[]`.
+    Proves the wiring works end-to-end.
+  - **`/settings`** rewritten with Link-backed cards pointing to /topics
+    + /past-conferences (the live pages); other settings pages disabled-style.
+- 🚧 **Plan 09 UI pass 2** next — messaging multi-step wizard, audience
+  wizard (replacing the current inline overlay), SME single-screen form,
+  past-conference form + CSV drop-zone with diff preview. Pulls in a real
+  shadcn Dialog primitive (`@radix-ui/react-dialog`).
 
 ### 2026-05-21 (afternoon revision)
 - 🔄 **Docling adopted** for PDF parsing + structure-aware chunking
