@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (stack live on Podman; bring-up fixes committed; wizards next)
+**Last updated:** 2026-05-22 (plan 09 UI pass 2 — SME form + CSV drop-zone live + verified)
 
 ## Plan status
 
@@ -18,7 +18,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 06 | FastAPI skeleton | ✅ | Completed 2026-05-21 (infrastructure + ORM + baseline migration + seed) |
 | 07 | Config & secrets | ✅ | Completed 2026-05-21. Implementation done in plan 06; this pass added the operator runbook. |
 | 08 | Vite frontend skeleton | ✅ | Completed 2026-05-21 |
-| 09 | Manual data entry | 🚧 | Backend + UI list pages live; messaging wizard + SME form + CSV drop-zone next pass |
+| 09 | Manual data entry | 🚧 | Backend + lists + audience CRUD + SME form + CSV drop-zone live; messaging wizard remaining |
 | 10 | LLM service layer | ⬜ | |
 | 11 | Embeddings & chunking | ⬜ | |
 | 12 | PDF/RAG ingestion | ⬜ | |
@@ -357,6 +357,37 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
      added the standard one-line reference.
      Also fixed `signal: undefined` in `lib/api.ts` to omit the field
      conditionally rather than pass undefined.
+
+### 2026-05-22 (plan 09 UI pass 2)
+- ✅ **Plan 09 UI pass 2** mostly complete; messaging wizard remaining
+  - **Dialog primitive** (`apps/web/src/components/ui/dialog.tsx`):
+    shadcn-style wrapper around `@radix-ui/react-dialog`. Focus trap,
+    escape-to-close, accessibility all free. Exports Root/Trigger/Content/
+    Header/Footer/Title/Description + a built-in close button.
+  - **SME form** (`components/sme/SmeFormDialog.tsx`): full profile entry
+    inside the Dialog. Six sections — Identity / Expertise & focus /
+    Location / Bio / External links. Multi-selects for `primary_topics` and
+    `audience_focus` fetch active rows via TanStack Query, render as
+    toggleable chip-style Badges, send UUIDs back to the FK-checking
+    backend. Bio gauge (200-min / 2000-max) renders a colored progress bar.
+    Field errors bind to Pydantic's RFC 7807 `errors[]`. Submit gated on
+    bio length + ≥2 expertise areas. Wired into `/smes` `New SME` button.
+  - **CSV drop-zone** (`components/past-conferences/CsvImportDialog.tsx`):
+    drag-and-drop file picker. Two-step flow — upload → preview result
+    (`imported` / `skipped` / per-row errors). When errors exist with
+    `imported=0`, a "Commit valid rows anyway (skip errors)" button passes
+    `ignore_errors=true`. Per-error rendering shows row + field + message.
+    Wired into `/past-conferences` `Import CSV` button.
+  - **Audience overlay refactored** to use the Dialog primitive (same UX,
+    better accessibility — was a hand-rolled fixed overlay).
+  - **`@radix-ui/react-dialog`** added to deps; container rebuild succeeded;
+    the `Platform Engineering Lead` audience created in the prior turn
+    persisted across the rebuild (`/api/v1/audience-profiles` still returns
+    1 total).
+  - **Remaining for the messaging wizard**: 6-step flow (title+source /
+    elevator pitch / personas / themes+talking points / differentiators+
+    competitive / review). Not blocking — XLSX workbook (plan 31) covers
+    bulk messaging entry too. Defer to next pass.
 
 ### 2026-05-21 (afternoon revision)
 - 🔄 **Docling adopted** for PDF parsing + structure-aware chunking

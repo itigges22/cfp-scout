@@ -7,6 +7,13 @@ import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -158,7 +165,7 @@ function AudiencesPage() {
         </CardContent>
       </Card>
 
-      {showCreate ? <CreateAudienceDialog onClose={() => setShowCreate(false)} /> : null}
+      <CreateAudienceDialog open={showCreate} onOpenChange={setShowCreate} />
     </div>
   );
 }
@@ -167,7 +174,13 @@ function AudiencesPage() {
 // Create form — inline overlay. A proper shadcn Dialog primitive lands when
 // the messaging wizard does (next pass); for now this is fine.
 // ---------------------------------------------------------------------------
-function CreateAudienceDialog({ onClose }: { onClose: () => void }) {
+function CreateAudienceDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<AudienceProfileCreate>({
     name: "",
@@ -191,7 +204,7 @@ function CreateAudienceDialog({ onClose }: { onClose: () => void }) {
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["audiences"] });
-      onClose();
+      onOpenChange(false);
     },
     onError: (err) => {
       if (err instanceof ApiError) setFieldErrors(err.fieldErrors());
@@ -211,12 +224,12 @@ function CreateAudienceDialog({ onClose }: { onClose: () => void }) {
     setForm((prev) => ({ ...prev, [field]: [...prev[field], ""] }));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/80 p-4 backdrop-blur-sm">
-      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <CardHeader>
-          <CardTitle>New audience profile</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New audience profile</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4 p-6">
           <Field label="Name" error={fieldErrors.name}>
             <Input
               value={form.name}
@@ -279,18 +292,22 @@ function CreateAudienceDialog({ onClose }: { onClose: () => void }) {
               {mutate.error.message}
             </div>
           ) : null}
-        </CardContent>
-        <div className="flex justify-end gap-2 border-t border-border p-4">
-          <Button variant="ghost" onClick={onClose} disabled={mutate.isPending}>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={mutate.isPending}
+          >
             Cancel
           </Button>
           <Button onClick={() => mutate.mutate(form)} disabled={mutate.isPending}>
             {mutate.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
             Create audience
           </Button>
-        </div>
-      </Card>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
