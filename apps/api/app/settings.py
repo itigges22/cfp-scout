@@ -118,6 +118,14 @@ class Settings(BaseSettings):
     # plan's default + acceptance criterion.
     sme_narrative_top_k: int = Field(default=3, ge=1, le=10)
 
+    # Multi-SME team recommendations (plan 32). Pure-algorithmic team
+    # scoring with no LLM cost. Knobs are env-tunable per plan-spec.
+    team_topk_candidates: int = Field(default=10, ge=2, le=30)
+    team_w_individual: float = 0.5
+    team_w_coverage: float = 0.35
+    team_w_redundancy: float = 0.10
+    team_w_location: float = 0.05
+
     decay_enabled: bool = True
 
     # ------------------------------------------------------------------

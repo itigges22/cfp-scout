@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 31 pass 1 — XLSX workbook import/export live; round-trip identity verified end-to-end)
+**Last updated:** 2026-05-22 (plan 32 pass 1 — multi-SME team recommendations: scored picks for sizes 1/2/3 with coverage + redundancy + rationale; auto-enqueued after matcher)
 
 ## Plan status
 
@@ -41,10 +41,57 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 29 | Security review & hardening | 🚧 | Pass 1 done 2026-05-22 (CSP/HSTS/X-Frame/Referrer/Permissions headers middleware; SECURITY_REVIEW.md threat model + consolidated checklist; ruff/format codebase-wide). Pass 2: PDF page cap, cap_drop, Trivy + license audit, optional Llama-Guard |
 | 30 | Documentation & runbook | 🚧 | Pass 1 done 2026-05-22 (rewrote README with daily dev loop + routes table + docs map; new docs/ops/runbook.md covers 14 common troubleshooting scenarios). Pass 2: cold-clone walkthrough video, markdownlint CI, demo seed |
 | 31 | Configuration workbook (XLSX) | 🚧 | Pass 1 done 2026-05-22 (6 sheets — Pillars/Industries/Audiences/SMEs/Topics/Series; template + export + preview + apply endpoints; round-trip identity verified). Pass 2: Messaging + PastConferences sheets, /settings/import-export UI |
-| 32 | Multi-SME team recommendations | ⬜ | |
+| 32 | Multi-SME team recommendations | 🚧 | Pass 1 done 2026-05-22 (team picks for sizes 1/2/3 with composite α·avg_fit + β·coverage − γ·redundancy − δ·location; persisted in `match_team_recommendations`, auto-enqueued after matcher; admin sync/async trigger + public read endpoint; templated rationale). Pass 2: UI panel on conference detail, "force include" pinning, configurable team_size cap |
 | 33 | Conference brief export | ⬜ | |
 
 ## Changelog
+
+### 2026-05-22 (plan 32 pass 1 — Multi-SME team recommendations)
+- ✅ **Plan 32 pass 1 — multi-SME teams** complete
+- New service module `apps/api/app/services/matcher/teams.py`:
+  - Public entry: `recommend_teams(db, conference_id) → TeamRecommendations`.
+  - Pool = top-K candidates from `rank_smes_for_conference` (default
+    `TEAM_TOPK_CANDIDATES=10`).
+  - For each team_size in `(1, 2, 3)`: enumerate `C(K, size)` combinations
+    (capped at K=10 → 175 total enumerations; cheap).
+  - **Composite score** =
+    `α · avg_individual_fit + β · coverage_breadth − γ · topic_redundancy
+    − δ · location_redundancy`
+    with defaults `α=0.5, β=0.35, γ=0.10, δ=0.05` (all env-tunable via
+    `TEAM_W_INDIVIDUAL` / `TEAM_W_COVERAGE` / `TEAM_W_REDUNDANCY` /
+    `TEAM_W_LOCATION`).
+  - **Coverage breadth** = |union(team topics) ∩ conference topics| / |conf topics|.
+  - **Redundancy** = mean pairwise topic-overlap (Jaccard) across the team
+    — penalizes "two RAG experts" picks.
+  - **Location redundancy** = penalty when all team members share the
+    same city (Boston×3 = small penalty; mixed cities = none).
+  - Picks the highest-scoring combination per team_size.
+- **Templated rationale** (no LLM): `"Together {names} cover X of Y
+  conference topics: A, B, C. Strengths: {sme₁.strongest_topic},
+  {sme₂.strongest_topic}, …"`. Deterministic + cost-free.
+- Persists to `app.match_team_recommendations` (composite PK on
+  `(match_id, team_size)` from the plan-31 baseline). Upserts on rerun.
+- **Auto-enqueue**: after `run_fit_match` commits an `approved` /
+  `needs_*_review` conference, the pipeline enqueues
+  `recommend_teams_task(conference_id)` alongside the narrative task.
+- Endpoints:
+  - `POST /api/v1/admin/matcher/teams-now/{id}` — sync trigger;
+    returns the three TeamPicks with members + scores.
+  - `POST /api/v1/admin/matcher/teams-now-async/{id}` — enqueue via
+    APScheduler; returns `queued_job_id`.
+  - `GET /api/v1/conferences/{id}/team-recommendations` — public read;
+    returns `{by_size: {"1": …, "2": …, "3": …}}`. 404 if conference
+    missing; empty `by_size` if matcher hasn't run yet.
+- End-to-end verified locally: matcher run on a 1-SME approved conference
+  produced a single size-1 team rec (correct degenerate behavior); manual
+  trigger reproducible; row landed in `app.match_team_recommendations`
+  with the expected `(team_size=1, sme_ids[1], team_score=0.7,
+  coverage_breadth=1.0, redundancy=0.0)`.
+- Tests: 55/55 unit tests still pass in 1.8s; matcher pipeline imports
+  cleanly with the new task wire-up.
+- Followups (pass 2): conference-detail panel rendering size-1/2/3 picks
+  side-by-side; "force include this SME" pinning constraint; topic-weight
+  sensitivity sliders for analysts; configurable `TEAM_MAX_SIZE`.
 
 ### 2026-05-21
 - ✅ **Plan 01 — Project bootstrap** complete

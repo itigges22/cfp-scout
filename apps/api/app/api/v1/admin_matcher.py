@@ -32,10 +32,12 @@ from app.db.session import DbSession
 from app.scheduler import enqueue_now
 from app.services.matcher import ALGORITHM_VERSION, run_fit_match
 from app.services.matcher.sme_narrative import compute_narratives_for_top_smes
+from app.services.matcher.teams import recommend_teams
 from app.tasks.compute_sme_fit_narrative import (
     compute_sme_fit_narrative_task,
     recompute_narratives_for_all,
 )
+from app.tasks.recommend_teams import recommend_teams_task
 from app.tasks.run_fit_match import recompute_all_matches, run_fit_match_task
 
 log = structlog.get_logger("scout.api.admin_matcher")
@@ -145,3 +147,25 @@ async def recent_matches(db: DbSession, limit: int = Query(default=50, ge=1, le=
             for m in rows
         ],
     }
+
+
+@router.post("/teams-now/{conference_id}")
+async def teams_now(db: DbSession, conference_id: UUID) -> dict:
+    """Run plan-32 team recommendations synchronously. Returns the three
+    team picks (size 1/2/3) plus the candidate count."""
+    log.info("admin.matcher.teams_now", conference_id=str(conference_id))
+    result = await recommend_teams(db, conference_id)
+    await db.commit()
+    return result.to_dict()
+
+
+@router.post(
+    "/teams-now-async/{conference_id}", status_code=status.HTTP_202_ACCEPTED
+)
+async def teams_now_async(conference_id: UUID) -> dict:
+    job_id = enqueue_now(
+        recommend_teams_task,
+        job_id=f"teams-{conference_id}",
+        kwargs={"conference_id": str(conference_id)},
+    )
+    return {"queued_job_id": job_id, "conference_id": str(conference_id)}
