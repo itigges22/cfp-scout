@@ -30,6 +30,7 @@ from app.api.v1 import (
     admin_matcher,
     agent,
     audiences,
+    config,
     conference_series,
     conferences,
     diagnostics,
@@ -108,6 +109,7 @@ app.include_router(agent.router)
 app.include_router(notifications.router)
 app.include_router(versions.router)
 app.include_router(diagnostics.router)
+app.include_router(config.router)
 app.include_router(uploads.router)
 
 # ---- static SPA at / -----------------------------------------------------
