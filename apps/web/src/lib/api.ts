@@ -93,7 +93,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     payload = JSON.stringify(body);
   }
 
-  const res = await fetch(url.toString(), { method, headers, body: payload, signal });
+  const init: RequestInit = { method, headers };
+  if (payload !== undefined) init.body = payload;
+  if (signal !== undefined) init.signal = signal;
+  const res = await fetch(url.toString(), init);
 
   if (res.status === 204) {
     return undefined as T;
