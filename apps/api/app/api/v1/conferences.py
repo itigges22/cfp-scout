@@ -23,7 +23,13 @@ from app.db.models.entities import Conference, ConferenceSource, RawPage
 from app.db.models.matching import Decision, Match, MatchTeamRecommendation
 from app.db.session import DbSession
 from app.services._common import model_to_audit_dict, write_audit
-from app.services.matcher import ALGORITHM_VERSION
+from app.services.extraction.dedup import build_slug, find_duplicate, year_for
+from app.services.graph import invalidate as invalidate_graph
+from app.services.matcher import ALGORITHM_VERSION, run_fit_match
+from app.services.matcher.pipeline import (
+    ConferenceNotFoundError,
+    ConferenceQuarantinedError,
+)
 from app.services.matcher.sme_ranker import rank_smes_for_conference
 from app.settings import get_settings
 
@@ -69,6 +75,39 @@ class ConferenceListResponse(BaseModel):
     total: int
     page: int
     per_page: int
+
+
+class ConferenceCreate(BaseModel):
+    """POST /conferences payload. Slug is server-derived from name+year."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=2, max_length=200)
+    start_date: date | None = None
+    end_date: date | None = None
+    location_city: str | None = Field(default=None, max_length=120)
+    location_country: str | None = Field(
+        default=None, min_length=2, max_length=2, description="ISO-3166-1 alpha-2."
+    )
+    is_virtual: bool = False
+    venue: str | None = Field(default=None, max_length=200)
+    website: str | None = Field(default=None, max_length=2000)
+    cfp_open_at: date | None = None
+    cfp_close_at: date | None = None
+    cfp_topics_of_interest: list[str] = Field(default_factory=list, max_length=30)
+    topics: list[str] = Field(default_factory=list, max_length=30)
+    acceptance_rate_percent: int | None = Field(default=None, ge=0, le=100)
+    estimated_cost_usd: int | None = Field(default=None, ge=0, le=100_000)
+    actor_label: str = Field(default="manual_entry", max_length=120)
+
+
+class ConferenceCreateResponse(BaseModel):
+    """Return shape for POST /conferences — the new row plus the matcher
+    verdict from the auto-run that fires right after the insert commit."""
+
+    conference: ConferenceRead
+    match: dict | None = None
+    match_error: str | None = None
 
 
 class DecisionCreate(BaseModel):
@@ -207,6 +246,107 @@ async def dashboard_stats(db: DbSession) -> DashboardStats:
             low_coverage_smes=int(low_coverage_smes),
         ),
         top_conferences=top,
+    )
+
+
+@router.post("", response_model=ConferenceCreateResponse, status_code=status.HTTP_201_CREATED)
+async def create_conference(
+    db: DbSession,
+    payload: ConferenceCreate,
+) -> ConferenceCreateResponse:
+    """Manually add a conference + immediately run the matcher.
+
+    Slug is derived from ``name + year`` server-side (mirrors the extraction
+    pipeline's dedup contract). 409 if a conference with the same slug
+    already exists. `confidence_score=1.0` for manual entries since a human
+    just vouched for them; the matcher will set ``status`` based on its
+    gates.
+
+    The matcher runs synchronously in the same request so the caller gets
+    the verdict back without polling. If the matcher fails (e.g. LLM
+    outage), the conference is still created and ``match_error`` is
+    populated; the caller can re-run the matcher later via
+    ``POST /admin/matcher/run-now/{id}``.
+    """
+    slug = build_slug(payload.name, year_for(payload.start_date))
+    existing = await find_duplicate(db, slug=slug)
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Conference with slug '{slug}' already exists "
+                f"(id={existing.id}). Open it instead of recreating."
+            ),
+        )
+
+    conf = Conference(
+        name=payload.name,
+        slug=slug,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        location_city=payload.location_city,
+        location_country=payload.location_country,
+        is_virtual=payload.is_virtual,
+        venue=payload.venue,
+        website=payload.website,
+        cfp_open_at=payload.cfp_open_at,
+        cfp_close_at=payload.cfp_close_at,
+        cfp_topics_of_interest=list(payload.cfp_topics_of_interest),
+        cfp_deadlines=[],
+        topics=list(payload.topics),
+        acceptance_rate_percent=payload.acceptance_rate_percent,
+        estimated_cost_usd=payload.estimated_cost_usd,
+        confidence_score=1.0,
+        status="discovered",
+    )
+    db.add(conf)
+    await db.flush()
+
+    await write_audit(
+        db,
+        action="conference.manual_create",
+        target_type="conference",
+        target_id=conf.id,
+        before=None,
+        after=model_to_audit_dict(conf),
+        actor_label=payload.actor_label,
+    )
+    await db.commit()
+    invalidate_graph()
+
+    log.info(
+        "conference.manual_create",
+        conference_id=str(conf.id),
+        slug=conf.slug,
+        actor_label=payload.actor_label,
+    )
+
+    # Auto-run the matcher; best-effort — surface failure without rolling
+    # back the conference create.
+    match_dict: dict | None = None
+    match_error: str | None = None
+    try:
+        result = await run_fit_match(db, conf.id)
+        await db.commit()
+        match_dict = result.to_stats()
+    except ConferenceQuarantinedError as exc:
+        match_error = f"matcher skipped: {exc}"
+    except ConferenceNotFoundError as exc:  # pragma: no cover — we just inserted it
+        match_error = f"conference vanished mid-request: {exc}"
+    except Exception as exc:
+        log.warning(
+            "conference.manual_create.matcher_failed",
+            conference_id=str(conf.id),
+            error=str(exc),
+        )
+        match_error = f"matcher failed: {exc}"
+
+    # Refresh so the response reflects any status update the matcher made.
+    await db.refresh(conf)
+    return ConferenceCreateResponse(
+        conference=_to_read(conf),
+        match=match_dict,
+        match_error=match_error,
     )
 
 

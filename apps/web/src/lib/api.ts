@@ -19,6 +19,8 @@ import type {
   AudienceProfileRead,
   AudienceProfileUpdate,
   ConferenceBrief,
+  ConferenceCreate,
+  ConferenceCreateResponse,
   ConferenceListResponse,
   ConferenceMatchResponse,
   ConferenceSmesResponse,
@@ -302,6 +304,11 @@ export const conferencesApi = {
     request<ConferenceListResponse>(`${BASE}/conferences`, { query: params }),
   get: (id: string) =>
     request<import("@/lib/api-types").ConferenceRead>(`${BASE}/conferences/${id}`),
+  create: (body: ConferenceCreate) =>
+    request<ConferenceCreateResponse>(`${BASE}/conferences`, {
+      method: "POST",
+      body,
+    }),
   match: (id: string) => request<ConferenceMatchResponse>(`${BASE}/conferences/${id}/match`),
   sources: (id: string) =>
     request<ConferenceSourcesResponse>(`${BASE}/conferences/${id}/sources`),

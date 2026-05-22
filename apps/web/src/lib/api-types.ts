@@ -607,6 +607,42 @@ export interface DashboardStats {
 }
 
 // ---------------------------------------------------------------------------
+// Conference create (manual entry)
+// ---------------------------------------------------------------------------
+export interface ConferenceCreate {
+  name: string;
+  start_date?: string | null; // ISO date YYYY-MM-DD
+  end_date?: string | null;
+  location_city?: string | null;
+  location_country?: string | null; // ISO-3166-1 alpha-2
+  is_virtual?: boolean;
+  venue?: string | null;
+  website?: string | null;
+  cfp_open_at?: string | null;
+  cfp_close_at?: string | null;
+  cfp_topics_of_interest?: string[];
+  topics?: string[];
+  acceptance_rate_percent?: number | null;
+  estimated_cost_usd?: number | null;
+  actor_label?: string;
+}
+
+export interface ConferenceCreateResponse {
+  conference: import("@/lib/api-types").ConferenceRead;
+  match: {
+    overall_score: number;
+    messaging_score: number;
+    pillar_score: number;
+    sme_score: number;
+    status: string;
+    rationale_text: string;
+    recommended_sme_ids: string[];
+    matched_pillar_name: string | null;
+  } | null;
+  match_error: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Team recommendations (plan 32)
 // ---------------------------------------------------------------------------
 export interface TeamPickRead {
