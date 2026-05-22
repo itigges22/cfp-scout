@@ -42,6 +42,7 @@ from app.services.extraction.llm_extract import extract
 from app.services.extraction.prompts import PROMPT_VERSION
 from app.services.extraction.schema import ExtractedConference
 from app.services.extraction.topics import normalize_topics
+from app.services.embeddings import embed_owner
 from app.services.extraction.validation import (
     ValidationOutcome,
     validate_and_score,
@@ -49,6 +50,28 @@ from app.services.extraction.validation import (
 from app.services.graph import invalidate as invalidate_graph
 
 log = structlog.get_logger("scout.extraction.pipeline")
+
+
+def _conference_embed_text(c: Conference) -> str:
+    """Compose the short descriptive blob we embed for the matcher.
+
+    Kept structural-only — names, topics, location, deadline topics. Avoids
+    the raw page body (long, noisy) and the LLM rationale (would feed a
+    matcher into a matcher). Mirrors the audience/sme embed-text helpers.
+    """
+    parts: list[str] = [c.name]
+    if c.topics:
+        parts.append("Topics: " + ", ".join(c.topics))
+    if c.cfp_topics_of_interest:
+        parts.append("CFP topics: " + ", ".join(c.cfp_topics_of_interest))
+    if c.location_city or c.location_country:
+        loc = " / ".join(p for p in (c.location_city, c.location_country) if p)
+        parts.append(f"Location: {loc}")
+    if c.is_virtual:
+        parts.append("Virtual event.")
+    if c.venue:
+        parts.append(f"Venue: {c.venue}")
+    return "\n".join(parts)
 
 
 @dataclass(slots=True)
@@ -242,6 +265,38 @@ async def parse_raw_page(db: AsyncSession, raw_page_id: UUID) -> ParseResult:
     # Junction tables changed (ConferenceTopic + ConferenceSource) — drop
     # the in-memory graph cache so the next read picks up the new edges.
     invalidate_graph()
+
+    # ---- 11. Conference embedding (powers plan 17 Stage A) -----------
+    # Compose a small descriptive blob from the structured fields. We
+    # deliberately exclude the raw cleaned text (already embedded as raw_page
+    # chunks in a future plan) — this lightweight description is what the
+    # matcher's messaging-similarity gate compares against. Failure is
+    # non-fatal; admin can rerun via /admin/embeddings/embed-owner.
+    try:
+        blob = _conference_embed_text(conference)
+        if blob:
+            await embed_owner(
+                db,
+                owner_type="conference",
+                owner_id=conference.id,
+                text=blob,
+                purpose="embed:conference",
+            )
+    except Exception as exc:  # noqa: BLE001 — non-fatal
+        bound.warning("extraction.conference_embed_failed", error=str(exc))
+
+    # ---- 12. Enqueue plan-17 matcher (skip quarantined) --------------
+    # Local import avoids a circular dep (scheduler -> tasks -> extraction
+    # would chain back here in the tasks/parse_raw_page path).
+    if outcome.status != "quarantined":
+        from app.scheduler import enqueue_now
+        from app.tasks.run_fit_match import run_fit_match_task
+
+        enqueue_now(
+            run_fit_match_task,
+            job_id=f"match-{conference.id}",
+            kwargs={"conference_id": str(conference.id)},
+        )
     return ParseResult(
         raw_page_id=str(row.id),
         ok=True,
