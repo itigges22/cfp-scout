@@ -1,6 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Pagination } from "@/components/Pagination";
@@ -18,59 +17,72 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { messagingApi } from "@/lib/api";
+import { pastConferencesApi } from "@/lib/api";
 import { ErrorBox } from "@/routes/audiences";
 import { PageHeader } from "@/routes/dashboard";
 
-export const Route = createFileRoute("/messaging")({
-  component: MessagingPage,
+export const Route = createFileRoute("/past-conferences")({
+  component: PastConferencesPage,
 });
 
 const PER_PAGE = 20;
 
-function MessagingPage() {
+function PastConferencesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
+  const [yearFilter, setYearFilter] = useState<string>("");
 
-  const queryClient = useQueryClient();
+  const yearAsNum = /^\d{4}$/.test(yearFilter) ? Number(yearFilter) : undefined;
+
   const query = useQuery({
-    queryKey: ["messaging", { page, q: debouncedSearch }],
+    queryKey: ["past-conferences", { page, q: debouncedSearch, year: yearAsNum }],
     queryFn: () =>
-      messagingApi.list({ page, per_page: PER_PAGE, q: debouncedSearch || undefined }),
-  });
-  const deactivate = useMutation({
-    mutationFn: (id: string) => messagingApi.deactivate(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["messaging"] }),
+      pastConferencesApi.list({
+        page,
+        per_page: PER_PAGE,
+        q: debouncedSearch || undefined,
+        year: yearAsNum,
+      }),
   });
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Messaging & positioning"
-        description="The team's elevator pitch, themes, talking points. Drives the matcher's Stage A."
+        title="Past conferences"
+        description="History of who attended what. Powers the past-attendance signal in the SME matcher."
       />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <div className="flex flex-1 items-center gap-3">
-            <CardTitle>Messaging documents</CardTitle>
+            <CardTitle>Past conferences</CardTitle>
             {query.data ? <Badge variant="muted">{query.data.total} total</Badge> : null}
           </div>
           <div className="flex items-center gap-2">
             <Input
               type="search"
-              placeholder="Search by title"
+              placeholder="Search by name"
               value={search}
               onChange={(e) => {
                 setSearch(e.currentTarget.value);
                 setPage(1);
               }}
-              className="w-64"
+              className="w-56"
             />
-            {/* Create wizard lands in the next UI pass. */}
-            <Button disabled title="Multi-step wizard lands next">
-              New
+            <Input
+              type="text"
+              placeholder="Year"
+              value={yearFilter}
+              onChange={(e) => {
+                setYearFilter(e.currentTarget.value);
+                setPage(1);
+              }}
+              className="w-24"
+              maxLength={4}
+            />
+            <Button disabled title="Form + CSV import drop-zone lands next">
+              Import CSV
             </Button>
           </div>
         </CardHeader>
@@ -85,55 +97,33 @@ function MessagingPage() {
             <ErrorBox error={query.error} />
           ) : query.data === undefined || query.data.items.length === 0 ? (
             <div className="rounded-md border border-dashed border-border-strong bg-surface-2 py-10 text-center text-sm text-fg-muted">
-              No messaging documents yet. The structured-entry wizard lands in the next pass; or seed via the XLSX workbook (plan 31).
+              No past conferences recorded yet. Bulk-seed via the XLSX workbook (plan 31), or the
+              CSV import drop-zone lands in the next pass.
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Themes</TableHead>
-                  <TableHead>Updated</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-8" />
+                  <TableHead>Conference</TableHead>
+                  <TableHead>Year</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Session</TableHead>
+                  <TableHead>Attendees</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {query.data.items.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell className="font-medium">{m.title}</TableCell>
+                {query.data.items.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell className="tabular-nums">{p.year}</TableCell>
                     <TableCell>
-                      <Badge variant={m.source_type === "pdf" ? "accent" : "muted"}>
-                        {m.source_type}
-                      </Badge>
+                      <Badge variant={p.role === "speaker" ? "accent" : "muted"}>{p.role}</Badge>
                     </TableCell>
                     <TableCell className="text-fg-muted">
-                      {m.key_themes.slice(0, 3).join(" · ")}
-                      {m.key_themes.length > 3 ? "…" : null}
+                      {p.session_type ?? "—"}
                     </TableCell>
                     <TableCell className="text-fg-muted text-xs tabular-nums">
-                      {new Date(m.updated_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      {m.is_active ? (
-                        <Badge variant="success">active</Badge>
-                      ) : (
-                        <Badge variant="muted">inactive</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {m.is_active ? (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => deactivate.mutate(m.id)}
-                          disabled={deactivate.isPending}
-                          aria-label={`deactivate ${m.title}`}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      ) : null}
+                      {p.attended_sme_ids.length}
                     </TableCell>
                   </TableRow>
                 ))}
