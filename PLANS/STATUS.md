@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 26 pass 1 — /diagnostics live; 6-panel aggregator, retry-failed-job button, 30s cache, freshness histogram)
+**Last updated:** 2026-05-22 (plan 27 pass 1 — pytest unit suite live; 55 tests / 1.6s, caught a half-life bug in decay)
 
 ## Plan status
 
@@ -36,7 +36,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 24 | CFP-closing digest | ✅ | Completed 2026-05-22 (daily 09:00 cron, 0-7/8-14/15-30 buckets, score-ranked, persists in notifications, bell badge dropdown, copy-to-clipboard Markdown) |
 | 25 | Data lifecycle decay & versioning | 🚧 | Pass 1 done 2026-05-22 (daily decay cron + freshness math + before_flush versioning listener + GET /versions endpoint). Pass 2: wire decay into pillar + SME ranker cosines, restore-version mutation, history viewer UI |
 | 26 | Observability & diagnostics | 🚧 | Pass 1 done 2026-05-22 (6-panel aggregator @ /api/v1/diagnostics, 30s cache, /diagnostics page w/ auto-refresh, per-job retry, freshness histogram). Pass 2: WARN events on threshold crossing, optional OTel exporter |
-| 27 | Testing strategy | ⬜ | |
+| 27 | Testing strategy | 🚧 | Pass 1 done 2026-05-22 (55 unit tests cover scoring, decay, extraction, narrative quote-guard, series detector; `make test-unit` runs in 1.6s). Pass 2: integration (testcontainers), Vitest, Playwright e2e, CodeQL workflow |
 | 28 | CI/CD pipeline | ⬜ | |
 | 29 | Security review & hardening | ⬜ | |
 | 30 | Documentation & runbook | ⬜ | |
@@ -470,6 +470,42 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 27 pass 1 — Unit test smoke suite)
+- 🚧 **Plan 27 pass 1 complete**: pytest unit suite in `apps/api/tests/`,
+  55 tests covering pure-function code, runs in **1.6 seconds** end-to-end.
+- **Tests added**:
+  - `tests/unit/test_scoring.py` — matcher scoring helpers (`clamp01`,
+    `topk_mean`, `topk_max`, `cosine_from_distance`, `apply_chunk_decay`).
+  - `tests/unit/test_decay.py` — plan-25 `compute_freshness` +
+    `apply_decay_multiplier` half-life math.
+  - `tests/unit/test_extraction.py` — slug builder, year extractor,
+    `validate_and_score` routing across the discovered / needs_review /
+    quarantined buckets with various rule failures.
+  - `tests/unit/test_narrative_post_validation.py` — quote-guard for
+    plan 19's SME fit narratives (legit quotes pass, fabricated quotes
+    fail, sentinel + overlong narratives rejected).
+  - `tests/unit/test_series_detector.py` — `strip_year_and_edition`
+    parameterized over 7 real conference name patterns.
+- **Infrastructure**:
+  - `tests/conftest.py` stamps the env vars Settings requires so
+    developers running `pytest` outside the container don't need a `.env`.
+  - `infra/compose/compose.override.dev.yaml` — bind-mounts
+    `apps/api/tests` + `apps/api/pyproject.toml` into the api container
+    so `make test-unit` runs without rebuilding.
+  - `Makefile` — `make test-unit` bootstraps pip via `ensurepip` (uv-created
+    venvs ship without pip), installs `pytest` + `pytest-asyncio` quietly,
+    runs the suite. Idempotent on rerun.
+- 🐛 **Bug caught by the new tests** (plan 25): `compute_freshness` used
+  `exp(-age/τ)` (an e-fold) but the variable was named `half_life_days`
+  and the plan-spec said half-life — so a "60-day half-life" was
+  actually giving freshness 0.37 (not 0.5) at 60 days. **Fixed**:
+  switched to `exp(-ln(2) * age / half_life)` so the constant is a true
+  half-life. Now: age=half_life → 0.5, age=2·half_life → 0.25, as
+  the plan + variable name claim.
+- **Deferred to pass 2**: integration tests against a real Postgres
+  via `testcontainers-python`, Vitest config + frontend tests, Playwright
+  end-to-end, CodeQL workflow, Dependabot config, Trivy scans.
 
 ### 2026-05-22 (plan 26 pass 1 — Observability & diagnostics)
 - 🚧 **Plan 26 pass 1 complete**: single-call `/api/v1/diagnostics`
