@@ -33,6 +33,12 @@ dependencies = [
     # GPU wheels, which bundle CUDA libs we'd never use on this stack).
     "torch>=2.5",
     "torchvision>=0.20",
+    # APScheduler runs in-process inside the api container (plan 13). The
+    # SQLAlchemyJobStore persists schedules in Postgres so jobs survive
+    # `make down/up`. psycopg (v3) is the sync driver for the jobstore — the
+    # rest of the app rides asyncpg, but APScheduler 3.x is sync-only.
+    "apscheduler[sqlalchemy]>=3.10",
+    "psycopg[binary]>=3.2",
 ]
 
 [tool.uv.sources]

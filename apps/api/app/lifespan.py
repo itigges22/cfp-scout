@@ -4,8 +4,8 @@ Plan 06 wires:
   * DB connectivity check (fail loud if Postgres unreachable)
   * Settings dump at startup (redacted by structlog's redact processor)
 
-Plan 13 will add:
-  * APScheduler start/stop
+Plan 13 wires:
+  * APScheduler start (after the DB probe succeeds) + shutdown on app exit
 
 Plan 12 will add:
   * Docling model warm-up (load layout models so first PDF upload doesn't pay the cost)
@@ -21,6 +21,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from app.db.session import dispose_engine, get_engine
+from app.scheduler import start_scheduler, stop_scheduler
 from app.settings import get_settings
 
 log = structlog.get_logger("scout.lifespan")
@@ -54,8 +55,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Re-raise so uvicorn exits non-zero and compose restarts us.
         raise
 
+    # Scheduler runs in-process. Start it AFTER the DB probe so a failed
+    # boot doesn't leave a half-started scheduler. If uvicorn spawns multiple
+    # worker processes (``--workers N``), each worker gets its own scheduler
+    # instance — APScheduler's Postgres jobstore + ``max_instances=1`` keeps
+    # them from double-firing the same job.
+    try:
+        start_scheduler()
+    except Exception as exc:
+        log.error("scout.scheduler_failed", error=str(exc))
+        # Don't block API startup on a scheduler-only failure — the manual
+        # routes still work without it, and operators can repair via
+        # ``/api/v1/admin/jobs``.
+
     yield
 
     # Shutdown
     log.info("scout.shutting_down")
+    try:
+        stop_scheduler()
+    except Exception as exc:
+        log.warning("scout.scheduler_shutdown_failed", error=str(exc))
     await dispose_engine()

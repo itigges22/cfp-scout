@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 12 — Docling PDF ingestion live; 12 chunks extracted from `PLANS/DAAM Scout.pdf` end-to-end)
+**Last updated:** 2026-05-22 (plan 13 — APScheduler in-process; heartbeat job firing + persisting across restarts)
 
 ## Plan status
 
@@ -22,7 +22,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 10 | LLM service layer | ✅ | Completed 2026-05-22 — dry-run verified end-to-end |
 | 11 | Embeddings & chunking | ✅ | Plain-text path live 2026-05-22; Docling chunker for PDFs lands in plan 12 |
 | 12 | PDF/RAG ingestion | ✅ | Completed 2026-05-22 — Docling parse + HybridChunker + embed verified end-to-end |
-| 13 | Background jobs (APScheduler) | ⬜ | |
+| 13 | Background jobs (APScheduler) | ✅ | Completed 2026-05-22 — heartbeat firing + jobstore persists across restarts |
 | 14 | Web scraper | ⬜ | |
 | 15 | Data validation & routing | ⬜ | |
 | 16 | Knowledge graph | ⬜ | |
@@ -470,6 +470,73 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 13 — Background jobs / APScheduler)
+- ✅ **Plan 13 complete**: in-process APScheduler against a Postgres jobstore.
+  - `app/scheduler.py` — `AsyncIOScheduler` singleton + `SQLAlchemyJobStore`
+    targeting `jobs.apscheduler_jobs` + `AsyncIOExecutor`. Job defaults:
+    `coalesce=True`, `max_instances=1`, `misfire_grace_time=300`. Module-level
+    `get_scheduler()`, `start_scheduler()`, `stop_scheduler()`, `register_jobs()`,
+    `enqueue_now()` helper.
+  - **Leader-election lock** (`pg_try_advisory_lock(0x5C05CCD)`) gates which
+    api worker hosts the scheduler. The losing worker logs
+    `scheduler.passive` and stays scheduler-free. Connection that holds the
+    lock is kept open for the process lifetime; released on `stop_scheduler()`.
+  - `app/tasks/` package:
+    - `_runner.py` — `run_as_job(kind, coro_factory, **kwargs)` is the wrapper
+      every task uses. Creates an `app.ingest_jobs` row at start, marks it
+      complete or failed on finish, logs structured `task.started` /
+      `task.completed` / `task.failed` events with `duration_ms`.
+    - `heartbeat.py` — `heartbeat()` task; registered to fire every 10 minutes
+      via `register_jobs()`. Useful sanity check that the scheduler is alive.
+    - `embed_owner_task.py` — async-friendly wrapper around
+      `embeddings.pipeline.embed_owner` for future bulk-reindex use.
+  - `app/lifespan.py` — calls `start_scheduler()` after the DB probe succeeds,
+    `stop_scheduler()` on shutdown. Scheduler-start failures are caught + logged
+    (api still serves requests; admin can recover via `/api/v1/admin/jobs`).
+  - `app/api/v1/admin_jobs.py` — three endpoints:
+    - `GET  /admin/jobs`              → registered jobs + next-fire times
+    - `GET  /admin/jobs/runs`         → recent `app.ingest_jobs` rows (~50, capped 500)
+    - `POST /admin/jobs/heartbeat/trigger` → fire heartbeat immediately
+      (rate-limited 1/30s per job-id)
+  - `infra/postgres/init/02-roles-and-schemas.sql` — `GRANT CREATE ON SCHEMA
+    jobs TO app;` so APScheduler can run `metadata.create_all` for its own
+    table on fresh installs.
+  - `apps/api/alembic/versions/20260522_1300_grant_jobs.py` — applies the same
+    grant to existing databases idempotently.
+  - `apps/api/pyproject.toml` — `apscheduler[sqlalchemy]>=3.10` and
+    `psycopg[binary]>=3.2` (the sync driver APScheduler's jobstore needs;
+    the rest of the app still rides asyncpg).
+- 🟢 **Verified live**:
+  - `make up` → scheduler starts, heartbeat job appears in
+    `GET /admin/jobs` with next-fire 10 min out.
+  - `POST /admin/jobs/heartbeat/trigger` → 202; `app.ingest_jobs` gets a new
+    row `kind=heartbeat, status=complete, stats={alive:true,duration_ms:9}`.
+  - Second trigger within 30s → 429 with `Retry in N.Ns` detail.
+  - `podman restart scout-api` → `jobs.apscheduler_jobs` still holds the
+    heartbeat row with `next_run_time` preserved; scheduler picks it up
+    cleanly on boot.
+  - Postgres `pg_locks` shows exactly one `advisory ExclusiveLock` held
+    by the api connection.
+- 🐛 **Three real-world fixes from bring-up**:
+  1. **`InsufficientPrivilege` creating `jobs.apscheduler_jobs`**: the `app`
+     role had only USAGE on the `jobs` schema; APScheduler's
+     `metadata.create_all` needs CREATE. Added the GRANT to the init SQL +
+     an Alembic migration so existing dbs are brought up to par.
+  2. **Two-worker `UniqueViolation` race**: with `--workers 2`, both uvicorn
+     processes' schedulers tried to `CREATE TABLE jobs.apscheduler_jobs`
+     simultaneously; one succeeded, the other crashed on
+     `pg_type_typname_nsp_index`. Two-worker schedulers also fight for cron
+     fires. Dropped uvicorn to `--workers 1` — the api is fully async (asyncpg
+     + openai + anyio threadpool for Docling) so the second worker bought
+     ~nothing for a single-user local install. Kept the advisory-lock
+     leader election in place as defense-in-depth for any future scale-up.
+  3. **Manual trigger orphaned in passive worker's pending-job queue**:
+     before single-worker, hitting `/heartbeat/trigger` could land on the
+     non-leader worker; its scheduler wasn't running, so APScheduler stashed
+     the job in a per-process pending list that never fired. Single-worker
+     made this moot, and the leader lock guarantees enqueues hit the live
+     scheduler in any future multi-worker setup.
 
 ### 2026-05-22 (plan 12 — PDF/RAG via Docling)
 - ✅ **Plan 12 complete**:

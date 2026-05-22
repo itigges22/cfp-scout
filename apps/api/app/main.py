@@ -9,8 +9,8 @@ Plan 06 (this revision) adds:
   * /api/v1/readyz that reports DB reachability
   * CORS middleware (only relevant during dev when Vite runs separately)
 
-Plan 12 will add Docling model warm-up to the lifespan.
-Plan 13 will add APScheduler start/stop to the lifespan.
+Plan 12 added the PDF/RAG ingest endpoint.
+Plan 13 wires APScheduler start/stop to the lifespan + admin job routes.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import (
     admin_embeddings,
+    admin_jobs,
     admin_llm,
     audiences,
     health,
@@ -80,6 +81,7 @@ app.include_router(past_conferences.router)
 app.include_router(topics.router)
 app.include_router(admin_llm.router)
 app.include_router(admin_embeddings.router)
+app.include_router(admin_jobs.router)
 app.include_router(uploads.router)
 
 # ---- static SPA at / (FastAPI's StaticFiles, html=True for SPA fallback) --

@@ -61,6 +61,14 @@ END$$;
 -- USAGE on schemas: required even to reference objects inside.
 GRANT USAGE ON SCHEMA app, vectors, jobs, audit TO app;
 
+-- CREATE on jobs schema: APScheduler's SQLAlchemyJobStore (plan 13) calls
+-- ``metadata.create_all`` at startup to materialise ``jobs.apscheduler_jobs``.
+-- Granting CREATE here lets it own + manage that table without us hand-rolling
+-- a migration that would drift if APScheduler bumps its schema. Other schemas
+-- intentionally do NOT get CREATE — DDL there is Alembic's job, run as the
+-- superuser.
+GRANT CREATE ON SCHEMA jobs TO app;
+
 -- Default privileges: any table created LATER (by Alembic in plan 06, by
 -- APScheduler in plan 13, etc.) gets the right perms automatically without
 -- a per-table GRANT.
