@@ -181,3 +181,156 @@ export interface TopicRead extends TopicBase {
   created_at: string;
   updated_at: string;
 }
+
+// ---------------------------------------------------------------------------
+// Conferences + matcher output (plan 17/18/19 → plan 20 UI)
+// ---------------------------------------------------------------------------
+export type ConferenceStatus =
+  | "discovered"
+  | "needs_review"
+  | "needs_review_pillar"
+  | "needs_sme_review"
+  | "approved"
+  | "rejected"
+  | "low_messaging_fit"
+  | "quarantined";
+
+export interface ConferenceRead {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  confidence_score: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  location_city: string | null;
+  location_country: string | null;
+  is_virtual: boolean;
+  website: string | null;
+  topics: string[];
+  cfp_topics_of_interest: string[];
+  cfp_close_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConferenceListItem extends ConferenceRead {
+  overall_score: number | null;
+  messaging_score: number | null;
+  pillar_score: number | null;
+  sme_score: number | null;
+}
+
+export interface ConferenceListResponse {
+  items: ConferenceListItem[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export interface ConferenceMatch {
+  id: string;
+  messaging_score: number;
+  pillar_score: number;
+  sme_score: number;
+  overall_score: number;
+  recommended_sme_ids: string[];
+  rationale_text: string;
+  computed_at: string | null;
+}
+
+export interface ConferenceMatchResponse {
+  conference_id: string;
+  algorithm_version: string;
+  match: ConferenceMatch | null;
+}
+
+export interface ConferenceSourceRow {
+  raw_page_id: string;
+  url: string;
+  fetched_at: string | null;
+  http_status: number;
+  parse_status: string | null;
+  hash_prefix: string;
+}
+
+export interface ConferenceSourcesResponse {
+  conference_id: string;
+  sources: ConferenceSourceRow[];
+}
+
+export interface SmeDimensionScores {
+  topic_overlap: number;
+  audience_overlap: number;
+  bio_similarity: number;
+  location: number;
+  past_attendance: number;
+}
+
+export interface SmeBreakdown {
+  sme_id: string;
+  full_name: string;
+  team: string;
+  location_country: string | null;
+  location_city: string | null;
+  is_external: boolean;
+  dimensions: SmeDimensionScores;
+  composite: number;
+  above_gate: boolean;
+  narrative?: string | null;
+}
+
+export interface ConferenceSmesResponse {
+  conference_id: string;
+  gate: number;
+  weights: {
+    topic: number;
+    audience: number;
+    bio: number;
+    location: number;
+    past: number;
+  };
+  narrative_top_k: number;
+  above_gate: SmeBreakdown[];
+  near_misses: SmeBreakdown[];
+}
+
+export type DecisionVerdict = "approved" | "rejected" | "needs_review";
+
+export interface DecisionCreate {
+  decision: DecisionVerdict;
+  reason?: string | null;
+  decided_by_label?: string;
+}
+
+export interface DecisionRead {
+  id: string;
+  conference_id: string;
+  decision: string;
+  reason: string | null;
+  decided_by_label: string;
+  decided_at: string;
+  created_at: string;
+}
+
+export interface DecisionListResponse {
+  conference_id: string;
+  decisions: DecisionRead[];
+}
+
+export interface DashboardStats {
+  cards: {
+    upcoming_approved: number;
+    pending_review: number;
+    cfp_closing_soon: number;
+    low_coverage_smes: number;
+  };
+  top_conferences: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    status: string;
+    overall_score: number | null;
+    start_date: string | null;
+  }>;
+}
