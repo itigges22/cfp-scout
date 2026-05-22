@@ -18,6 +18,7 @@ import type {
   AudienceProfileCreate,
   AudienceProfileRead,
   AudienceProfileUpdate,
+  ConferenceBrief,
   ConferenceListResponse,
   ConferenceMatchResponse,
   ConferenceSmesResponse,
@@ -43,6 +44,7 @@ import type {
   SmeCreate,
   SmeRead,
   SmeUpdate,
+  TeamRecommendationsResponse,
   TopicCreate,
   TopicRead,
   TopicUpdate,
@@ -313,6 +315,14 @@ export const conferencesApi = {
       body,
     }),
   dashboardStats: () => request<DashboardStats>(`${BASE}/conferences/stats/dashboard`),
+  brief: (id: string, team_size = 1, force = false) =>
+    request<ConferenceBrief>(`${BASE}/conferences/${id}/brief`, {
+      query: { team_size, force },
+    }),
+  teamRecommendations: (id: string) =>
+    request<TeamRecommendationsResponse>(
+      `${BASE}/conferences/${id}/team-recommendations`,
+    ),
 };
 
 // ---------------------------------------------------------------------------

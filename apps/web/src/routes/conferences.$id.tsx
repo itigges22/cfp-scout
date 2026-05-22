@@ -115,6 +115,15 @@ function ConferenceHeader({ conference }: { conference: ConferenceRead }) {
         <h1 className="text-2xl font-semibold tracking-tight">{conference.name}</h1>
         <StatusPill status={conference.status} />
         {conference.is_virtual ? <Badge variant="muted">Virtual</Badge> : null}
+        <Link
+          to="/conferences/$id/brief"
+          params={{ id: conference.id }}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="ml-auto text-xs text-accent underline-offset-2 hover:underline"
+        >
+          Open brief →
+        </Link>
       </div>
       <p className="text-sm text-fg-muted">
         {conference.start_date ?? "Dates TBD"}
