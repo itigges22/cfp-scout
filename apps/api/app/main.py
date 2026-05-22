@@ -17,8 +17,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import (
@@ -94,6 +95,29 @@ app.include_router(admin_jobs.router)
 app.include_router(admin_matcher.router)
 app.include_router(uploads.router)
 
-# ---- static SPA at / (FastAPI's StaticFiles, html=True for SPA fallback) --
+# ---- static SPA at / -----------------------------------------------------
+# Mount the built assets under /assets, then add a SPA fallback that serves
+# index.html for any non-/api path that doesn't match a file. StaticFiles
+# alone (even with html=True) only serves index.html for directory roots,
+# which 404s on client-side routes like /dashboard or /conferences/<uuid>.
 if STATIC_DIR.exists():
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    app.mount(
+        "/assets",
+        StaticFiles(directory=STATIC_DIR / "assets"),
+        name="spa-assets",
+    )
+    _INDEX_HTML = STATIC_DIR / "index.html"
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str, request: Request) -> FileResponse:
+        # /api/* is handled by the routers above; if a request reaches the
+        # SPA fallback under /api/, that's a 404, not a fall-through to the
+        # SPA shell — return a clean 404 so API consumers see RFC 7807, not HTML.
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        # Serve any literal file that exists (e.g. favicon.ico) before
+        # falling through to index.html for client-side routes.
+        candidate = STATIC_DIR / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(_INDEX_HTML)
