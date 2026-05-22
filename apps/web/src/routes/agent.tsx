@@ -296,12 +296,12 @@ function ChatPanel({ sessionId }: { sessionId: string }) {
               {ask.isPending ? "Asking…" : "Send"}
             </Button>
           </form>
-          <p className="mt-2 flex items-center justify-between text-[10px] text-fg-subtle">
+          <p className="mt-2 flex items-center justify-between text-xs text-fg-muted">
             <span>
               Enter to send · Shift+Enter for newline · Cited claims open the
               source.
             </span>
-            <span className="tabular-nums">
+            <span className="font-medium text-fg tabular-nums">
               Session cost: ${totalCost.toFixed(4)}
             </span>
           </p>
@@ -336,7 +336,7 @@ function MessageBubble({ m }: { m: AgentMessage }) {
           </div>
         ) : null}
         {!isUser && m.metadata_json?.cost_usd !== undefined ? (
-          <p className="mt-1 text-[10px] text-fg-subtle">
+          <p className="mt-1 text-xs text-fg-muted">
             {m.metadata_json.completion_tokens ?? 0} tokens · $
             {(m.metadata_json.cost_usd ?? 0).toFixed(4)}
           </p>

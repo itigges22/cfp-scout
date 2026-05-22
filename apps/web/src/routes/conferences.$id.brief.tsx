@@ -209,7 +209,7 @@ function Attendees({
                     {m.expertise_areas.map((e) => (
                       <span
                         key={e}
-                        className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-700"
+                        className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700"
                       >
                         {e}
                       </span>
@@ -220,7 +220,7 @@ function Attendees({
             ))}
           </ul>
           {a.rationale_text && (
-            <p className="mt-2 text-xs italic text-slate-600">
+            <p className="mt-2 text-sm text-slate-700">
               {a.rationale_text}
             </p>
           )}
@@ -319,7 +319,7 @@ function TalkingPoints({ brief }: { brief: ConferenceBrief }) {
         {brief.talking_points.map((d) => (
           <li key={d.document_id}>
             <div className="font-medium">{d.title}</div>
-            <div className="text-xs italic text-slate-600">{d.elevator_pitch}</div>
+            <div className="text-sm text-slate-700">{d.elevator_pitch}</div>
             {d.talking_points.length > 0 && (
               <ul className="mt-1 list-disc pl-5 text-xs">
                 {d.talking_points.map((p, i) => (

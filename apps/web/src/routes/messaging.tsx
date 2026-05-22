@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 
@@ -68,10 +68,9 @@ function MessagingPage() {
               }}
               className="w-64"
             />
-            {/* Create wizard lands in the next UI pass. */}
-            <Button disabled title="Multi-step wizard lands next">
-              New
-            </Button>
+            <Link to="/messaging/new">
+              <Button>New</Button>
+            </Link>
           </div>
         </CardHeader>
         <CardContent>
