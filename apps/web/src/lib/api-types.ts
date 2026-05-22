@@ -605,3 +605,132 @@ export interface DashboardStats {
     start_date: string | null;
   }>;
 }
+
+// ---------------------------------------------------------------------------
+// Team recommendations (plan 32)
+// ---------------------------------------------------------------------------
+export interface TeamPickRead {
+  team_size: number;
+  sme_ids: string[];
+  team_score: number;
+  coverage_breadth: number;
+  redundancy: number;
+  rationale_text: string;
+  computed_at: string | null;
+}
+
+export interface TeamRecommendationsResponse {
+  conference_id: string;
+  algorithm_version?: string;
+  by_size: Record<string, TeamPickRead>;
+}
+
+// ---------------------------------------------------------------------------
+// Brief (plan 33)
+// ---------------------------------------------------------------------------
+export interface BriefAttendee {
+  sme_id: string;
+  full_name: string;
+  team: string;
+  location_city: string | null;
+  location_country: string | null;
+  expertise_areas: string[];
+  bio: string;
+  narrative: string;
+}
+
+export interface BriefDeadline {
+  kind: string | null;
+  date: string | null;
+  description: string | null;
+  days_remaining: number | null;
+  is_next: boolean;
+}
+
+export interface ConferenceBrief {
+  conference_id: string;
+  generated_at: string;
+  algorithm_version: string;
+  scout_version: string;
+  team_size: number;
+  header: {
+    name: string;
+    slug: string;
+    start_date: string | null;
+    end_date: string | null;
+    location_city: string | null;
+    location_country: string | null;
+    is_virtual: boolean;
+    venue: string | null;
+    website: string | null;
+  };
+  at_a_glance: {
+    overall_score: number | null;
+    messaging_score: number | null;
+    pillar_score: number | null;
+    sme_score: number | null;
+    overall_bucket: "strong" | "good" | "marginal" | "weak" | null;
+    status: string;
+    acceptance_rate_percent: number | null;
+    estimated_cost_usd: number | null;
+    series: {
+      id: string;
+      canonical_name: string;
+      typical_month: number | null;
+      past_editions_count: number;
+      daam_attended_recent: number;
+    } | null;
+    freshness_score: number | null;
+  };
+  why: {
+    rationale_text: string;
+    matched_pillar: {
+      name: string;
+      description: string;
+      score: number | null;
+    } | null;
+    top_topics: Array<{ name: string; slug: string; weight: number | null }>;
+  };
+  attendees: {
+    team_size: number;
+    members: BriefAttendee[];
+    rationale_text: string;
+    source: "team_rec" | "individual_fallback" | "empty" | "none";
+  };
+  cfp: {
+    deadlines: BriefDeadline[];
+    topics_of_interest: string[];
+    open_at: string | null;
+    close_at: string | null;
+  };
+  past_engagement: Array<{
+    name: string;
+    year: number;
+    role: string;
+    session_type: string | null;
+    notes: string;
+    attendees: Array<{ sme_id: string; full_name: string }>;
+  }>;
+  talking_points: Array<{
+    document_id: string;
+    title: string;
+    elevator_pitch: string;
+    talking_points: string[];
+    key_themes: string[];
+    similarity: number;
+  }>;
+  logistics_placeholder: {
+    storage_key: string;
+    fields: string[];
+  };
+  footer: {
+    detail_url_path: string;
+    decision: {
+      decision: string;
+      decided_by_label: string;
+      decided_at: string | null;
+      reason: string | null;
+    } | null;
+    sources_count: number;
+  };
+}

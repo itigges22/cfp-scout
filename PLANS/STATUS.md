@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 32 pass 1 — multi-SME team recommendations: scored picks for sizes 1/2/3 with coverage + redundancy + rationale; auto-enqueued after matcher)
+**Last updated:** 2026-05-22 (plan 33 pass 1 — conference brief one-pager: denormalized API + print-optimized SPA route w/ Cmd-P → PDF, copy-as-Markdown/HTML, contenteditable logistics)
 
 ## Plan status
 
@@ -42,9 +42,67 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 30 | Documentation & runbook | 🚧 | Pass 1 done 2026-05-22 (rewrote README with daily dev loop + routes table + docs map; new docs/ops/runbook.md covers 14 common troubleshooting scenarios). Pass 2: cold-clone walkthrough video, markdownlint CI, demo seed |
 | 31 | Configuration workbook (XLSX) | 🚧 | Pass 1 done 2026-05-22 (6 sheets — Pillars/Industries/Audiences/SMEs/Topics/Series; template + export + preview + apply endpoints; round-trip identity verified). Pass 2: Messaging + PastConferences sheets, /settings/import-export UI |
 | 32 | Multi-SME team recommendations | 🚧 | Pass 1 done 2026-05-22 (team picks for sizes 1/2/3 with composite α·avg_fit + β·coverage − γ·redundancy − δ·location; persisted in `match_team_recommendations`, auto-enqueued after matcher; admin sync/async trigger + public read endpoint; templated rationale). Pass 2: UI panel on conference detail, "force include" pinning, configurable team_size cap |
-| 33 | Conference brief export | ⬜ | |
+| 33 | Conference brief export | 🚧 | Pass 1 done 2026-05-22 (denormalized `GET /conferences/{id}/brief?team_size=1\|2\|3` with 9-section payload + 5min in-process cache; print-optimized SPA route at `/conferences/{id}/brief` with copy-as-MD/HTML, contenteditable logistics persisted to localStorage; "Open brief" link from detail page; team-of-N fallback to top individuals). Pass 2: WeasyPrint server-side PDF (optional), email export, MD/HTML snapshot of more sections, CI Playwright print-snapshot |
 
 ## Changelog
+
+### 2026-05-22 (plan 33 pass 1 — Conference brief one-pager)
+- ✅ **Plan 33 pass 1 — conference brief export** complete
+- Backend: `GET /api/v1/conferences/{id}/brief?team_size=1|2|3&force=…`
+  returns a 9-section denormalized payload:
+  1. Header (name, dates, location, venue, website, virtual flag)
+  2. At-a-glance (overall + per-stage scores w/ bucket label, status,
+     acceptance rate, est. cost, series rollup, freshness)
+  3. Why we're going (rationale text from matches, matched pillar,
+     top-3 conference topics)
+  4. Recommended attendee(s) (pulls from `match_team_recommendations`
+     for the requested team_size; falls back to top-N individuals if
+     no team rec of that size yet — `source` field reports which)
+  5. CFP info (deadlines enriched with `days_remaining` + bolded
+     soonest future deadline, topics of interest, open/close dates)
+  6. Past DAAM engagement (last 5 editions in the series, joined to
+     SME names from `past_conferences.attended_sme_ids`)
+  7. Talking points (one embedding call per cache miss: top-3
+     messaging documents whose chunks score highest against the
+     conference text + their top-2 `talking_points`)
+  8. Logistics placeholder (storage key for client-side localStorage
+     persistence — backend never sees the data)
+  9. Footer (URL path, latest decision, sources contributing count)
+- Module-level 5-minute TTL cache keyed by `(conference_id, team_size)`;
+  invalidated by `invalidate_cache()` for tests + future change hooks.
+- New service module `apps/api/app/services/brief/` (`__init__.py` +
+  `builder.py`).
+- Router `apps/api/app/api/v1/briefs.py` mounted in `main.py`.
+- **Frontend**: new TanStack route `apps/web/src/routes/conferences.$id.brief.tsx`:
+  - Single-column, max-w-3xl, white-on-slate-50, no nav/rail.
+  - `@media print` rules: A4 size, 0.5in margins, hide toolbar, force
+    `page-break-inside: avoid` on each section; black text on white.
+  - Toolbar (hidden in print): team_size 1/2/3 switcher (re-uses query
+    string), "Copy as Markdown" (Slack-friendly), "Copy as HTML"
+    (via `ClipboardItem` for rich paste into email), "Print / Save PDF".
+  - Logistics block uses `<textarea>` bound to `localStorage` keyed
+    by `scout.brief.logistics.{conf_id}` — survives reloads, never
+    posted to the server.
+  - Detail page (`conferences.$id.tsx`) now sports an "Open brief →"
+    link in the header that opens in a new tab.
+- New api-types: `ConferenceBrief`, `BriefAttendee`, `BriefDeadline`,
+  `TeamPickRead`, `TeamRecommendationsResponse`; new
+  `conferencesApi.brief(id, team_size, force)` + `.teamRecommendations(id)`
+  helpers.
+- Acceptance criteria verified end-to-end on the live container:
+  - `?team_size=1` returns size-1 team rec (source=team_rec).
+  - `?team_size=2` falls back to individual_fallback when no team-of-2
+    rec exists yet (correct degenerate behavior).
+  - 404 on unknown conference id.
+  - SPA route returns 200; Vite build produces a 13kB code-split
+    chunk for the brief page.
+- New unit tests: 13 cases in `test_brief.py` covering bucket
+  thresholds, `_cfp_section` next-deadline detection, topics
+  truncation, and series-summary rollups. **68/68** unit tests pass
+  in 1.65s (was 55/55).
+- Pass 2 followups: WeasyPrint server-side PDF (optional 150MB dep),
+  email export, snapshot tests of the print render via Playwright,
+  more sections in the MD/HTML clipboard payload.
 
 ### 2026-05-22 (plan 32 pass 1 — Multi-SME team recommendations)
 - ✅ **Plan 32 pass 1 — multi-SME teams** complete
