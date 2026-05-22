@@ -207,21 +207,39 @@ def full_graph_for_view(
     graph: nx.Graph,
     *,
     kinds: set[str] | None = None,
+    status_in: set[str] | None = None,
+    since_iso: str | None = None,
     max_nodes: int = 500,
 ) -> tuple[nx.Graph, bool]:
     """Return a bounded subgraph for the dashboard's full-graph explorer.
 
-    ``kinds`` filters nodes by ``kind`` attribute (e.g. ``{"conference",
-    "topic"}``). ``max_nodes`` is the cap — if the filtered graph exceeds it,
-    we truncate to ``max_nodes`` nodes (highest-degree first) and return
-    ``truncated=True``.
+    Filter order (apply, then cap):
+      1. ``status_in`` (conference-only) — drop conference nodes whose
+         ``status`` attribute isn't in the set. Edges to dropped nodes
+         disappear automatically when we ``subgraph`` to the survivors.
+      2. ``since_iso`` (conference-only) — drop conferences with
+         ``start_date < since_iso`` (lexical compare is fine on ISO dates).
+         Conferences without a start_date are kept (TBD-dated events).
+      3. ``kinds`` — keep only nodes of the requested kinds.
+      4. ``max_nodes`` — if still over, keep the highest-degree N.
+
+    Returns ``(subgraph, truncated)``.
     """
-    if kinds:
-        filtered = graph.subgraph(
-            [n for n, d in graph.nodes(data=True) if d.get("kind") in kinds]
-        ).copy()
-    else:
-        filtered = graph.copy()
+    keep: set[str] = set()
+    for n, d in graph.nodes(data=True):
+        kind = d.get("kind")
+        if kind == "conference":
+            if status_in is not None and d.get("status") not in status_in:
+                continue
+            if since_iso is not None:
+                sd = d.get("start_date")
+                if sd is not None and sd < since_iso:
+                    continue
+        if kinds is not None and kind not in kinds:
+            continue
+        keep.add(n)
+
+    filtered = graph.subgraph(keep).copy()
 
     if filtered.number_of_nodes() <= max_nodes:
         return filtered, False

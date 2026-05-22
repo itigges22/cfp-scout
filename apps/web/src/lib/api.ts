@@ -23,6 +23,7 @@ import type {
   DecisionCreate,
   DecisionListResponse,
   DecisionRead,
+  GraphResponse,
   MessagingDocumentCreate,
   MessagingDocumentRead,
   MessagingDocumentUpdate,
@@ -70,9 +71,11 @@ export class ApiError extends Error {
 // ---------------------------------------------------------------------------
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+type QueryValue = string | number | boolean | null | undefined | string[] | number[];
+
 interface RequestOptions {
   method?: Method;
-  query?: Record<string, string | number | boolean | null | undefined>;
+  query?: Record<string, QueryValue>;
   body?: unknown;
   /** Pass a FormData instance for multipart uploads; bypasses JSON encoding. */
   form?: FormData;
@@ -85,7 +88,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const url = new URL(path, window.location.origin);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
-      if (v !== undefined && v !== null && v !== "") {
+      if (v === undefined || v === null || v === "") continue;
+      if (Array.isArray(v)) {
+        // FastAPI repeats: ?k=a&k=b. Single comma-joined value would be
+        // interpreted as one literal string.
+        for (const item of v) {
+          if (item !== undefined && item !== null && item !== "") {
+            url.searchParams.append(k, String(item));
+          }
+        }
+      } else {
         url.searchParams.set(k, String(v));
       }
     }
@@ -277,9 +289,7 @@ type ConferenceListParams = {
 
 export const conferencesApi = {
   list: (params: ConferenceListParams = {}) =>
-    request<ConferenceListResponse>(`${BASE}/conferences`, {
-      query: params as Record<string, string | number | boolean | null | undefined>,
-    }),
+    request<ConferenceListResponse>(`${BASE}/conferences`, { query: params }),
   get: (id: string) =>
     request<import("@/lib/api-types").ConferenceRead>(`${BASE}/conferences/${id}`),
   match: (id: string) => request<ConferenceMatchResponse>(`${BASE}/conferences/${id}/match`),
@@ -295,4 +305,25 @@ export const conferencesApi = {
       body,
     }),
   dashboardStats: () => request<DashboardStats>(`${BASE}/conferences/stats/dashboard`),
+};
+
+// ---------------------------------------------------------------------------
+// Knowledge graph (plan 21 explorer)
+// ---------------------------------------------------------------------------
+type GraphFullParams = {
+  kinds?: string | string[];
+  status?: string | string[];
+  since?: string;
+  max_nodes?: number;
+};
+
+export const graphApi = {
+  full: (params: GraphFullParams = {}) =>
+    request<GraphResponse>(`${BASE}/graph/full`, { query: params }),
+  neighborhood: (node_id: string, depth = 2) =>
+    request<GraphResponse>(`${BASE}/graph/neighborhood`, {
+      query: { node_id, depth },
+    }),
+  invalidate: () =>
+    request<void>(`${BASE}/graph/invalidate`, { method: "POST" }),
 };

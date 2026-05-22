@@ -318,6 +318,55 @@ export interface DecisionListResponse {
   decisions: DecisionRead[];
 }
 
+// ---------------------------------------------------------------------------
+// Knowledge graph (plan 16 → plan 21 explorer)
+// ---------------------------------------------------------------------------
+export type GraphNodeKind =
+  | "conference"
+  | "topic"
+  | "sme"
+  | "audience"
+  | "pillar"
+  | "messaging"
+  | "source"
+  | "series";
+
+export interface GraphNode {
+  id: string;
+  kind: GraphNodeKind;
+  label: string;
+  degree?: number;
+  // Per-kind optional metadata surfaced by the loader.
+  status?: string;
+  slug?: string;
+  team?: string;
+  start_date?: string | null;
+  confidence?: number | null;
+  is_active?: boolean;
+  pending_review?: boolean;
+  industry?: string;
+  role_seniority?: string;
+  display_order?: number;
+  source_kind?: string;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  relation: string;
+  weight?: number;
+}
+
+export interface GraphResponse {
+  nodes: GraphNode[];
+  links: GraphLink[];
+  stats: {
+    n_nodes: number;
+    n_edges: number;
+    truncated: boolean;
+  };
+}
+
 export interface DashboardStats {
   cards: {
     upcoming_approved: number;
