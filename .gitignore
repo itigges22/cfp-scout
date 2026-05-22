@@ -104,3 +104,11 @@ apps/web/vite.config.js.map
 
 # TS project-reference incremental build cache
 apps/web/*.tsbuildinfo
+
+# ---------------------------------------------------------------------------
+# Red Hat internal source documents (DAAM messaging, SME rosters, etc.)
+# Unstructured inputs to the workbook builder. NEVER commit — contains
+# internal positioning copy + identifying info.
+# ---------------------------------------------------------------------------
+rh-docs/
+/rh-docs/**
