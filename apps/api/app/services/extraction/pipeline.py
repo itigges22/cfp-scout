@@ -35,6 +35,7 @@ from app.db.models.entities import (
     ConferenceSource,
     RawPage,
 )
+from app.db.models.junctions import ConferenceTopic
 from app.services.extraction.cleaning import clean_html_to_text
 from app.services.extraction.dedup import build_slug, find_duplicate, year_for
 from app.services.extraction.llm_extract import extract
@@ -45,6 +46,7 @@ from app.services.extraction.validation import (
     ValidationOutcome,
     validate_and_score,
 )
+from app.services.graph import invalidate as invalidate_graph
 
 log = structlog.get_logger("scout.extraction.pipeline")
 
@@ -189,11 +191,34 @@ async def parse_raw_page(db: AsyncSession, raw_page_id: UUID) -> ParseResult:
         )
 
     # ---- 8. Topic normalization --------------------------------------
-    canonical_topics, pending_new = await normalize_topics(db, extracted.topics)
+    canonical_topics, pending_new, matched_topic_rows = await normalize_topics(
+        db, extracted.topics
+    )
     if canonical_topics and not duplicate_of:
         # Only set topics on newly-created rows; dedup-merge leaves
         # existing topics alone (pass 2 will handle merge logic).
         conference.topics = canonical_topics
+
+    # Conference -> Topic junction rows (plan 16 graph edges). Idempotent
+    # via composite PK + ON CONFLICT-free insert protected by an existence
+    # check (small N per conference; not worth a raw INSERT ON CONFLICT).
+    if matched_topic_rows:
+        existing_ct = await db.execute(
+            select(ConferenceTopic.topic_id).where(
+                ConferenceTopic.conference_id == conference.id
+            )
+        )
+        already = {tid for (tid,) in existing_ct.all()}
+        for topic in matched_topic_rows:
+            if topic.id in already:
+                continue
+            db.add(
+                ConferenceTopic(
+                    conference_id=conference.id,
+                    topic_id=topic.id,
+                    weight=1.0,
+                )
+            )
 
     # ---- 9. conference_sources junction ------------------------------
     junction_exists = await db.execute(
@@ -214,6 +239,9 @@ async def parse_raw_page(db: AsyncSession, raw_page_id: UUID) -> ParseResult:
     row.parse_status = "extracted"
 
     await db.flush()
+    # Junction tables changed (ConferenceTopic + ConferenceSource) — drop
+    # the in-memory graph cache so the next read picks up the new edges.
+    invalidate_graph()
     return ParseResult(
         raw_page_id=str(row.id),
         ok=True,

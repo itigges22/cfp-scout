@@ -18,6 +18,7 @@ from app.db.models.entities import Topic
 from app.schemas.common import Page
 from app.schemas.topic import TopicCreate, TopicRead, TopicUpdate
 from app.services._common import model_to_audit_dict, paginate, write_audit
+from app.services.graph import invalidate as invalidate_graph
 
 
 async def list_topics(
@@ -155,6 +156,7 @@ async def approve_topic(
     )
     await db.commit()
     await db.refresh(obj)
+    invalidate_graph()  # pending->active changes which topic edges count
     return obj
 
 
@@ -183,3 +185,4 @@ async def reject_topic(
         actor_label=actor_label,
     )
     await db.commit()
+    invalidate_graph()  # node removed from active set

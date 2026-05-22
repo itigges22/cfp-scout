@@ -96,11 +96,23 @@ def model_to_audit_dict(obj: Any) -> dict[str, Any]:
     state = {}
     for column in obj.__table__.columns:
         value = getattr(obj, column.name)
-        # JSON-friendly normalisation for the audit JSONB columns.
-        if hasattr(value, "isoformat"):  # datetime / date
-            state[column.name] = value.isoformat()
-        elif isinstance(value, UUID):
-            state[column.name] = str(value)
-        else:
-            state[column.name] = value
+        state[column.name] = _json_safe(value)
     return state
+
+
+def _json_safe(value: Any) -> Any:
+    """Recursively coerce common non-JSON-native types.
+
+    Handles datetime/date (isoformat), UUID (str), and lists/dicts containing
+    either. Postgres ARRAY[UUID] columns surface as ``list[UUID]`` in the
+    ORM, which the JSONB serializer would otherwise reject.
+    """
+    if hasattr(value, "isoformat"):  # datetime / date / time
+        return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    return value
