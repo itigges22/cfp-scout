@@ -96,3 +96,8 @@ test-results/
 # ---------------------------------------------------------------------------
 *.log
 logs/
+
+# Vite config TS compile artifacts (we keep only vite.config.ts in source).
+apps/web/vite.config.d.ts
+apps/web/vite.config.js
+apps/web/vite.config.js.map
