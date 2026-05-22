@@ -11,7 +11,7 @@ Create Date: 2026-05-21 12:00:00
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
@@ -174,9 +174,7 @@ def upgrade() -> None:
             server_default=sa.text("'{}'::text[]"),
         ),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("true")),
-        sa.Column(
-            "pending_review", sa.Boolean, nullable=False, server_default=sa.text("false")
-        ),
+        sa.Column("pending_review", sa.Boolean, nullable=False, server_default=sa.text("false")),
         *_timestamps(),
         sa.UniqueConstraint("name", name="uq_topics_name"),
         sa.UniqueConstraint("slug", name="uq_topics_slug"),
@@ -242,12 +240,8 @@ def upgrade() -> None:
         sa.Column("kind", sa.String(20), nullable=False),
         sa.Column("enabled", sa.Boolean, nullable=False, server_default=sa.text("true")),
         sa.Column("last_crawled_at", sa.Date),
-        sa.Column(
-            "crawl_cadence", sa.Text, nullable=False, server_default=sa.text("'1 day'")
-        ),
-        sa.Column(
-            "robots_allowed", sa.Boolean, nullable=False, server_default=sa.text("true")
-        ),
+        sa.Column("crawl_cadence", sa.Text, nullable=False, server_default=sa.text("'1 day'")),
+        sa.Column("robots_allowed", sa.Boolean, nullable=False, server_default=sa.text("true")),
         sa.Column(
             "politeness_delay_seconds",
             sa.SmallInteger,
@@ -334,9 +328,7 @@ def upgrade() -> None:
             postgresql.UUID(as_uuid=True),
             sa.ForeignKey("app.conference_series.id", ondelete="SET NULL"),
         ),
-        sa.Column(
-            "freshness_score", sa.Float, nullable=False, server_default=sa.text("1.0")
-        ),
+        sa.Column("freshness_score", sa.Float, nullable=False, server_default=sa.text("1.0")),
         *_timestamps(),
         sa.UniqueConstraint("slug", name="uq_conferences_slug"),
         schema="app",
@@ -626,7 +618,9 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("now()"),
         ),
-        sa.CheckConstraint("team_size IN (1, 2, 3)", name="ck_match_team_recommendations_team_size_range"),
+        sa.CheckConstraint(
+            "team_size IN (1, 2, 3)", name="ck_match_team_recommendations_team_size_range"
+        ),
         schema="app",
     )
 
@@ -739,12 +733,8 @@ def upgrade() -> None:
         _id_col(),
         sa.Column("model", sa.String(120), nullable=False),
         sa.Column("purpose", sa.String(40), nullable=False),
-        sa.Column(
-            "prompt_tokens", sa.Integer, nullable=False, server_default=sa.text("0")
-        ),
-        sa.Column(
-            "completion_tokens", sa.Integer, nullable=False, server_default=sa.text("0")
-        ),
+        sa.Column("prompt_tokens", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("completion_tokens", sa.Integer, nullable=False, server_default=sa.text("0")),
         sa.Column(
             "cost_usd",
             sa.Numeric(10, 6),

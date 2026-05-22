@@ -18,9 +18,8 @@ Create Date: 2026-05-21 12:10:00
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
-import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20260521_1210_seed"
@@ -40,6 +39,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "DELETE FROM vectors.embedding_models WHERE name = 'nomic-embed-text-v1-5';"
-    )
+    op.execute("DELETE FROM vectors.embedding_models WHERE name = 'nomic-embed-text-v1-5';")

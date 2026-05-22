@@ -19,8 +19,8 @@ Create Date: 2026-05-22 21:00:00
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import sqlalchemy as sa
 from alembic import op
@@ -45,6 +45,7 @@ def _load_yaml(path: Path) -> dict:
     # input.
     try:
         import yaml  # type: ignore
+
         with path.open("r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except ImportError:
