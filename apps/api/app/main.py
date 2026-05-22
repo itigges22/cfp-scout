@@ -28,6 +28,7 @@ from app.api.v1 import (
     admin_jobs,
     admin_llm,
     admin_matcher,
+    agent,
     audiences,
     conferences,
     graph,
@@ -93,6 +94,7 @@ app.include_router(admin_embeddings.router)
 app.include_router(admin_extraction.router)
 app.include_router(admin_jobs.router)
 app.include_router(admin_matcher.router)
+app.include_router(agent.router)
 app.include_router(uploads.router)
 
 # ---- static SPA at / -----------------------------------------------------
