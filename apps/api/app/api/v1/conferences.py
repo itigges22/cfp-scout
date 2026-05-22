@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
 from app.db.models.entities import Conference, ConferenceSource, RawPage
-from app.db.models.matching import Decision, Match
+from app.db.models.matching import Decision, Match, MatchTeamRecommendation
 from app.db.session import DbSession
 from app.services._common import model_to_audit_dict, write_audit
 from app.services.matcher import ALGORITHM_VERSION
@@ -496,6 +496,50 @@ async def list_decisions(db: DbSession, conference_id: UUID) -> dict:
     return {
         "conference_id": str(conference_id),
         "decisions": [DecisionRead.model_validate(r).model_dump(mode="json") for r in rows],
+    }
+
+
+@router.get("/{conference_id}/team-recommendations")
+async def team_recommendations(db: DbSession, conference_id: UUID) -> dict:
+    """Plan-32 team picks: size 1 / 2 / 3 with composite + coverage +
+    redundancy + rationale. Returns ``{by_size: {1: {...}, ...}}``."""
+    if await db.get(Conference, conference_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No conference {conference_id}",
+        )
+    match = (
+        await db.execute(
+            select(Match)
+            .where(Match.conference_id == conference_id)
+            .where(Match.algorithm_version == ALGORITHM_VERSION)
+        )
+    ).scalar_one_or_none()
+    if match is None:
+        return {"conference_id": str(conference_id), "by_size": {}}
+
+    rows = (
+        await db.execute(
+            select(MatchTeamRecommendation)
+            .where(MatchTeamRecommendation.match_id == match.id)
+            .order_by(MatchTeamRecommendation.team_size)
+        )
+    ).scalars().all()
+    return {
+        "conference_id": str(conference_id),
+        "algorithm_version": ALGORITHM_VERSION,
+        "by_size": {
+            str(r.team_size): {
+                "team_size": r.team_size,
+                "sme_ids": [str(s) for s in r.sme_ids],
+                "team_score": round(float(r.team_score), 4),
+                "coverage_breadth": round(float(r.coverage_breadth), 4),
+                "redundancy": round(float(r.redundancy), 4),
+                "rationale_text": r.rationale_text,
+                "computed_at": r.computed_at.isoformat() if r.computed_at else None,
+            }
+            for r in rows
+        },
     }
 
 

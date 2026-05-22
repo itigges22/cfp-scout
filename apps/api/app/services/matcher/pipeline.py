@@ -201,6 +201,16 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
             kwargs={"conference_id": str(conference.id), "force": False},
         )
 
+        # Plan 32: also enqueue multi-SME team recs (pure algorithmic; no
+        # LLM cost). Picks complementary teams of size 1/2/3.
+        from app.tasks.recommend_teams import recommend_teams_task
+
+        enqueue_now(
+            recommend_teams_task,
+            job_id=f"teams-{conference.id}",
+            kwargs={"conference_id": str(conference.id)},
+        )
+
     bound.info(
         "matcher.run.done",
         messaging_score=round(ms.score, 4),
