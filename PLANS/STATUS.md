@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-21 (plan 09 UI pass 1: list pages + audience CRUD live; wizards next)
+**Last updated:** 2026-05-22 (stack live on Podman; bring-up fixes committed; wizards next)
 
 ## Plan status
 
@@ -319,6 +319,44 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   wizard (replacing the current inline overlay), SME single-screen form,
   past-conference form + CSV drop-zone with diff preview. Pulls in a real
   shadcn Dialog primitive (`@radix-ui/react-dialog`).
+
+### 2026-05-22 (live verification on Podman)
+- 🟢 **End-to-end stack live**: `make up` succeeds on Podman 5.8 + podman-compose 1.5.
+  Both containers healthy. `/api/v1/healthz`, `/api/v1/readyz`, `/api/openapi.json`,
+  `/` (SPA) all responding. All 30 ORM tables present in the right schemas;
+  Alembic baseline + seed migrations applied; the seed `embedding_models` row exists.
+  Sanity-tested with a real `POST /api/v1/audience-profiles` (HTTP 201 with the
+  created row) + a bad-input POST (HTTP 422 with field-level RFC 7807 errors).
+- 🐛 **Six fixes from real-world bring-up** (every one a real bug — none would
+  have surfaced without running the stack):
+  1. `apps/api/Containerfile`: `corepack enable` failed (not on PATH in UBI
+     nodejs-22). Switched to `npm install -g pnpm@9.12.0`. Same fix applied
+     to `make build-spa` in the Makefile.
+  2. `apps/api/Containerfile`: missed `COPY apps/api/alembic` and `alembic.ini`
+     into the py-builder + runtime stages. Without them, `make migrate` would
+     have died with "no alembic.ini". Added both copies.
+  3. `apps/api/Containerfile`: `useradd --uid 1001 scout` collided with UBI
+     python-312's pre-existing default user at uid 1001. Switched to uid 1002.
+  4. `apps/api/Containerfile`: py-builder created venv at `/build/api/.venv`
+     but runtime put it at `/app/.venv` — the venv's hardcoded
+     `#!/build/api/.venv/bin/python` shebangs broke `uvicorn` exec. Switched
+     both stages to `WORKDIR /app` so the path is consistent and shebangs work.
+  5. `apps/api/alembic.ini` + `apps/api/alembic/versions/20260521_1210_seed_embedding_model.py`:
+     revision ID `20260521_1210_seed_embedding_model` (36 chars) overflowed
+     Alembic's default `alembic_version varchar(32)` column. Renamed file to
+     `20260521_1210_seed.py`, shortened revision to `20260521_1210_seed`,
+     tightened `truncate_slug_length` from 40 → 18 in alembic.ini to prevent
+     future slug-overflow regressions.
+  6. `apps/web/`: TypeScript build failed under `tsc -b`. Three roots:
+     (a) `routeTree.gen.ts` doesn't exist at `tsc` time because the TanStack
+     Router plugin generates it during `vite build`; added `@tanstack/router-cli`
+     and prefixed the build script with `tsr generate`.
+     (b) `exactOptionalPropertyTypes: true` rejected legitimate
+     `string | undefined` parameters; removed it (other strict-mode flags stay).
+     (c) Missing `src/vite-env.d.ts` left `import.meta.env` untyped;
+     added the standard one-line reference.
+     Also fixed `signal: undefined` in `lib/api.ts` to omit the field
+     conditionally rather than pass undefined.
 
 ### 2026-05-21 (afternoon revision)
 - 🔄 **Docling adopted** for PDF parsing + structure-aware chunking

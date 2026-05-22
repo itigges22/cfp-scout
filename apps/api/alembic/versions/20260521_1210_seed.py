@@ -8,7 +8,10 @@ Other seed data (strategic_pillars, conference_series, topics, audiences)
 is entered by the team via the XLSX workbook (plan 31) — we don't ship
 defaults for those.
 
-Revision ID: 20260521_1210_seed_embedding_model
+Revision ID kept short: Alembic's ``alembic_version`` column is varchar(32);
+36-char IDs like ``20260521_1210_seed_embedding_model`` overflow it.
+
+Revision ID: 20260521_1210_seed
 Revises: 20260521_1200_baseline
 Create Date: 2026-05-21 12:10:00
 """
@@ -20,7 +23,7 @@ from typing import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20260521_1210_seed_embedding_model"
+revision: str = "20260521_1210_seed"
 down_revision: str | None = "20260521_1200_baseline"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

@@ -148,7 +148,7 @@ build-spa:  ## Build the Vite SPA (throwaway node container; deposits in apps/ap
 	  -v $(PWD)/apps/api/static:/build/static \
 	  -w /build/web \
 	  registry.access.redhat.com/ubi9/nodejs-22 \
-	  bash -c 'corepack enable && corepack prepare pnpm@9.12.0 --activate && pnpm install && pnpm build && rm -rf /build/static/* && cp -R dist/. /build/static/'
+	  bash -c 'npm install -g pnpm@9.12.0 && pnpm install && pnpm build && rm -rf /build/static/* && cp -R dist/. /build/static/'
 	@echo "OK — SPA built into apps/api/static/"
 
 # ---------------------------------------------------------------------------
