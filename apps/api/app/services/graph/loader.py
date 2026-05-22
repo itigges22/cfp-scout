@@ -210,7 +210,7 @@ async def _build_graph() -> nx.Graph:
             graph.add_node(
                 _nid("series", cs.id),
                 kind="series",
-                label=cs.name,
+                label=cs.canonical_name,
             )
 
         # ---- Hard cap check (nodes) ----------------------------------
