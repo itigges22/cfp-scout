@@ -50,6 +50,9 @@ dependencies = [
     # before the LLM sees the page; python-slugify generates conferences.slug.
     "trafilatura>=1.12",
     "python-slugify>=8.0",
+    # Knowledge graph (plan 16). NetworkX is pure-Python, ~3MB; we don't
+    # need igraph or graph-tool for Phase 1 scale (low thousands of nodes).
+    "networkx>=3.4",
 ]
 
 [tool.uv.sources]

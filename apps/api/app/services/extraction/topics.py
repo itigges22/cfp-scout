@@ -38,17 +38,20 @@ def _normalize_key(s: str) -> str:
 
 async def normalize_topics(
     db: AsyncSession, candidates: list[str]
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], list[Topic]]:
     """Match free-text topics to ``app.topics``.
 
-    Returns ``(canonical_names, newly_pending_names)``:
-      * ``canonical_names`` — the list to store in ``conferences.topics``;
-        deduplicated, lower-cased canonical Topic names (preserves order).
-      * ``newly_pending_names`` — the subset that didn't match anything
-        and were inserted into ``app.topics`` with ``pending_review=true``.
+    Returns ``(canonical_names, newly_pending_names, matched_topic_rows)``:
+      * ``canonical_names`` — names to store in ``conferences.topics``
+        (deduplicated, in source order).
+      * ``newly_pending_names`` — names that didn't match any active topic
+        and were inserted with ``pending_review=true, is_active=false``.
+      * ``matched_topic_rows`` — the actual active Topic ORM rows we
+        matched; the pipeline uses these to insert ``conference_topics``
+        junction rows so plan 16's graph sees the Conference-Topic edges.
     """
     if not candidates:
-        return [], []
+        return [], [], []
 
     # Single-pass index of existing topics by every name + alias key.
     result = await db.execute(select(Topic))
@@ -60,6 +63,7 @@ async def normalize_topics(
 
     canonical: list[str] = []
     pending_new: list[str] = []
+    matched: list[Topic] = []
     seen_keys: set[str] = set()
 
     for raw in candidates:
@@ -72,6 +76,7 @@ async def normalize_topics(
         if match is not None:
             if match.is_active:
                 canonical.append(match.name)
+                matched.append(match)
             # pending-but-existing matches: don't surface yet; admin needs to
             # approve them first.
             continue
@@ -93,4 +98,4 @@ async def normalize_topics(
     if pending_new:
         log.info("extraction.topics.pending_inserted", names=pending_new)
 
-    return canonical, pending_new
+    return canonical, pending_new, matched

@@ -12,14 +12,37 @@ from uuid import UUID
 
 import structlog
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import AudienceProfile, Sme, Topic
+from app.db.models.junctions import SmeAudience, SmeTopic
 from app.schemas.common import Page
 from app.schemas.sme import SmeCreate, SmeRead, SmeUpdate
 from app.services._common import model_to_audit_dict, paginate, write_audit
 from app.services.embeddings import embed_owner
+from app.services.graph import invalidate as invalidate_graph
+
+
+async def _sync_sme_junctions(
+    db: AsyncSession,
+    sme_id: UUID,
+    *,
+    topic_ids: list[UUID],
+    audience_ids: list[UUID],
+) -> None:
+    """Replace the SME's edges in ``sme_topics`` + ``sme_audiences``.
+
+    The denormalized arrays on the SME row are the user-facing surface; the
+    junctions are the graph's source of truth (plan 16). Keeping them in
+    sync is a single delete-then-insert per call, which fits this tiny scale.
+    """
+    await db.execute(delete(SmeTopic).where(SmeTopic.sme_id == sme_id))
+    await db.execute(delete(SmeAudience).where(SmeAudience.sme_id == sme_id))
+    for tid in topic_ids:
+        db.add(SmeTopic(sme_id=sme_id, topic_id=tid, weight=1.0))
+    for aid in audience_ids:
+        db.add(SmeAudience(sme_id=sme_id, audience_id=aid, weight=1.0))
 
 log = structlog.get_logger("scout.services.sme")
 
@@ -131,6 +154,13 @@ async def create_sme(
     db.add(obj)
     await db.flush()
 
+    await _sync_sme_junctions(
+        db,
+        obj.id,
+        topic_ids=list(payload.primary_topics),
+        audience_ids=list(payload.audience_focus),
+    )
+
     await write_audit(
         db,
         action="create",
@@ -142,6 +172,7 @@ async def create_sme(
     )
     await db.commit()
     await db.refresh(obj)
+    invalidate_graph()  # SmeTopic / SmeAudience writes invalidated edges
     await _embed_bio_safely(db, obj, purpose="embed:sme_bio:create")
     return obj
 
@@ -169,6 +200,13 @@ async def update_sme(
     # the expired onupdate=now() updated_at column.
     await db.refresh(obj)
 
+    await _sync_sme_junctions(
+        db,
+        obj.id,
+        topic_ids=list(payload.primary_topics),
+        audience_ids=list(payload.audience_focus),
+    )
+
     await write_audit(
         db,
         action="update",
@@ -180,6 +218,7 @@ async def update_sme(
     )
     await db.commit()
     await db.refresh(obj)
+    invalidate_graph()  # SmeTopic / SmeAudience may have changed
     await _embed_bio_safely(db, obj, purpose="embed:sme_bio:update")
     return obj
 

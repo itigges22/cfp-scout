@@ -27,6 +27,7 @@ from app.api.v1 import (
     admin_jobs,
     admin_llm,
     audiences,
+    graph,
     health,
     messaging,
     past_conferences,
@@ -81,6 +82,7 @@ app.include_router(audiences.router)
 app.include_router(smes.router)
 app.include_router(past_conferences.router)
 app.include_router(sources.router)
+app.include_router(graph.router)
 app.include_router(topics.router)
 app.include_router(admin_llm.router)
 app.include_router(admin_embeddings.router)

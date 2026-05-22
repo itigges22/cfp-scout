@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 15 pass 1 — LLM extraction live; 3 conferences extracted from huggingface raw_pages via dry-run path)
+**Last updated:** 2026-05-22 (plan 16 pass 1 — knowledge graph live; candidate-SME ranking from real Conference↔Topic↔SME triangle)
 
 ## Plan status
 
@@ -25,7 +25,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 13 | Background jobs (APScheduler) | ✅ | Completed 2026-05-22 — heartbeat firing + jobstore persists across restarts |
 | 14 | Web scraper | 🚧 | Pass 1 done 2026-05-22 (rss + page kinds, SSRF guard, robots, politeness, content-hash dedup, source CRUD, scrape cron). Pass 2: sitemap/ICS/wikicfp parsers + admin UI |
 | 15 | Data validation & routing | 🚧 | Pass 1 done 2026-05-22 (extract→validate→route→persist; slug dedup; topic normalization). Pass 2: pg_trgm fuzzy dedup + field-merge + content_versions + quarantine_reasons table |
-| 16 | Knowledge graph | ⬜ | |
+| 16 | Knowledge graph | 🚧 | Pass 1 done 2026-05-22 (NetworkX loader + 60s cache + 5 queries + viz; junction-write backfill for SME + extraction). Pass 2: pillar coverage seeded after plan 17, full-graph view in plan 21 |
 | 17 | Fit matcher algorithm | ⬜ | |
 | 18 | SME matcher | ⬜ | |
 | 19 | SME fit narrative | ⬜ | |
@@ -470,6 +470,97 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 16 pass 1 — Knowledge graph)
+- 🚧 **Plan 16 pass 1 complete**: NetworkX-backed in-memory graph over the
+  Postgres junction tables, with read-only viz + query endpoints.
+- **Graph package** (`app/services/graph/`):
+  - `loader.py` — assembles a single `networkx.Graph` per process. Nodes
+    typed via a `kind` attribute (`conference`, `topic`, `sme`, `audience`,
+    `pillar`, `messaging`, `source`, `series`); each carries display
+    metadata (label, slug, status, etc.) so query + viz code doesn't
+    re-hit the DB. **60s TTL cache** + an asyncio.Lock so a burst of
+    cold-cache reads coalesces into one rebuild. Hard caps:
+    `MAX_NODES=50_000`, `MAX_EDGES=200_000` (refuses to build above either
+    so a runaway can't OOM the api process). `_safe_add_edge` guard
+    refuses to materialize phantom nodes from junction rows whose endpoint
+    rows were filtered out (e.g. an inactive SME referenced from sme_topics).
+  - `query.py` — five typed helpers (sync, since the loaded graph lives
+    in RAM):
+    - `candidate_smes_for_conference(graph, conf_id, k)` — pure
+      graph-overlap score from shared topics + audiences; returns ranked
+      `CandidateSme`s. Pending-review topics are skipped.
+    - `upcoming_conferences_for_sme(graph, sme_id, days)` — neighbour
+      walk to topic + audience neighbours then to their conferences,
+      filtered by `start_date` horizon.
+    - `pillar_coverage(graph)` — per-pillar count of attached conferences
+      + messaging documents, ordered by `display_order`.
+    - `neighborhood(graph, node_id, depth)` — bounded shortest-path-length
+      subgraph.
+    - `full_graph_for_view(graph, kinds, max_nodes)` — filtered
+      subgraph for the dashboard explorer; truncates to highest-degree
+      `max_nodes` and flags `truncated=true` when over the cap.
+  - `viz.py` — `to_node_link(graph)` → `{nodes, links, stats}` payload
+    for the frontend. Strips PII (no chunks, no full descriptions); edge
+    weights rounded.
+- **API endpoints** (`app/api/v1/graph.py`):
+  - `GET  /graph/full?kinds=...&max_nodes=...`
+  - `GET  /graph/neighborhood?node_id=conference:<uuid>&depth=2`
+  - `GET  /graph/candidate-smes/{conference_id}?k=5`
+  - `GET  /graph/upcoming/{sme_id}?days=180`
+  - `GET  /graph/pillar-coverage`
+  - `POST /graph/invalidate`            (admin reset; returns 204)
+- **Junction-table backfill** (the graph needs real edges, not just
+  denormalized array columns):
+  - `app/services/sme_service.py` — `_sync_sme_junctions()` replaces
+    `sme_topics` + `sme_audiences` rows on every SME create/update. Both
+    paths call `invalidate_graph()` after commit so the next read rebuilds.
+  - `app/services/extraction/topics.py` — `normalize_topics` now returns
+    `(canonical_names, pending_new, matched_topic_rows)`. The third value
+    is the list of active Topic ORM rows that matched LLM output.
+  - `app/services/extraction/pipeline.py` — inserts a `ConferenceTopic`
+    row per matched topic (idempotent via composite-PK existence check)
+    + calls `invalidate_graph()` after the extraction flush.
+  - `app/services/topic_service.py` — `invalidate_graph()` on approve/
+    reject so the matcher sees freshly-promoted topics on the next read.
+- **JSON-safe audit dict fix** (`app/services/_common.py`): the existing
+  `model_to_audit_dict` only coerced top-level UUID and datetime values.
+  SME rows have `primary_topics` + `audience_focus` as `ARRAY[UUID]`
+  columns, which surface as `list[UUID]` in the ORM. The JSONB serializer
+  was rejecting those with "Object of type UUID is not JSON serializable"
+  (HTTP 503 from the RFC 7807 handler). Replaced with a recursive
+  `_json_safe()` that descends into lists + dicts.
+- **Deps**: `networkx>=3.4`.
+- 🟢 **Verified live**:
+  - `GET /graph/full` after rebuild: 10 nodes / 5 edges = 3 conferences,
+    3 topics, 2 audiences, 1 messaging doc, 1 source, with 3
+    DERIVED_FROM + 2 ABOUT edges (one extracted conference's topics
+    after we approved `rag` + `llm` topics and re-parsed its raw_page).
+  - Created an SME with both `rag` + `llm` primary_topics and the
+    existing audience; `sme_topics` (2) + `sme_audiences` (1) junctions
+    appeared automatically.
+  - `GET /graph/candidate-smes/{conf_id}` returned the SME with score
+    1.0 (perfect topic-overlap match: 2/2).
+  - `GET /graph/neighborhood?node_id=sme:<id>&depth=2` returned 5 nodes
+    / 5 edges — the SME, its 2 topics + 1 audience, plus the conference
+    reachable through the topics. EXPERT_IN / SPEAKS_TO / ABOUT
+    relations all rendered.
+  - `GET /graph/upcoming/{sme_id}?days=730` returned the 2027-04-15
+    conference (dry-run picks 2027 for its canned dates).
+  - Cold rebuild on a 11-node / 8-edge graph: **64.1ms**. Warm cache
+    hit: **0.001ms**. Well under the plan's 50ms acceptance threshold
+    for the SME-candidate query (which is sync once the graph is loaded).
+  - `POST /graph/invalidate` → 204; subsequent read triggers rebuild.
+- 🐛 **Two fixes from real-world bring-up**:
+  1. `model_to_audit_dict` UUID-list bug: top-level UUID values were
+     coerced, but `ARRAY[UUID]` columns landed in JSONB as
+     `list[UUID('...'), UUID('...')]` and JSON-serialization died at
+     commit time. Fixed with a recursive `_json_safe()` walker.
+  2. Phantom-node guard in the graph loader: `add_edge(u, v)` silently
+     materializes nodes that don't exist yet, which would have left
+     unlabeled stubs in the graph any time a junction row referenced
+     an inactive entity. Replaced bulk-loop calls with `_safe_add_edge`
+     that no-ops when either endpoint isn't already a typed node.
 
 ### 2026-05-22 (plan 15 pass 1 — LLM extraction pipeline)
 - 🚧 **Plan 15 pass 1 complete**: raw_pages → cleaned text → LLM extract →
