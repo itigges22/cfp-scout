@@ -30,13 +30,22 @@ DRY_RUN_DIM = 768
 
 
 def fake_chat(req: ChatRequest) -> ChatResponse:
-    """Deterministic chat response. Echoes a short summary + a request id."""
+    """Deterministic chat response. Echoes a short summary + a request id.
+
+    Plan 15 extraction needs valid JSON output even in dry-run, so the
+    ``extract:conference`` purpose dispatches to a canned JSON envelope
+    derived from the page text fingerprint. Real MaaS calls require
+    LLM_DRY_RUN=false.
+    """
     fingerprint = _hash_messages(req.messages)
-    content = (
-        f"[dry-run] chat response for purpose={req.purpose!r}, "
-        f"fingerprint={fingerprint[:10]}. "
-        "Real MaaS calls require LLM_DRY_RUN=false and a valid LLM_API_KEY."
-    )
+    if req.purpose == "extract:conference":
+        content = _canned_extract_conference(req, fingerprint)
+    else:
+        content = (
+            f"[dry-run] chat response for purpose={req.purpose!r}, "
+            f"fingerprint={fingerprint[:10]}. "
+            "Real MaaS calls require LLM_DRY_RUN=false and a valid LLM_API_KEY."
+        )
     prompt_tokens = sum(_estimate_tokens(m.content) for m in req.messages)
     completion_tokens = _estimate_tokens(content)
     return ChatResponse(
@@ -48,6 +57,45 @@ def fake_chat(req: ChatRequest) -> ChatResponse:
         latency_ms=1,
         request_id=str(uuid.uuid4()),
     )
+
+
+def _canned_extract_conference(req: ChatRequest, fingerprint: str) -> str:
+    """Deterministic ExtractedConference JSON for plan 15 in dry-run mode.
+
+    Derives a fake but plausible conference name from the page-text hash so
+    different pages produce different rows downstream (drives dedupe and
+    routing without needing a real LLM). Year is fixed to next year so the
+    same-year dedup logic still gets exercised.
+    """
+    # 16-char hex slug from the fingerprint — different pages, different
+    # conferences.
+    slug = fingerprint[:16]
+    payload = {
+        "name": f"Dry-Run Conference {slug.upper()}",
+        "start_date": "2027-04-15",
+        "end_date": "2027-04-17",
+        "location_city": "Boston",
+        "location_country": "US",
+        "is_virtual": False,
+        "venue": "Hynes Convention Center",
+        "website": None,
+        "cfp_open_at": "2026-09-01",
+        "cfp_close_at": "2026-12-15",
+        "cfp_deadlines": [
+            {
+                "kind": "submission",
+                "deadline_date": "2026-12-15",
+                "description": "Main track papers",
+                "applies_to": "talks",
+            }
+        ],
+        "cfp_topics_of_interest": ["large language models", "RAG", "inference"],
+        "topics": ["llm", "inference", "rag"],
+        "acceptance_rate_percent": 22,
+        "estimated_cost_usd": 1200,
+        "confidence": 0.78,
+    }
+    return json.dumps(payload)
 
 
 def fake_embed(req: EmbeddingRequest) -> EmbeddingResponse:

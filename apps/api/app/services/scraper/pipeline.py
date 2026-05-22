@@ -105,6 +105,12 @@ async def crawl_source(db: AsyncSession, source_id: UUID) -> CrawlResult:
         result.pages_discovered = len(candidate_urls)
         bound.info("scraper.crawl.discovered", count=len(candidate_urls))
 
+        # IDs of raw_pages we'll enqueue for plan-15 extraction after the
+        # crawl finishes. Collect now, dispatch later — APScheduler add_job
+        # is fast but doing it inside the per-URL await would slow the
+        # loop without benefit.
+        new_raw_page_ids: list[str] = []
+
         for url in candidate_urls:
             outcome = await fetch_one(
                 db=db,
@@ -117,6 +123,8 @@ async def crawl_source(db: AsyncSession, source_id: UUID) -> CrawlResult:
             )
             if outcome.status == "fetched":
                 result.pages_fetched += 1
+                if outcome.raw_page_id is not None:
+                    new_raw_page_ids.append(str(outcome.raw_page_id))
             elif outcome.status == "deduped":
                 result.pages_deduped += 1
             elif outcome.status == "skipped_robots":
@@ -125,6 +133,9 @@ async def crawl_source(db: AsyncSession, source_id: UUID) -> CrawlResult:
                 result.pages_skipped_304 += 1
             elif outcome.status == "js_blocked":
                 result.pages_js_blocked += 1
+                # JS-blocked pages still got persisted; we explicitly skip
+                # extraction since the body is unlikely to yield anything
+                # useful to the LLM.
             elif outcome.status == "error":
                 result.errors.append(
                     {
@@ -136,6 +147,21 @@ async def crawl_source(db: AsyncSession, source_id: UUID) -> CrawlResult:
 
     source.last_crawled_at = datetime.now(tz=timezone.utc)
     await db.flush()
+
+    # Enqueue plan-15 extraction for each newly-fetched raw_page. Local
+    # import keeps the scraper package free of a circular dep on the tasks
+    # package (which itself imports the scheduler).
+    if new_raw_page_ids:
+        from app.scheduler import enqueue_now
+        from app.tasks.parse_raw_page import parse_raw_page_task
+
+        for rp_id in new_raw_page_ids:
+            enqueue_now(
+                parse_raw_page_task,
+                job_id=f"parse-{rp_id}",
+                kwargs={"raw_page_id": rp_id},
+            )
+        bound.info("scraper.crawl.parse_enqueued", count=len(new_raw_page_ids))
 
     bound.info("scraper.crawl.done", **result.to_stats() | {"errors": len(result.errors)})
     return result
