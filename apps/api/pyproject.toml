@@ -24,6 +24,9 @@ dependencies = [
     "alembic>=1.14",
     "structlog>=24.4",
     "pgvector>=0.3",
+    "openai>=1.55",
+    "tenacity>=9.0",
+    "httpx>=0.28",
 ]
 
 [dependency-groups]
