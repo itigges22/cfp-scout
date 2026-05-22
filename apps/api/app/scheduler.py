@@ -224,12 +224,24 @@ def register_jobs(scheduler: AsyncIOScheduler) -> None:
     ship broken imports.
     """
     from app.tasks.heartbeat import heartbeat
+    from app.tasks.scrape_source import poll_sources_due_for_crawl
 
     scheduler.add_job(
         heartbeat,
         trigger="interval",
         minutes=10,
         id="heartbeat",
+        replace_existing=True,
+    )
+    # Plan 14: every 15 minutes, scan ``sources`` for rows whose
+    # ``last_crawled_at`` is older than ``crawl_cadence`` and enqueue a
+    # scrape each. Per-source ``politeness_delay_seconds`` enforces inside
+    # the crawl itself.
+    scheduler.add_job(
+        poll_sources_due_for_crawl,
+        trigger="interval",
+        minutes=15,
+        id="scrape_poll",
         replace_existing=True,
     )
     log.info("scheduler.jobs_registered", count=len(scheduler.get_jobs()))

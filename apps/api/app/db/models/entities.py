@@ -16,11 +16,12 @@ Convention notes:
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
     Date,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -245,7 +246,10 @@ class Source(TimestampedMixin, Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
-    last_crawled_at: Mapped["date | None"] = mapped_column(Date)
+    # DateTime with timezone — the 15-min "due for crawl" check needs sub-day
+    # precision, which a Date column would round away. Migrated 2026-05-22 in
+    # the same migration that bumped raw_pages.fetched_at to DateTime.
+    last_crawled_at: Mapped["datetime | None"] = mapped_column(DateTime(timezone=True))
     crawl_cadence: Mapped[str] = mapped_column(
         # Stored as interval; SQLAlchemy returns timedelta.
         # Use Text here to keep the ORM type simple at the app layer for now;
@@ -280,7 +284,9 @@ class RawPage(TimestampedMixin, Base):
         nullable=False,
     )
     url: Mapped[str] = mapped_column(Text, nullable=False)
-    fetched_at: Mapped[date] = mapped_column(Date, nullable=False)
+    # DateTime with timezone — see the rationale on sources.last_crawled_at;
+    # a date-granular fetch timestamp was too lossy for diagnostics.
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     http_status: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     content_type: Mapped[str] = mapped_column(String(120), nullable=False)
     raw_body_path: Mapped[str] = mapped_column(Text, nullable=False)

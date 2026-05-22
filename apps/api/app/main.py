@@ -30,6 +30,7 @@ from app.api.v1 import (
     messaging,
     past_conferences,
     smes,
+    sources,
     topics,
     uploads,
 )
@@ -78,6 +79,7 @@ app.include_router(messaging.router)
 app.include_router(audiences.router)
 app.include_router(smes.router)
 app.include_router(past_conferences.router)
+app.include_router(sources.router)
 app.include_router(topics.router)
 app.include_router(admin_llm.router)
 app.include_router(admin_embeddings.router)
