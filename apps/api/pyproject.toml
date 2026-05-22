@@ -32,7 +32,7 @@ dependencies = [
     # them to the CPU-only PyTorch wheel index (~3GB smaller than the default
     # GPU wheels, which bundle CUDA libs we'd never use on this stack).
     "torch>=2.5",
-    "torchvision>=0.20",
+    "torchvision>=0.27.0",
     # APScheduler runs in-process inside the api container (plan 13). The
     # SQLAlchemyJobStore persists schedules in Postgres so jobs survive
     # `make down/up`. psycopg (v3) is the sync driver for the jobstore — the
