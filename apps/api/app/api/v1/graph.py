@@ -39,19 +39,40 @@ router = APIRouter(prefix="/api/v1/graph", tags=["graph"])
 @router.get("/full")
 async def full(
     kinds: list[str] | None = Query(default=None, description="Filter by node kind(s)."),
+    status_in: list[str] | None = Query(
+        default=None,
+        alias="status",
+        description="Filter conferences by status (multi-OK).",
+    ),
+    since: str | None = Query(
+        default=None,
+        description="ISO date — only include conferences with start_date >= since.",
+    ),
     max_nodes: int = Query(default=500, ge=10, le=2000),
 ) -> dict:
     """Bounded full-graph payload for the dashboard explorer (plan 21).
 
-    If the filtered graph exceeds ``max_nodes``, we trim to the highest-degree
-    subset and set ``stats.truncated=true`` in the response.
+    Filter pipeline (applied to the cached graph in order):
+      1. ``status`` filter — drops conference nodes whose status isn't in the set.
+      2. ``since`` filter — drops conference nodes with start_date < since.
+      3. ``kinds`` filter — keeps only nodes of the requested kinds.
+      4. ``max_nodes`` cap — keeps the highest-degree N if over the cap.
+
+    Each emitted node carries a server-computed ``degree`` (used as a size
+    hint by the frontend force-graph layout).
     """
     graph = await load_graph()
     sub, truncated = full_graph_for_view(
         graph,
         kinds=set(kinds) if kinds else None,
+        status_in=set(status_in) if status_in else None,
+        since_iso=since,
         max_nodes=max_nodes,
     )
+    # Attach degree per node (compute on the FILTERED subgraph so users see
+    # the connectedness of what's actually rendered, not the global graph).
+    for node in sub.nodes():
+        sub.nodes[node]["degree"] = sub.degree(node)
     return to_node_link(sub, truncated=truncated)
 
 

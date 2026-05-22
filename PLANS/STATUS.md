@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 20 pass 1 — review UI live; dashboard + conferences list + detail with score panel, SME breakdown, narrative, decision actions)
+**Last updated:** 2026-05-22 (plan 21 pass 1 — graph exploration view live; force-directed canvas at /graph with kind/status/since filters)
 
 ## Plan status
 
@@ -30,7 +30,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 18 | SME matcher | ✅ | Completed 2026-05-22 (5-dim breakdown: topic/audience Jaccard, bio cosine, location proximity, past-attendance; /conferences/{id}/smes endpoint with above-gate + near-misses) |
 | 19 | SME fit narrative | ✅ | Completed 2026-05-22 (top-K per conference, ≤400 chars, prompt-injection wrapped, quote post-validation with retry+UNAVAILABLE fallback, auto-enqueued after run_fit_match, idempotent on rerun) |
 | 20 | Dashboard & review UI | 🚧 | Pass 1 done 2026-05-22 (dashboard stat cards + top-5 + conferences list with filter/sort + detail with score/SME/sources/decision panels + decisions API). Pass 2: bulk actions, CSV export, sources/review-queue UI, saved views, keyboard shortcuts, react-flow graph viz |
-| 21 | Graph exploration view | ⬜ | |
+| 21 | Graph exploration view | 🚧 | Pass 1 done 2026-05-22 (force-directed canvas, kind/status/since filters, hover-highlight, click drawer with link to detail). Pass 2: pillar selector + entity-search autocomplete + saved views + PNG export + Louvain coloring |
 | 22 | Agent chat interface | ⬜ | |
 | 23 | Conference series tracking | ⬜ | |
 | 24 | CFP-closing digest | ⬜ | |
@@ -470,6 +470,49 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 21 pass 1 — Graph exploration view)
+- 🚧 **Plan 21 pass 1 complete**: Obsidian-style force-directed canvas at
+  `/graph` powered by `react-force-graph-2d` (lazy-loaded as its own chunk
+  so it doesn't bloat the initial bundle). Backend filter additions
+  reuse the cached graph from plan 16.
+- **Backend** (`apps/api/app/api/v1/graph.py` + `services/graph/query.py`):
+  - `GET /graph/full` now accepts:
+    - `kinds=conference&kinds=topic` (existing) — filter nodes by kind
+    - `status=approved&status=needs_review` (NEW) — conference-only status filter
+    - `since=YYYY-MM-DD` (NEW) — drop conferences with `start_date < since`
+    - `max_nodes=N` (existing) — highest-degree cap (default 500)
+  - Each emitted node now carries a server-computed **`degree`** so the
+    canvas can size hubs without extra computation.
+  - Filter pipeline applied as: status → since → kinds → max_nodes cap.
+- **Frontend** (`apps/web/src/routes/graph.tsx`):
+  - `react-force-graph-2d>=1.27` added to package.json; `Suspense` + `lazy()`
+    wrapper keeps it out of the initial bundle.
+  - **Filter bar**: chip toggles for node kinds (multi-select), chip toggles
+    for conference status, date input for `since`, reset button.
+  - **Canvas**: nodes color-coded by kind (red=conf, cyan=topic, violet=sme,
+    orange=audience, green=pillar, blue=messaging, slate=source, amber=series),
+    sized by `sqrt(degree+1)`, hover-highlights neighbors and dims non-adjacent
+    nodes + links, labels render when zoomed in or hovered.
+  - **Detail drawer** (right side, 320px wide): per-kind metadata table
+    (status/start_date/confidence for conferences, team for SMEs, etc.),
+    "Open detail page →" link for conference nodes.
+  - **Truncation banner** when `stats.truncated=true` (results clipped to
+    500 most-connected).
+  - **Legend** at the bottom listing every node-kind color.
+- **api.ts request helper** fixed to handle array query params — previously
+  `String([a, b])` would have produced `?kinds=a,b` (single literal value)
+  which FastAPI doesn't split. Now properly appends repeated keys.
+- 🟢 **Verified live**:
+  - `/api/v1/graph/full` → default: 11 nodes / 8 edges with `degree`
+    attached to each node.
+  - `?kinds=conference&kinds=topic` → 6 nodes (3 confs + 3 topics) / 2 edges.
+  - `?status=approved` → 1 conference (the one approved) + its connected
+    topics/audiences/sources/SMEs = 9 nodes total.
+  - `?since=2028-01-01` → 0 conferences (all are 2027).
+  - `/graph` SPA shell returns 200; bundle now ships
+    `graph-D90U4JEq.js` + lazy `react-force-graph-2d-CZsoIMIb.js` chunk.
+  - Static asset dir now 3.6 MB (force-graph adds ~80 KB gzipped to its own chunk).
 
 ### 2026-05-22 (plan 20 pass 1 — Dashboard & review UI)
 - 🚧 **Plan 20 pass 1 complete**: the matcher's output is now visible in
