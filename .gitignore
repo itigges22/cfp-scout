@@ -101,3 +101,6 @@ logs/
 apps/web/vite.config.d.ts
 apps/web/vite.config.js
 apps/web/vite.config.js.map
+
+# TS project-reference incremental build cache
+apps/web/*.tsbuildinfo
