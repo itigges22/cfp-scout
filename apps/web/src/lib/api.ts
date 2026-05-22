@@ -15,6 +15,14 @@ import type {
   AudienceProfileCreate,
   AudienceProfileRead,
   AudienceProfileUpdate,
+  ConferenceListResponse,
+  ConferenceMatchResponse,
+  ConferenceSmesResponse,
+  ConferenceSourcesResponse,
+  DashboardStats,
+  DecisionCreate,
+  DecisionListResponse,
+  DecisionRead,
   MessagingDocumentCreate,
   MessagingDocumentRead,
   MessagingDocumentUpdate,
@@ -255,4 +263,36 @@ export const topicsApi = {
       method: "POST",
       query: { actor_label },
     }),
+};
+
+// ---------------------------------------------------------------------------
+// Conferences (plan 20 review UI)
+// ---------------------------------------------------------------------------
+type ConferenceListParams = {
+  page?: number;
+  per_page?: number;
+  status?: string | string[];
+  sort?: "score" | "date" | "name";
+};
+
+export const conferencesApi = {
+  list: (params: ConferenceListParams = {}) =>
+    request<ConferenceListResponse>(`${BASE}/conferences`, {
+      query: params as Record<string, string | number | boolean | null | undefined>,
+    }),
+  get: (id: string) =>
+    request<import("@/lib/api-types").ConferenceRead>(`${BASE}/conferences/${id}`),
+  match: (id: string) => request<ConferenceMatchResponse>(`${BASE}/conferences/${id}/match`),
+  sources: (id: string) =>
+    request<ConferenceSourcesResponse>(`${BASE}/conferences/${id}/sources`),
+  smes: (id: string, k = 5) =>
+    request<ConferenceSmesResponse>(`${BASE}/conferences/${id}/smes`, { query: { k } }),
+  decisions: (id: string) =>
+    request<DecisionListResponse>(`${BASE}/conferences/${id}/decisions`),
+  createDecision: (id: string, body: DecisionCreate) =>
+    request<DecisionRead>(`${BASE}/conferences/${id}/decisions`, {
+      method: "POST",
+      body,
+    }),
+  dashboardStats: () => request<DashboardStats>(`${BASE}/conferences/stats/dashboard`),
 };

@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 19 — SME fit narrative live; idempotent per-SME LLM rationale with quote post-validation)
+**Last updated:** 2026-05-22 (plan 20 pass 1 — review UI live; dashboard + conferences list + detail with score panel, SME breakdown, narrative, decision actions)
 
 ## Plan status
 
@@ -29,7 +29,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 17 | Fit matcher algorithm | ✅ | Completed 2026-05-22 (3-stage gate, conference-on-extract embed, rationale, bulk recompute, auto-enqueue from extraction; algorithm_version=matcher.v1.0) |
 | 18 | SME matcher | ✅ | Completed 2026-05-22 (5-dim breakdown: topic/audience Jaccard, bio cosine, location proximity, past-attendance; /conferences/{id}/smes endpoint with above-gate + near-misses) |
 | 19 | SME fit narrative | ✅ | Completed 2026-05-22 (top-K per conference, ≤400 chars, prompt-injection wrapped, quote post-validation with retry+UNAVAILABLE fallback, auto-enqueued after run_fit_match, idempotent on rerun) |
-| 20 | Dashboard & review UI | ⬜ | |
+| 20 | Dashboard & review UI | 🚧 | Pass 1 done 2026-05-22 (dashboard stat cards + top-5 + conferences list with filter/sort + detail with score/SME/sources/decision panels + decisions API). Pass 2: bulk actions, CSV export, sources/review-queue UI, saved views, keyboard shortcuts, react-flow graph viz |
 | 21 | Graph exploration view | ⬜ | |
 | 22 | Agent chat interface | ⬜ | |
 | 23 | Conference series tracking | ⬜ | |
@@ -470,6 +470,68 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 20 pass 1 — Dashboard & review UI)
+- 🚧 **Plan 20 pass 1 complete**: the matcher's output is now visible in
+  a browser. Dashboard stat cards + top-5 list + ranked conferences list
+  with filter/sort + detail page with score breakdown, SME panel
+  (per-dimension bars + narrative), sources panel, decision panel.
+- **Backend additions** (`apps/api/app/api/v1/conferences.py`):
+  - `GET /conferences` — now LEFT JOINs the latest matches row (by
+    `algorithm_version`) so list rows ship with `overall_score`,
+    `messaging_score`, `pillar_score`, `sme_score`. Sortable by
+    `score|date|name`.
+  - `GET /conferences/{id}/match` — full match row + rationale.
+  - `GET /conferences/{id}/sources` — contributing raw_pages
+    (`url`, `fetched_at`, `http_status`, `parse_status`, hash prefix).
+  - `GET /conferences/{id}/decisions` — decision history (newest first).
+  - `POST /conferences/{id}/decisions` — record approve/reject/needs_review;
+    flips `conferences.status` + audit-logs.
+  - `GET /conferences/stats/dashboard` — `{cards: {upcoming_approved,
+    pending_review, cfp_closing_soon, low_coverage_smes},
+    top_conferences: [...]}`. Single query per card + a top-5 join.
+- **Frontend additions**:
+  - `apps/web/src/lib/api-types.ts` — `ConferenceRead`,
+    `ConferenceListItem`, `ConferenceMatch`, `SmeBreakdown`,
+    `DashboardStats`, `DecisionCreate/Read`, etc.
+  - `apps/web/src/lib/api.ts` — `conferencesApi` (list, get, match,
+    sources, smes, decisions, createDecision, dashboardStats).
+  - `apps/web/src/components/ui/progress.tsx` — small CSS bar with three
+    visual buckets (strong/okay/weak) and ARIA progressbar role.
+  - `apps/web/src/components/conferences/StatusPill.tsx` — colored
+    `Badge` variant per `conferences.status`.
+  - `routes/dashboard.tsx` — replaced placeholder with real 4 stat
+    cards + top-5 ranked list (each links to detail).
+  - `routes/conferences.tsx` — status filter buttons + sort toggle +
+    rich card-style row with overall-score bar, status pill, topics.
+  - `routes/conferences.$id.tsx` — header, score panel (overall +
+    3 per-stage bars + rationale text), SME panel (top-5 cards with
+    5-dimension bars + AI-generated narrative paragraphs +
+    "Regenerate narratives" button), sources panel (linked raw_pages),
+    decision panel (3 buttons + reason input + actor label + history).
+- **Deferred to plan 20 pass 2** (called out in plan but out of scope for
+  this iteration): bulk approve/reject + typed-count confirmation,
+  CSV export, `/settings/sources` UI, `/settings/review-queue`, saved
+  views in localStorage, keyboard shortcuts (a/r/n/p/?), react-flow
+  mini neighborhood graph, print stylesheet, toast notifications.
+- 🟢 **Verified live**:
+  - `GET /conferences/stats/dashboard` returns
+    `{upcoming_approved: 0, pending_review: 0, cfp_closing_soon: 0,
+    low_coverage_smes: 0, top_conferences: [3 rows]}`. The zeros are
+    correct — conferences are dated 2027 (outside the 90-day window);
+    no `needs_review*` rows after the matcher routed everything; no
+    CFP-soon rows; no low-coverage SMEs.
+  - `GET /conferences?sort=score` returns the 3 conferences ordered by
+    score (0.805 / 0.35 / 0.35).
+  - SPA builds clean: `dashboard`, `conferences`, `conferences._id`
+    chunks all present in `/app/static/assets`; the bundle includes the
+    new `StatusPill`, `messaging_score`, `sme_fit_narrative`,
+    `composite` identifiers.
+  - Decision POST end-to-end: status flipped `approved → needs_review`
+    → `approved` via two `POST /conferences/{id}/decisions` calls;
+    decisions history endpoint returned both rows; `audit.audit_log` got
+    `decision.needs_review` + `decision.approved` entries with the
+    `ian` actor label.
 
 ### 2026-05-22 (plan 19 — SME fit narrative)
 - ✅ **Plan 19 complete**: per-SME qualitative narrative for the top-K
