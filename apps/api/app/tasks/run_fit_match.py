@@ -58,9 +58,7 @@ async def _do_recompute_all() -> dict[str, Any]:
     enqueued: list[str] = []
     async with get_session_factory()() as session:
         rows = (
-            await session.execute(
-                select(Conference.id).where(Conference.status != "quarantined")
-            )
+            await session.execute(select(Conference.id).where(Conference.status != "quarantined"))
         ).all()
     for (cid,) in rows:
         job_id = f"match-{cid}"

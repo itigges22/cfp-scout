@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.vectors import DocumentChunk
@@ -51,9 +51,7 @@ class MessagingStageResult:
     snippets: list[MessagingSnippet]
 
 
-async def stage_a_messaging_fit(
-    db: AsyncSession, conference_id: UUID
-) -> MessagingStageResult:
+async def stage_a_messaging_fit(db: AsyncSession, conference_id: UUID) -> MessagingStageResult:
     """Compute messaging-fit score for ``conference_id``.
 
     Score = mean of the top-K cosine similarities across all (conf_chunk,
@@ -63,13 +61,17 @@ async def stage_a_messaging_fit(
     # Conference chunks. If none, exit early — this is the early signal
     # that the embed-on-extract step didn't run for this conference.
     conf_chunks = (
-        await db.execute(
-            select(DocumentChunk).where(
-                DocumentChunk.owner_type == "conference",
-                DocumentChunk.owner_id == conference_id,
+        (
+            await db.execute(
+                select(DocumentChunk).where(
+                    DocumentChunk.owner_type == "conference",
+                    DocumentChunk.owner_id == conference_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not conf_chunks:
         log.info("matcher.messaging.no_conference_chunks", conference_id=str(conference_id))
         return MessagingStageResult(score=0.0, n_compared=0, snippets=[])
@@ -80,10 +82,10 @@ async def stage_a_messaging_fit(
     # SQL query that flattens conf chunks via UNNEST and joins on
     # cosine_distance ORDER BY LIMIT N.
     messaging_chunks = (
-        await db.execute(
-            select(DocumentChunk).where(DocumentChunk.owner_type == "messaging")
-        )
-    ).scalars().all()
+        (await db.execute(select(DocumentChunk).where(DocumentChunk.owner_type == "messaging")))
+        .scalars()
+        .all()
+    )
     if not messaging_chunks:
         log.info("matcher.messaging.no_messaging_chunks")
         return MessagingStageResult(score=0.0, n_compared=0, snippets=[])
@@ -138,19 +140,19 @@ def _cosine_sim(a, b) -> float:
     if a is None or b is None:
         return 0.0
     s = 0.0
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):
         s += float(x) * float(y)
     return clamp01(s)
 
 
 # Re-export so the pipeline doesn't have to import from a private module.
 __all__ = [
-    "stage_a_messaging_fit",
-    "MessagingStageResult",
-    "MessagingSnippet",
     "TOPK_MESSAGING",
+    "MessagingSnippet",
+    "MessagingStageResult",
+    "stage_a_messaging_fit",
 ]
 
 # Suppress unused-import lints — `cosine_from_distance` is part of the
 # matcher's public scoring surface even if this stage doesn't use it.
-_ = cosine_from_distance  # noqa: F841
+_ = cosine_from_distance

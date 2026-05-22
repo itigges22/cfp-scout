@@ -48,6 +48,7 @@ from app.lifespan import lifespan
 from app.logging import configure_logging
 from app.middleware.error_handler import install_error_handlers
 from app.middleware.request_id import RequestIDMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.settings import get_settings
 
 # ---------------------------------------------------------------------------
@@ -80,6 +81,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(RequestIDMiddleware)
+# Plan 29: browser security headers (CSP, HSTS, X-Frame-Options,
+# Referrer-Policy, Permissions-Policy, X-Content-Type-Options) on every
+# response.
+app.add_middleware(SecurityHeadersMiddleware)
 
 install_error_handlers(app)
 

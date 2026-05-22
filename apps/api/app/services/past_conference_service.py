@@ -33,9 +33,7 @@ async def _resolve_sme_ids(db: AsyncSession, ids: list[UUID]) -> None:
             detail="attended_sme_ids cannot be empty",
         )
     count = (
-        await db.execute(
-            select(func.count(Sme.id)).where(Sme.id.in_(ids), Sme.is_active.is_(True))
-        )
+        await db.execute(select(func.count(Sme.id)).where(Sme.id.in_(ids), Sme.is_active.is_(True)))
     ).scalar_one()
     if int(count) != len(set(ids)):
         raise HTTPException(
@@ -52,9 +50,7 @@ async def list_past_conferences(
     q: str | None = None,
     year: int | None = None,
 ) -> Page[PastConferenceRead]:
-    stmt = select(PastConference).order_by(
-        PastConference.year.desc(), PastConference.name.asc()
-    )
+    stmt = select(PastConference).order_by(PastConference.year.desc(), PastConference.name.asc())
     if q:
         stmt = stmt.where(PastConference.name.ilike(f"%{q}%"))
     if year is not None:

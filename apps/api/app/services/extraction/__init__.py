@@ -21,4 +21,4 @@ Internals (importable but stable):
 
 from app.services.extraction.pipeline import ParseResult, parse_raw_page
 
-__all__ = ["parse_raw_page", "ParseResult"]
+__all__ = ["ParseResult", "parse_raw_page"]

@@ -9,7 +9,7 @@ richer aggregator).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, HTTPException, status
@@ -85,8 +85,8 @@ async def stats(db: DbSession) -> dict:
     Plan 26 (/diagnostics) will surface this in a real UI; for now it's
     a JSON aggregator for ad-hoc inspection.
     """
-    now = datetime.now(tz=timezone.utc)
-    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    now = datetime.now(tz=UTC)
+    month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
     day_start = now - timedelta(hours=24)
 
     async def _sum(since: datetime) -> dict:

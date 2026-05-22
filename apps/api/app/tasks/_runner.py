@@ -22,8 +22,9 @@ from __future__ import annotations
 import time
 import traceback
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 from sqlalchemy import update
@@ -54,7 +55,7 @@ async def run_as_job(
     bound.info("task.started")
     t0 = time.perf_counter()
 
-    started_at = datetime.now(tz=timezone.utc)
+    started_at = datetime.now(tz=UTC)
     stats_extra = stats_extra or {}
 
     # Open a session purely to create the tracking row. The actual work
@@ -82,7 +83,7 @@ async def run_as_job(
                 .where(IngestJob.id == job_id)
                 .values(
                     status="failed",
-                    finished_at=datetime.now(tz=timezone.utc),
+                    finished_at=datetime.now(tz=UTC),
                     error_text=f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}",
                     stats={**stats_extra, "duration_ms": duration_ms},
                 )
@@ -101,7 +102,7 @@ async def run_as_job(
             .where(IngestJob.id == job_id)
             .values(
                 status="complete",
-                finished_at=datetime.now(tz=timezone.utc),
+                finished_at=datetime.now(tz=UTC),
                 stats=final_stats,
             )
         )

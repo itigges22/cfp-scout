@@ -22,7 +22,7 @@ graph loader and conference list already filter them).
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -154,7 +154,7 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
             .where(Match.algorithm_version == ALGORITHM_VERSION)
         )
     ).scalar_one_or_none()
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     if existing is None:
         match = Match(

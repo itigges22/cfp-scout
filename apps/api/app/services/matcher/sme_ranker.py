@@ -119,9 +119,7 @@ async def rank_smes_for_conference(
     ctx = await _load_conference_context(db, conference)
 
     # Active SMEs only — inactive ones never appear.
-    sme_rows = (
-        await db.execute(select(Sme).where(Sme.is_active.is_(True)))
-    ).scalars().all()
+    sme_rows = (await db.execute(select(Sme).where(Sme.is_active.is_(True)))).scalars().all()
     if not sme_rows:
         return RankerResult()
 
@@ -137,10 +135,7 @@ async def rank_smes_for_conference(
     if above:
         # Near misses = anyone with composite in [gate - window, gate).
         nm_floor = gate - near_miss_window
-        near = [
-            b for b in scored
-            if (not b.above_gate) and b.composite >= nm_floor
-        ][:k]
+        near = [b for b in scored if (not b.above_gate) and b.composite >= nm_floor][:k]
     else:
         # Nobody cleared the gate. Surface the top-K candidates anyway —
         # the matcher's "needs_sme_review" status uses these to populate
@@ -169,9 +164,7 @@ class _ConferenceContext:
     series_id: UUID | None
 
 
-async def _load_conference_context(
-    db: AsyncSession, conference: Conference
-) -> _ConferenceContext:
+async def _load_conference_context(db: AsyncSession, conference: Conference) -> _ConferenceContext:
     # Topic set (active topics only — pending-review ones don't count).
     topic_rows = (
         await db.execute(
@@ -180,14 +173,12 @@ async def _load_conference_context(
             .where(ConferenceTopic.conference_id == conference.id)
         )
     ).all()
-    topic_ids = {
-        tid for tid, active, pending in topic_rows
-        if active and not pending
-    }
+    topic_ids = {tid for tid, active, pending in topic_rows if active and not pending}
 
     # Audience set.
     audience_ids = {
-        aid for (aid,) in (
+        aid
+        for (aid,) in (
             await db.execute(
                 select(ConferenceAudience.audience_id).where(
                     ConferenceAudience.conference_id == conference.id
@@ -197,13 +188,17 @@ async def _load_conference_context(
     }
 
     chunks = (
-        await db.execute(
-            select(DocumentChunk).where(
-                DocumentChunk.owner_type == "conference",
-                DocumentChunk.owner_id == conference.id,
+        (
+            await db.execute(
+                select(DocumentChunk).where(
+                    DocumentChunk.owner_type == "conference",
+                    DocumentChunk.owner_id == conference.id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     return _ConferenceContext(
         topic_ids=topic_ids,
@@ -225,20 +220,18 @@ async def _score_one(
 ) -> SmeBreakdown:
     # ---- Topic overlap (Jaccard) -----------------------------------
     sme_topic_ids = {
-        tid for (tid,) in (
-            await db.execute(
-                select(SmeTopic.topic_id).where(SmeTopic.sme_id == sme.id)
-            )
+        tid
+        for (tid,) in (
+            await db.execute(select(SmeTopic.topic_id).where(SmeTopic.sme_id == sme.id))
         ).all()
     }
     topic_score = _jaccard(ctx.topic_ids, sme_topic_ids)
 
     # ---- Audience overlap (Jaccard) --------------------------------
     sme_audience_ids = {
-        aid for (aid,) in (
-            await db.execute(
-                select(SmeAudience.audience_id).where(SmeAudience.sme_id == sme.id)
-            )
+        aid
+        for (aid,) in (
+            await db.execute(select(SmeAudience.audience_id).where(SmeAudience.sme_id == sme.id))
         ).all()
     }
     audience_score = _jaccard(ctx.audience_ids, sme_audience_ids)
@@ -305,13 +298,17 @@ async def _bio_similarity(
     if not conference_chunks:
         return 0.0
     bio_chunks = (
-        await db.execute(
-            select(DocumentChunk).where(
-                DocumentChunk.owner_type == "sme_bio",
-                DocumentChunk.owner_id == sme_id,
+        (
+            await db.execute(
+                select(DocumentChunk).where(
+                    DocumentChunk.owner_type == "sme_bio",
+                    DocumentChunk.owner_id == sme_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not bio_chunks:
         return 0.0
     sims: list[float] = []
@@ -377,6 +374,6 @@ def _cosine(a, b) -> float:
     if a is None or b is None:
         return 0.0
     s = 0.0
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):
         s += float(x) * float(y)
     return clamp01(s)

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
@@ -29,7 +29,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import MessagingDocument
 from app.db.models.ops import IngestJob
-from app.services.embeddings.pipeline import embed_owner
 from app.services.pdf.parser import ParsedPdf, parse_and_chunk
 from app.services.pdf.storage import PdfRejected, save_pdf, validate_pdf_bytes
 
@@ -67,13 +66,15 @@ async def process_pdf_upload(
 
     # 2. Persist to volume
     on_disk, sha = save_pdf(file_bytes)
-    file_path_rel = str(on_disk.relative_to(Path(on_disk).parents[2]))  # e.g. storage/pdf_uploads/<uuid>.pdf
+    file_path_rel = str(
+        on_disk.relative_to(Path(on_disk).parents[2])
+    )  # e.g. storage/pdf_uploads/<uuid>.pdf
 
     # 3. ingest_jobs row, status=received
     job = IngestJob(
         kind="pdf_upload",
         status="received",
-        started_at=datetime.now(tz=timezone.utc),
+        started_at=datetime.now(tz=UTC),
         stats={
             "owner_type": owner_type,
             "owner_id": str(owner_id),
@@ -113,7 +114,7 @@ async def process_pdf_upload(
 
         # 7. Mark complete.
         job.status = "complete"
-        job.finished_at = datetime.now(tz=timezone.utc)
+        job.finished_at = datetime.now(tz=UTC)
         job.stats = {
             **(job.stats or {}),
             "page_count": parsed.page_count,
@@ -135,10 +136,8 @@ async def process_pdf_upload(
     except Exception as exc:
         # Mark the job failed (separately committed) and re-raise.
         job.status = "failed"
-        job.finished_at = datetime.now(tz=timezone.utc)
-        job.error_text = (
-            f"{type(exc).__name__}: {exc}\n" + traceback.format_exc()
-        )[:8000]
+        job.finished_at = datetime.now(tz=UTC)
+        job.error_text = (f"{type(exc).__name__}: {exc}\n" + traceback.format_exc())[:8000]
         await db.commit()
         log.error(
             "pdf.upload.failed",

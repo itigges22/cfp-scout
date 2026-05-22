@@ -7,7 +7,7 @@ the caller's transaction so a call + downstream DB write commit atomically.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -23,8 +23,8 @@ log = structlog.get_logger("scout.llm.recording")
 
 async def month_to_date_spend(db: AsyncSession) -> float:
     """Sum cost_usd over llm_calls.created_at in the current calendar month (UTC)."""
-    now = datetime.now(tz=timezone.utc)
-    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    now = datetime.now(tz=UTC)
+    month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
     result = await db.execute(
         select(func.coalesce(func.sum(LLMCall.cost_usd), 0)).where(
             LLMCall.created_at >= month_start

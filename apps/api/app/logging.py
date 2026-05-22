@@ -62,7 +62,9 @@ def _redact_value(value: Any) -> Any:
     Tuples are not used as event-dict containers; we treat them as opaque.
     """
     if isinstance(value, dict):
-        return {k: ("***" if k.lower() in _REDACT_KEYS else _redact_value(v)) for k, v in value.items()}
+        return {
+            k: ("***" if k.lower() in _REDACT_KEYS else _redact_value(v)) for k, v in value.items()
+        }
     if isinstance(value, list):
         return [_redact_value(v) for v in value]
     if isinstance(value, str):
@@ -76,8 +78,7 @@ def _redact_value(value: Any) -> Any:
 def _redact_processor(_logger: Any, _name: str, event_dict: EventDict) -> EventDict:
     """structlog processor: redact known-sensitive keys and patterns."""
     return {
-        k: ("***" if k.lower() in _REDACT_KEYS else _redact_value(v))
-        for k, v in event_dict.items()
+        k: ("***" if k.lower() in _REDACT_KEYS else _redact_value(v)) for k, v in event_dict.items()
     }
 
 

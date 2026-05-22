@@ -35,7 +35,7 @@ def clean_html_to_text(body: bytes | str, *, content_type: str = "") -> str:
     if isinstance(body, bytes):
         try:
             body_text = body.decode("utf-8", errors="replace")
-        except Exception:  # noqa: BLE001
+        except Exception:
             body_text = body.decode("latin-1", errors="replace")
     else:
         body_text = body

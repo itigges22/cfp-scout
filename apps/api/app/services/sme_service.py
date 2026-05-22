@@ -44,6 +44,7 @@ async def _sync_sme_junctions(
     for aid in audience_ids:
         db.add(SmeAudience(sme_id=sme_id, audience_id=aid, weight=1.0))
 
+
 log = structlog.get_logger("scout.services.sme")
 
 

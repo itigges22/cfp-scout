@@ -35,17 +35,13 @@ class SmeRecommendation:
 
 @dataclass(slots=True)
 class SmeStageResult:
-    score: float                            # max composite score
+    score: float  # max composite score
     recommendations: list[SmeRecommendation]
 
 
-async def stage_c_sme_match(
-    db: AsyncSession, conference_id: UUID, gate: float
-) -> SmeStageResult:
+async def stage_c_sme_match(db: AsyncSession, conference_id: UUID, gate: float) -> SmeStageResult:
     """Return the top-K SME recommendations for the matcher pipeline."""
-    ranker = await rank_smes_for_conference(
-        db, conference_id, k=K_CANDIDATES, gate=gate
-    )
+    ranker = await rank_smes_for_conference(db, conference_id, k=K_CANDIDATES, gate=gate)
 
     above = ranker.above_gate
     if above:

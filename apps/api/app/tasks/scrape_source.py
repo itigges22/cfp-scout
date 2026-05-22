@@ -20,7 +20,8 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select, text as sql_text
+from sqlalchemy import select
+from sqlalchemy import text as sql_text
 
 from app.db.models.entities import Source
 from app.db.session import get_session_factory

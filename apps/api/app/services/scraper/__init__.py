@@ -15,4 +15,4 @@ Internals (not re-exported, but stable enough to import):
 from app.services.scraper.client import make_async_client
 from app.services.scraper.pipeline import CrawlResult, crawl_source
 
-__all__ = ["crawl_source", "CrawlResult", "make_async_client"]
+__all__ = ["CrawlResult", "crawl_source", "make_async_client"]

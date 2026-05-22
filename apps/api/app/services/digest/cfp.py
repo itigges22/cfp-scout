@@ -18,8 +18,7 @@ credentials / SMTP / OAuth.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timedelta, timezone
-from typing import Iterable
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 import structlog
@@ -66,13 +65,13 @@ class DigestEntry:
     slug: str
     status: str
     overall_score: float | None
-    deadline_kind: str           # "submission" / "abstract" / "workshop" / ...
-    deadline_date: str           # ISO
+    deadline_kind: str  # "submission" / "abstract" / "workshop" / ...
+    deadline_date: str  # ISO
     days_until: int
     top_sme_id: str | None
     top_sme_name: str | None
     website: str | None
-    location: str | None         # "city, country" or "virtual" or None
+    location: str | None  # "city, country" or "virtual" or None
 
 
 @dataclass(slots=True)
@@ -86,9 +85,7 @@ class DigestResult:
         """Shape persisted into ``notifications.payload``."""
         return {
             "generated_at": self.generated_at,
-            "buckets": {
-                k: [asdict(e) for e in v] for k, v in self.buckets.items()
-            },
+            "buckets": {k: [asdict(e) for e in v] for k, v in self.buckets.items()},
             "stats": self.stats,
         }
 
@@ -104,9 +101,7 @@ class DigestResult:
 # ---------------------------------------------------------------------------
 # Builder
 # ---------------------------------------------------------------------------
-async def build_cfp_digest(
-    db: AsyncSession, *, today: date | None = None
-) -> DigestResult:
+async def build_cfp_digest(db: AsyncSession, *, today: date | None = None) -> DigestResult:
     """Walk the conference + cfp_deadlines space, bucket, persist, return.
 
     Caller commits. Marks any prior un-seen `cfp_digest` notifications as
@@ -142,9 +137,7 @@ async def build_cfp_digest(
     sme_name_by_id: dict[UUID, str] = {}
     if sme_ids:
         sme_rows = (
-            await db.execute(
-                select(Sme.id, Sme.full_name).where(Sme.id.in_(list(sme_ids)))
-            )
+            await db.execute(select(Sme.id, Sme.full_name).where(Sme.id.in_(list(sme_ids))))
         ).all()
         sme_name_by_id = {sid: name for sid, name in sme_rows}
 
@@ -154,14 +147,8 @@ async def build_cfp_digest(
         deadlines = list(conf.cfp_deadlines or [])
         if not deadlines:
             continue
-        top_sme_id = (
-            match.recommended_sme_ids[0]
-            if (match and match.recommended_sme_ids)
-            else None
-        )
-        top_sme_name = (
-            sme_name_by_id.get(top_sme_id) if top_sme_id is not None else None
-        )
+        top_sme_id = match.recommended_sme_ids[0] if (match and match.recommended_sme_ids) else None
+        top_sme_name = sme_name_by_id.get(top_sme_id) if top_sme_id is not None else None
         for d in deadlines:
             iso = d.get("deadline_date")
             if not iso:
@@ -178,9 +165,7 @@ async def build_cfp_digest(
                     name=conf.name,
                     slug=conf.slug,
                     status=conf.status,
-                    overall_score=(
-                        float(match.overall_score) if match else None
-                    ),
+                    overall_score=(float(match.overall_score) if match else None),
                     deadline_kind=d.get("kind") or "other",
                     deadline_date=iso,
                     days_until=(dd - today).days,
@@ -202,13 +187,13 @@ async def build_cfp_digest(
         buckets[key].sort(
             key=lambda e: (
                 -(e.overall_score or 0.0),  # higher score first
-                e.deadline_date,            # then earlier deadline first
+                e.deadline_date,  # then earlier deadline first
             )
         )
         buckets[key] = buckets[key][:MAX_PER_BUCKET]
 
     stats = {key: len(buckets[key]) for key in buckets}
-    generated_at = datetime.now(tz=timezone.utc).isoformat()
+    generated_at = datetime.now(tz=UTC).isoformat()
 
     # Mark prior un-seen digests as seen so the bell doesn't accumulate.
     await db.execute(
@@ -279,20 +264,13 @@ def to_markdown(result: DigestResult, *, today: date | None = None) -> str:
         out.append("")
         for e in entries:
             score = (
-                f" (score {int(round((e.overall_score or 0) * 100))})"
+                f" (score {round((e.overall_score or 0) * 100)})"
                 if e.overall_score is not None
                 else ""
             )
-            sme = (
-                f"; suggested SME: {e.top_sme_name}"
-                if e.top_sme_name
-                else ""
-            )
+            sme = f"; suggested SME: {e.top_sme_name}" if e.top_sme_name else ""
             kind_label = e.deadline_kind.replace("_", " ").title()
-            out.append(
-                f"- **{e.name}**{score} — {kind_label} closes {e.deadline_date}"
-                f"{sme}"
-            )
+            out.append(f"- **{e.name}**{score} — {kind_label} closes {e.deadline_date}{sme}")
         out.append("")
     if not any_content:
         out.append("_No CFPs closing in the next 30 days._")

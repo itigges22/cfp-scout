@@ -59,9 +59,7 @@ def install_error_handlers(app: FastAPI) -> None:
     include_traceback = settings.env == "dev"
 
     @app.exception_handler(RequestValidationError)
-    async def _validation_handler(  # noqa: ARG001 (Starlette ABI)
-        request: Request, exc: RequestValidationError
-    ) -> JSONResponse:
+    async def _validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         # Surface field-level errors so the frontend can pin them to inputs.
         return _problem(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -72,9 +70,7 @@ def install_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(HTTPException)
-    async def _http_handler(  # noqa: ARG001
-        request: Request, exc: HTTPException
-    ) -> JSONResponse:
+    async def _http_handler(request: Request, exc: HTTPException) -> JSONResponse:
         return _problem(
             status_code=exc.status_code,
             title=exc.detail if isinstance(exc.detail, str) else "HTTP error",

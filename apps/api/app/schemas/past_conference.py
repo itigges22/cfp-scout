@@ -24,7 +24,6 @@ from app.schemas.common import (
     StrictBase,
 )
 
-
 # Year sanity. Pre-1990 is almost certainly a typo; > current_year + 1 is
 # also a typo (future events go in `conferences`, not `past_conferences`).
 _MIN_YEAR = 1990

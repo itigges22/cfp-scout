@@ -15,12 +15,13 @@ from __future__ import annotations
 import asyncio
 import shutil
 import time
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
-from sqlalchemy import func, select, text as sql_text
+from sqlalchemy import func, select
+from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import (
@@ -68,11 +69,7 @@ async def build_diagnostics(db: AsyncSession, *, force: bool = False) -> dict[st
     """Return the diagnostics payload, rebuilding if the cache is cold or
     older than ``CACHE_TTL_SECONDS``. ``force=True`` bypasses the TTL."""
     now = time.monotonic()
-    if (
-        not force
-        and _cache.payload is not None
-        and (now - _cache.built_at) < CACHE_TTL_SECONDS
-    ):
+    if not force and _cache.payload is not None and (now - _cache.built_at) < CACHE_TTL_SECONDS:
         return _cache.payload
 
     async with _lock:
@@ -95,7 +92,7 @@ async def build_diagnostics(db: AsyncSession, *, force: bool = False) -> dict[st
 async def _build(db: AsyncSession) -> dict[str, Any]:
     """Run the six panel queries concurrently where possible."""
     settings = get_settings()
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     # Run independent queries in parallel via asyncio.gather. SQLAlchemy
     # async sessions serialize within a single session, so each panel
@@ -125,7 +122,7 @@ async def _build(db: AsyncSession) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 async def _llm_panel(db: AsyncSession, *, now: datetime, settings) -> dict:
     """Month-to-date + last-24h spend + top purposes + recent errors."""
-    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
     day_start = now - timedelta(hours=24)
 
     async def _agg(since: datetime) -> dict:
@@ -133,9 +130,7 @@ async def _llm_panel(db: AsyncSession, *, now: datetime, settings) -> dict:
             await db.execute(
                 select(
                     func.count(LLMCall.id),
-                    func.coalesce(
-                        func.sum(LLMCall.prompt_tokens + LLMCall.completion_tokens), 0
-                    ),
+                    func.coalesce(func.sum(LLMCall.prompt_tokens + LLMCall.completion_tokens), 0),
                     func.coalesce(func.sum(LLMCall.cost_usd), 0),
                 ).where(LLMCall.created_at >= since)
             )
@@ -155,9 +150,7 @@ async def _llm_panel(db: AsyncSession, *, now: datetime, settings) -> dict:
             select(
                 LLMCall.purpose,
                 func.count(LLMCall.id),
-                func.coalesce(
-                    func.sum(LLMCall.prompt_tokens + LLMCall.completion_tokens), 0
-                ),
+                func.coalesce(func.sum(LLMCall.prompt_tokens + LLMCall.completion_tokens), 0),
                 func.coalesce(func.sum(LLMCall.cost_usd), 0),
             )
             .where(LLMCall.created_at >= day_start)
@@ -197,9 +190,7 @@ async def _llm_panel(db: AsyncSession, *, now: datetime, settings) -> dict:
     # Budget bar.
     budget_usd = settings.llm_monthly_budget_usd
     spend_usd = mtd["cost_usd"]
-    pct_used = (
-        round(spend_usd / budget_usd, 4) if (budget_usd and budget_usd > 0) else None
-    )
+    pct_used = round(spend_usd / budget_usd, 4) if (budget_usd and budget_usd > 0) else None
     threshold_warn = pct_used is not None and pct_used >= 0.8
 
     return {
@@ -234,7 +225,7 @@ async def _jobs_panel(db: AsyncSession, *, now: datetime) -> dict:
             "kind": kind,
             "started_at": st.isoformat() if st else None,
             "elapsed_seconds": (
-                int((now - (st if st.tzinfo else st.replace(tzinfo=timezone.utc))).total_seconds())
+                int((now - (st if st.tzinfo else st.replace(tzinfo=UTC))).total_seconds())
                 if st
                 else None
             ),
@@ -295,13 +286,11 @@ async def _jobs_panel(db: AsyncSession, *, now: datetime) -> dict:
                         "id": job.id,
                         "name": job.name,
                         "next_run_time": (
-                            job.next_run_time.isoformat()
-                            if job.next_run_time
-                            else None
+                            job.next_run_time.isoformat() if job.next_run_time else None
                         ),
                     }
                 )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("diagnostics.scheduler_introspect_failed", error=str(exc))
 
     return {
@@ -315,10 +304,10 @@ async def _jobs_panel(db: AsyncSession, *, now: datetime) -> dict:
 async def _scraper_panel(db: AsyncSession) -> dict:
     """Per-source crawl health + JS-blocked page counts."""
     source_rows = (
-        await db.execute(
-            select(Source).order_by(Source.last_crawled_at.desc().nullslast())
-        )
-    ).scalars().all()
+        (await db.execute(select(Source).order_by(Source.last_crawled_at.desc().nullslast())))
+        .scalars()
+        .all()
+    )
 
     fetched_counts = dict(
         (
@@ -347,11 +336,7 @@ async def _scraper_panel(db: AsyncSession) -> dict:
             select(func.count(RawPage.id)).where(RawPage.parse_status == "needs_js_render")
         )
     ).scalar_one()
-    disabled_by_error = [
-        {"id": s["id"], "name": s["name"]}
-        for s in sources
-        if not s["enabled"]
-    ]
+    disabled_by_error = [{"id": s["id"], "name": s["name"]} for s in sources if not s["enabled"]]
 
     return {
         "sources": sources,
@@ -399,42 +384,30 @@ async def _data_panel(db: AsyncSession, *, settings) -> dict:
     # Audience count.
     audiences_active = (
         await db.execute(
-            select(func.count(AudienceProfile.id)).where(
-                AudienceProfile.is_active.is_(True)
-            )
+            select(func.count(AudienceProfile.id)).where(AudienceProfile.is_active.is_(True))
         )
     ).scalar_one()
 
     # Pending topics.
     pending_topics = (
-        await db.execute(
-            select(func.count(Topic.id)).where(Topic.pending_review.is_(True))
-        )
+        await db.execute(select(func.count(Topic.id)).where(Topic.pending_review.is_(True)))
     ).scalar_one()
 
     # Pending series suggestions (computed on demand by plan 23; we just
     # report whether there are unlinked eligible conferences, which is the
     # input to the suggestion engine).
     unlinked_conferences = (
-        await db.execute(
-            select(func.count(Conference.id)).where(Conference.series_id.is_(None))
-        )
+        await db.execute(select(func.count(Conference.id)).where(Conference.series_id.is_(None)))
     ).scalar_one()
     series_count = (
         await db.execute(
-            select(func.count(ConferenceSeries.id)).where(
-                ConferenceSeries.is_active.is_(True)
-            )
+            select(func.count(ConferenceSeries.id)).where(ConferenceSeries.is_active.is_(True))
         )
     ).scalar_one()
 
     # Embedding model.
     model_row = (
-        await db.execute(
-            select(EmbeddingModel)
-            .where(EmbeddingModel.is_active.is_(True))
-            .limit(1)
-        )
+        await db.execute(select(EmbeddingModel).where(EmbeddingModel.is_active.is_(True)).limit(1))
     ).scalar_one_or_none()
     embedding_model = (
         {
@@ -499,9 +472,7 @@ async def _digest_panel(db: AsyncSession) -> dict:
 
 async def _system_panel(db: AsyncSession, *, settings) -> dict:
     """Postgres version + DB size + disk usage + process uptime."""
-    version = (
-        await db.execute(sql_text("SELECT version();"))
-    ).scalar_one()
+    version = (await db.execute(sql_text("SELECT version();"))).scalar_one()
 
     db_size_pretty, db_size_bytes = (
         await db.execute(
@@ -523,9 +494,7 @@ async def _system_panel(db: AsyncSession, *, settings) -> dict:
         process_started_at = None
     else:
         process_started_at = PROCESS_START_TIME.isoformat()
-        uptime_seconds = int(
-            (datetime.now(tz=timezone.utc) - PROCESS_START_TIME).total_seconds()
-        )
+        uptime_seconds = int((datetime.now(tz=UTC) - PROCESS_START_TIME).total_seconds())
 
     return {
         "postgres": {

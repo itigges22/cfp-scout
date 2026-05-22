@@ -19,7 +19,7 @@ This function never raises on a per-URL failure — it logs + returns a
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
@@ -53,7 +53,7 @@ class FetchOutcome:
     error: str | None = None
 
     @classmethod
-    def error_outcome(cls, url: str, error: str) -> "FetchOutcome":
+    def error_outcome(cls, url: str, error: str) -> FetchOutcome:
         return cls(url=url, status="error", error=error)
 
 
@@ -77,7 +77,7 @@ async def fetch_one(
 
     try:
         allowed = await robots.is_allowed(url, user_agent, client)
-    except Exception as exc:  # noqa: BLE001 — robots failures are non-fatal
+    except Exception as exc:
         bound.warning("scraper.robots_check_failed", error=str(exc))
         allowed = True
     if not allowed:
@@ -132,7 +132,7 @@ async def fetch_one(
     # fetched_at on the existing row and return a clean ``deduped`` outcome.
     existing = await _find_by_hash(db, sha)
     if existing is not None:
-        existing.fetched_at = datetime.now(tz=timezone.utc)
+        existing.fetched_at = datetime.now(tz=UTC)
         await db.flush()
         bound.info("scraper.deduped", existing_raw_page_id=str(existing.id))
         return FetchOutcome(
@@ -151,7 +151,7 @@ async def fetch_one(
     row = RawPage(
         source_id=source_id,
         url=url,
-        fetched_at=datetime.now(tz=timezone.utc),
+        fetched_at=datetime.now(tz=UTC),
         http_status=resp.status_code,
         content_type=resp.headers.get("content-type", "application/octet-stream")[:120],
         raw_body_path=str(storage_path),
@@ -177,9 +177,7 @@ async def fetch_one(
     )
 
 
-async def _find_prior_fetch(
-    db: AsyncSession, source_id: UUID, url: str
-) -> RawPage | None:
+async def _find_prior_fetch(db: AsyncSession, source_id: UUID, url: str) -> RawPage | None:
     """Most-recent raw_pages row for (source, url) — drives conditional GET."""
     result = await db.execute(
         select(RawPage)
@@ -210,5 +208,5 @@ def _approx_text_length(body: bytes, content_type: str) -> int:
         parser = LexborHTMLParser(body.decode("utf-8", errors="replace"))
         text = parser.body.text(separator=" ", strip=True) if parser.body else ""
         return len(text)
-    except Exception:  # noqa: BLE001 — fallback to raw if parser blows up
+    except Exception:
         return len(body)

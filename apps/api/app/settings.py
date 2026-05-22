@@ -168,7 +168,7 @@ class Settings(BaseSettings):
         return value.strip()
 
     @model_validator(mode="after")
-    def _matcher_weights_sum_to_one(self) -> "Settings":
+    def _matcher_weights_sum_to_one(self) -> Settings:
         total = self.match_w_messaging + self.match_w_pillar + self.match_w_sme
         # Allow tiny floating-point drift.
         if abs(total - 1.0) > 0.001:
@@ -178,7 +178,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _sme_matcher_weights_sum_to_one(self) -> "Settings":
+    def _sme_matcher_weights_sum_to_one(self) -> Settings:
         total = (
             self.sme_w_topic
             + self.sme_w_audience

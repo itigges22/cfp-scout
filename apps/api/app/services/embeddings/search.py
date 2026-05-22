@@ -7,8 +7,8 @@ the agent chat retrieval step (plan 22), and the topics-of-interest matcher.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -89,7 +89,7 @@ async def similar_chunks(
         await db.execute(
             update(DocumentChunk)
             .where(DocumentChunk.id.in_([h.id for h in hits]))
-            .values(last_used_at=datetime.now(tz=timezone.utc))
+            .values(last_used_at=datetime.now(tz=UTC))
         )
 
     log.debug(

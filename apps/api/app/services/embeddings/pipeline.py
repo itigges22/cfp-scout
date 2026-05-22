@@ -34,9 +34,7 @@ async def get_active_embedding_model(db: AsyncSession) -> EmbeddingModel:
 
     Raises ``RuntimeError`` if zero or more-than-one are active.
     """
-    result = await db.execute(
-        select(EmbeddingModel).where(EmbeddingModel.is_active.is_(True))
-    )
+    result = await db.execute(select(EmbeddingModel).where(EmbeddingModel.is_active.is_(True)))
     rows = list(result.scalars().all())
     if not rows:
         raise RuntimeError(
@@ -82,9 +80,7 @@ async def embed_owner(
         The number of chunks inserted (0 for empty/whitespace input).
     """
     if owner_type not in VALID_OWNER_TYPES:
-        raise ValueError(
-            f"invalid owner_type {owner_type!r}; valid: {sorted(VALID_OWNER_TYPES)}"
-        )
+        raise ValueError(f"invalid owner_type {owner_type!r}; valid: {sorted(VALID_OWNER_TYPES)}")
 
     model_row = await get_active_embedding_model(db)
 

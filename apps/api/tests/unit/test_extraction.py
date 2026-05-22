@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import date
 
-import pytest
-
 from app.services.extraction.dedup import build_slug, year_for
 from app.services.extraction.schema import (
     CfpDeadline,
@@ -87,9 +85,7 @@ class TestValidateAndScore:
         out = validate_and_score(c, today=date(2026, 10, 1))
         rule_names = {r.rule for r in out.rule_results}
         assert "country_code_iso" in rule_names
-        assert any(
-            r.rule == "country_code_iso" and not r.passed for r in out.rule_results
-        )
+        assert any(r.rule == "country_code_iso" and not r.passed for r in out.rule_results)
 
     def test_swapped_dates_drops_confidence(self) -> None:
         c = self._baseline(

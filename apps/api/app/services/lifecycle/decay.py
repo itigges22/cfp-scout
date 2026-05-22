@@ -33,10 +33,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import structlog
-from sqlalchemy import func, select, text as sql_text, update
+from sqlalchemy import func, select, update
+from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import Conference
@@ -78,10 +79,10 @@ def compute_freshness(
     """
     if reference_time is None:
         return 1.0
-    now_dt = now or datetime.now(tz=timezone.utc)
+    now_dt = now or datetime.now(tz=UTC)
     ref = reference_time
     if ref.tzinfo is None:
-        ref = ref.replace(tzinfo=timezone.utc)
+        ref = ref.replace(tzinfo=UTC)
     age_seconds = (now_dt - ref).total_seconds()
     if age_seconds <= 0:
         return 1.0
@@ -141,7 +142,7 @@ async def run_decay_pass(db: AsyncSession) -> DecayPassResult:
 
     today = date.today()
     archive_threshold = today - timedelta(days=ARCHIVE_AFTER_DAYS)
-    now_dt = datetime.now(tz=timezone.utc)
+    now_dt = datetime.now(tz=UTC)
 
     # 1. Archive ended conferences. We do this BEFORE recomputing freshness
     #    so the score reflects the new status.
@@ -158,12 +159,16 @@ async def run_decay_pass(db: AsyncSession) -> DecayPassResult:
 
     # 2. Score every non-quarantined / non-archived conference.
     rows = (
-        await db.execute(
-            select(Conference)
-            .where(Conference.status != "quarantined")
-            .where(Conference.status != "archived")
+        (
+            await db.execute(
+                select(Conference)
+                .where(Conference.status != "quarantined")
+                .where(Conference.status != "archived")
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     floor_pinned = 0
     for c in rows:
@@ -177,10 +182,9 @@ async def run_decay_pass(db: AsyncSession) -> DecayPassResult:
         )
         # Future-event floor: a yet-to-happen event shouldn't fade just
         # because nothing's edited it lately.
-        if c.start_date is not None and c.start_date >= today:
-            if f < FUTURE_EVENT_FLOOR:
-                f = FUTURE_EVENT_FLOOR
-                floor_pinned += 1
+        if c.start_date is not None and c.start_date >= today and f < FUTURE_EVENT_FLOOR:
+            f = FUTURE_EVENT_FLOOR
+            floor_pinned += 1
         c.freshness_score = round(f, 4)
 
     await db.flush()
@@ -202,17 +206,13 @@ async def run_decay_pass(db: AsyncSession) -> DecayPassResult:
 # ---------------------------------------------------------------------------
 # Diagnostics — surfaced via plan 26 in pass 2
 # ---------------------------------------------------------------------------
-async def conference_freshness_histogram(
-    db: AsyncSession, *, buckets: int = 10
-) -> dict:
+async def conference_freshness_histogram(db: AsyncSession, *, buckets: int = 10) -> dict:
     """Returns a histogram of ``conferences.freshness_score`` for the
     /diagnostics page (plan 26). Buckets are evenly-spaced in [0,1].
     """
     rows = (
         await db.execute(
-            select(Conference.freshness_score).where(
-                Conference.status != "quarantined"
-            )
+            select(Conference.freshness_score).where(Conference.status != "quarantined")
         )
     ).all()
     counts = [0] * buckets
@@ -237,13 +237,13 @@ __all__ = [
     "CHUNK_HALF_LIFE_DAYS",
     "CONFERENCE_HALF_LIFE_DAYS",
     "DECAY_ALPHA",
-    "compute_freshness",
-    "apply_decay_multiplier",
-    "run_decay_pass",
     "DecayPassResult",
+    "apply_decay_multiplier",
+    "compute_freshness",
     "conference_freshness_histogram",
+    "run_decay_pass",
 ]
 
 # Silence "unused" hints in the small uses-of-funcs check.
-_ = func  # noqa: F841
-_ = sql_text  # noqa: F841
+_ = func
+_ = sql_text

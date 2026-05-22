@@ -71,9 +71,9 @@ class AskBody(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     content: str = Field(..., min_length=1, max_length=4000)
     # Allow narrowing retrieval to a subset of owner_types. Default = all.
-    owner_types: list[
-        Literal["conference", "messaging", "sme_bio", "audience", "pillar", "raw_page"]
-    ] | None = Field(default=None)
+    owner_types: (
+        list[Literal["conference", "messaging", "sme_bio", "audience", "pillar", "raw_page"]] | None
+    ) = Field(default=None)
     k: int = Field(default=6, ge=1, le=20)
 
 
@@ -156,12 +156,16 @@ async def list_messages(db: DbSession, session_id: UUID) -> dict:
     if await db.get(ChatSession, session_id) is None:
         raise HTTPException(status_code=404, detail=f"No chat_session {session_id}")
     rows = (
-        await db.execute(
-            select(ChatMessage)
-            .where(ChatMessage.session_id == session_id)
-            .order_by(ChatMessage.created_at.asc())
+        (
+            await db.execute(
+                select(ChatMessage)
+                .where(ChatMessage.session_id == session_id)
+                .order_by(ChatMessage.created_at.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "session_id": str(session_id),
         "messages": [ChatMessageRead.model_validate(r).model_dump(mode="json") for r in rows],
@@ -172,9 +176,7 @@ async def list_messages(db: DbSession, session_id: UUID) -> dict:
     "/sessions/{session_id}/messages",
     status_code=status.HTTP_201_CREATED,
 )
-async def post_message(
-    db: DbSession, session_id: UUID, payload: AskBody
-) -> dict:
+async def post_message(db: DbSession, session_id: UUID, payload: AskBody) -> dict:
     """Ask a question. Persists user + assistant messages, returns reply +
     citations + token cost. Errors:
       * 404 if session doesn't exist

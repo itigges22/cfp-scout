@@ -33,13 +33,9 @@ def validate_pdf_bytes(data: bytes) -> None:
     if not data:
         raise PdfRejected("file is empty")
     if len(data) > MAX_PDF_BYTES:
-        raise PdfRejected(
-            f"file too large: {len(data):,} bytes; max {MAX_PDF_BYTES:,}"
-        )
+        raise PdfRejected(f"file too large: {len(data):,} bytes; max {MAX_PDF_BYTES:,}")
     if not data.startswith(PDF_MAGIC):
-        raise PdfRejected(
-            "not a PDF (file does not start with '%PDF-' magic)"
-        )
+        raise PdfRejected("not a PDF (file does not start with '%PDF-' magic)")
 
 
 def save_pdf(data: bytes) -> tuple[Path, str]:

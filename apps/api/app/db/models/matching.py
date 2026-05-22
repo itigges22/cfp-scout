@@ -78,9 +78,7 @@ class MatchTeamRecommendation(Base):
     )
     team_size: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
 
-    sme_ids: Mapped[list[uuid.UUID]] = mapped_column(
-        ARRAY(UUID(as_uuid=True)), nullable=False
-    )
+    sme_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), nullable=False)
     team_score: Mapped[float] = mapped_column(nullable=False)
     coverage_breadth: Mapped[float] = mapped_column(nullable=False)
     redundancy: Mapped[float] = mapped_column(nullable=False)

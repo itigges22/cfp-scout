@@ -115,7 +115,7 @@ def _count_pages(doc: Any) -> int:
             if hasattr(pages, "__len__"):
                 return len(pages)
             return sum(1 for _ in pages)
-    except Exception:  # noqa: BLE001 — Docling internals vary across releases
+    except Exception:
         pass
     return 0
 

@@ -49,13 +49,13 @@ SNIPPET_CHARS = 320
 class RetrievedSnippet:
     """One numbered retrieval hit."""
 
-    index: int                # 1-based; matches [n] in the prompt
+    index: int  # 1-based; matches [n] in the prompt
     chunk_id: str
     owner_type: str
     owner_id: str
     similarity: float
-    label: str                # human-friendly source name
-    text: str                 # the actual snippet body (capped to SNIPPET_CHARS)
+    label: str  # human-friendly source name
+    text: str  # the actual snippet body (capped to SNIPPET_CHARS)
 
 
 async def retrieve_for_question(
@@ -177,27 +177,21 @@ async def _resolve_labels(
     if ids := by_type.get("audience"):
         rows = (
             await db.execute(
-                select(AudienceProfile.id, AudienceProfile.name).where(
-                    AudienceProfile.id.in_(ids)
-                )
+                select(AudienceProfile.id, AudienceProfile.name).where(AudienceProfile.id.in_(ids))
             )
         ).all()
         for aid, name in rows:
             out[("audience", str(aid))] = f"Audience: {name}"
 
     if ids := by_type.get("sme_bio"):
-        rows = (
-            await db.execute(select(Sme.id, Sme.full_name).where(Sme.id.in_(ids)))
-        ).all()
+        rows = (await db.execute(select(Sme.id, Sme.full_name).where(Sme.id.in_(ids)))).all()
         for sid, name in rows:
             out[("sme_bio", str(sid))] = f"SME: {name}"
 
     if ids := by_type.get("pillar"):
         rows = (
             await db.execute(
-                select(StrategicPillar.id, StrategicPillar.name).where(
-                    StrategicPillar.id.in_(ids)
-                )
+                select(StrategicPillar.id, StrategicPillar.name).where(StrategicPillar.id.in_(ids))
             )
         ).all()
         for pid, name in rows:

@@ -47,9 +47,7 @@ async def create_(
     payload: MessagingDocumentCreate,
     actor_label: str = Query("system", description="Free-form attribution string."),
 ) -> MessagingDocumentRead:
-    obj = await messaging_service.create_messaging_document(
-        db, payload, actor_label=actor_label
-    )
+    obj = await messaging_service.create_messaging_document(db, payload, actor_label=actor_label)
     return MessagingDocumentRead.model_validate(obj)
 
 

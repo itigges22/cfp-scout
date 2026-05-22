@@ -10,7 +10,7 @@ of the DB / LLM.
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 
 def clamp01(x: float) -> float:
@@ -70,10 +70,7 @@ def apply_chunk_decay(raw_similarity: float, chunk) -> float:
         return clamp01(raw_similarity)
     last_used = getattr(chunk, "last_used_at", None)
     created = getattr(chunk, "created_at", None)
-    if last_used and created:
-        reference = max(last_used, created)
-    else:
-        reference = last_used or created
+    reference = max(last_used, created) if last_used and created else last_used or created
     freshness = compute_freshness(
         reference_time=reference,
         half_life_days=CHUNK_HALF_LIFE_DAYS,

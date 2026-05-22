@@ -6,12 +6,10 @@ place. Schemas in sibling modules re-use what's here rather than redefining.
 
 from __future__ import annotations
 
-from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Generic, TypeVar
-from uuid import UUID
+from typing import Annotated, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 
 # ---------------------------------------------------------------------------
 # Base config every input schema inherits.
@@ -52,7 +50,7 @@ class ReadBase(BaseModel):
 T = TypeVar("T")
 
 
-class Page(BaseModel, Generic[T]):
+class Page[T](BaseModel):
     """Generic paginated response wrapper.
 
     Routes that list resources return Page[ResourceRead]. The frontend
@@ -110,39 +108,25 @@ class PastConferenceSessionType(StrEnum):
 # These keep the per-field declarations on the data classes short and obvious.
 # Names follow the pattern <Use>Text with explicit min/max to encode policy.
 # ---------------------------------------------------------------------------
-ShortTitle = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=3, max_length=120)
-]
-ShortName = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=3, max_length=100)
-]
-AudienceName = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=3, max_length=80)
-]
+ShortTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=120)]
+ShortName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=100)]
+AudienceName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=80)]
 Description = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=50, max_length=500)
 ]
-TopicName = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=2, max_length=60)
-]
+TopicName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=60)]
 ConferenceName = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=3, max_length=150)
 ]
-ShortNote = Annotated[
-    str, StringConstraints(strip_whitespace=True, max_length=500)
-]
-ListItem = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=2, max_length=200)
-]
+ShortNote = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
+ListItem = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=200)]
 ElevatorPitch = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=50, max_length=600)
 ]
 TalkingPoint = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=5, max_length=200)
 ]
-SmeBio = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=200, max_length=2000)
-]
+SmeBio = Annotated[str, StringConstraints(strip_whitespace=True, min_length=200, max_length=2000)]
 CountryCode = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=2, max_length=2, to_upper=True)
 ]
@@ -169,9 +153,7 @@ def _iso_639_1_codes() -> frozenset[str]:
     """ISO-639-1 (2-letter) language codes."""
     import pycountry
 
-    return frozenset(
-        lang.alpha_2 for lang in pycountry.languages if hasattr(lang, "alpha_2")
-    )
+    return frozenset(lang.alpha_2 for lang in pycountry.languages if hasattr(lang, "alpha_2"))
 
 
 # Cached lookups; expensive to build, never change at runtime.
@@ -195,8 +177,7 @@ def validate_language_code(value: str) -> str:
     lower = value.lower()
     if lower not in _LANGUAGE_CODES:
         raise ValueError(
-            f"'{value}' is not a valid ISO-639-1 language code. "
-            f"Use codes like 'en', 'de', 'ja'."
+            f"'{value}' is not a valid ISO-639-1 language code. Use codes like 'en', 'de', 'ja'."
         )
     return lower
 

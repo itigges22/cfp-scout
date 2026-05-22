@@ -13,7 +13,7 @@ flood the jobstore. Plan 26's ``/diagnostics`` page will wrap this in UI.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, HTTPException, status
@@ -68,9 +68,7 @@ async def list_jobs() -> dict:
                 "name": job.name,
                 "func": f"{job.func.__module__}.{job.func.__name__}",
                 "trigger": str(job.trigger),
-                "next_run_time": (
-                    job.next_run_time.isoformat() if job.next_run_time else None
-                ),
+                "next_run_time": (job.next_run_time.isoformat() if job.next_run_time else None),
                 "coalesce": job.coalesce,
                 "max_instances": job.max_instances,
                 "misfire_grace_time": job.misfire_grace_time,
@@ -119,7 +117,7 @@ def _iso(dt: datetime | None) -> str | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat()
 
 

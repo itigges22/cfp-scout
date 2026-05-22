@@ -93,9 +93,7 @@ async def list_messaging_documents(
     )
 
 
-async def get_messaging_document(
-    db: AsyncSession, doc_id: UUID
-) -> MessagingDocument:
+async def get_messaging_document(db: AsyncSession, doc_id: UUID) -> MessagingDocument:
     obj = await db.get(MessagingDocument, doc_id)
     if obj is None:
         raise HTTPException(

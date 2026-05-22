@@ -44,9 +44,7 @@ async def create_(
     payload: PastConferenceCreate,
     actor_label: str = Query("system"),
 ) -> PastConferenceRead:
-    obj = await past_conference_service.create_past_conference(
-        db, payload, actor_label=actor_label
-    )
+    obj = await past_conference_service.create_past_conference(db, payload, actor_label=actor_label)
     return PastConferenceRead.model_validate(obj)
 
 
@@ -68,7 +66,8 @@ async def import_csv(
     db: DbSession,
     file: Annotated[UploadFile, File(description="CSV per docs/ops/data-guardrails.md")],
     ignore_errors: bool = Query(
-        False, description="When true, commit valid rows and report errors instead of all-or-nothing."
+        False,
+        description="When true, commit valid rows and report errors instead of all-or-nothing.",
     ),
     actor_label: str = Query("csv_import"),
 ) -> dict[str, object]:

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Any
 from uuid import UUID
 
 import networkx as nx
@@ -71,7 +70,11 @@ def candidate_smes_for_conference(
     aud_nbrs: set[str] = set()
     for n in graph.neighbors(conf_node):
         kind = graph.nodes[n].get("kind")
-        if kind == "topic" and graph.nodes[n].get("is_active") and not graph.nodes[n].get("pending_review"):
+        if (
+            kind == "topic"
+            and graph.nodes[n].get("is_active")
+            and not graph.nodes[n].get("pending_review")
+        ):
             topic_nbrs.add(n)
         elif kind == "audience":
             aud_nbrs.add(n)

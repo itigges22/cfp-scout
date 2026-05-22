@@ -77,7 +77,7 @@ async def create_topic(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"topic with name or slug already exists",
+            detail="topic with name or slug already exists",
         ) from exc
 
     await write_audit(

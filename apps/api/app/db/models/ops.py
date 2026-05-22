@@ -43,9 +43,7 @@ class IngestJob(TimestampedMixin, Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    stats: Mapped[dict] = mapped_column(
-        JSONB, nullable=False, server_default=text("'{}'::jsonb")
-    )
+    stats: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     error_text: Mapped[str | None] = mapped_column(Text)
 
 
@@ -89,9 +87,7 @@ class ChatSession(TimestampedMixin, Base):
     id: Mapped[uuid.UUID] = uuid_pk()
 
     title: Mapped[str | None] = mapped_column(String(200))
-    archived: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
-    )
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
 
 class ChatMessage(Base):
@@ -135,12 +131,8 @@ class Notification(Base):
     id: Mapped[uuid.UUID] = uuid_pk()
 
     kind: Mapped[str] = mapped_column(String(40), nullable=False)
-    payload: Mapped[dict] = mapped_column(
-        JSONB, nullable=False, server_default=text("'{}'::jsonb")
-    )
-    seen: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
-    )
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    seen: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
