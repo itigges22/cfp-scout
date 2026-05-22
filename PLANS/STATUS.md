@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 10 — LLM service layer live + verified in dry-run)
+**Last updated:** 2026-05-22 (plan 11 — embedding pipeline live + auto-embed on create verified)
 
 ## Plan status
 
@@ -20,7 +20,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 08 | Vite frontend skeleton | ✅ | Completed 2026-05-21 |
 | 09 | Manual data entry | 🚧 | Backend + lists + audience CRUD + SME form + CSV drop-zone live; messaging wizard remaining |
 | 10 | LLM service layer | ✅ | Completed 2026-05-22 — dry-run verified end-to-end |
-| 11 | Embeddings & chunking | ⬜ | |
+| 11 | Embeddings & chunking | ✅ | Plain-text path live 2026-05-22; Docling chunker for PDFs lands in plan 12 |
 | 12 | PDF/RAG ingestion | ⬜ | |
 | 13 | Background jobs (APScheduler) | ⬜ | |
 | 14 | Web scraper | ⬜ | |
@@ -430,6 +430,46 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
      Added `make rebuild` that does an explicit `--no-cache` build.
      **Note for future**: prefer `make rebuild` when you've edited
      `apps/api/app/**`; `make up` is fine for code-free changes.
+
+### 2026-05-22 (plan 11 — embeddings + chunking)
+- ✅ **Plan 11 complete (plain-text path)**:
+  - `app/services/embeddings/chunker.py` — sentence-aware character chunker
+    (~3000 chars / 750 tokens, 300-char overlap, hard-split fallback for
+    pathological inputs). Returns typed `ChunkData(text, chunk_index,
+    token_count, metadata)`. Metadata stays empty for plain text; plan 12's
+    Docling `HybridChunker` fills it with section_heading/page_number/content_type.
+  - `app/services/embeddings/pipeline.py` — `embed_owner(db, owner_type,
+    owner_id, text)` is the single entry point. Idempotent: deletes prior
+    chunks for the (owner, active_model) tuple before re-inserting. Validates
+    `owner_type` against the schema's enum. Empty text → no-op (still
+    deletes prior chunks). `get_active_embedding_model()` enforces "exactly
+    one" active row.
+  - `app/services/embeddings/search.py` — `similar_chunks(query, owner_types,
+    k)` embeds the query, runs pgvector's `cosine_distance` ordering against
+    the active-model chunks, optionally filters by owner_type/owner_ids.
+    Bumps `last_used_at` on hits (drives plan-25 decay); skippable for
+    diagnostic searches.
+  - `app/api/v1/admin_embeddings.py` — admin routes:
+    `/admin/embeddings/model` (active row info), `/stats` (chunk counts by
+    owner_type), `/embed-text` (ad-hoc chunk + embed, no DB write),
+    `/embed-owner` (full persist), `/search` (similarity search).
+- 🪝 **Auto-embed hooks** wired into create + update of:
+  audience profiles, SME bios, messaging documents. Failures are non-fatal
+  (the entity row persists; admin can re-trigger via `/admin/embeddings/embed-owner`).
+  Patterned via `_embed_safely()` per service. Plan 13 (background jobs)
+  will move heavy bulk reindexing off the request thread; per-entity create/update
+  stays synchronous.
+- 🟢 **Verified live (dry-run)**:
+  - `POST /audience-profiles` of a new audience → `embed:audience:create`
+    appears in `llm_calls`; chunk count jumps from 1 → 2 by owner_type=audience.
+  - `POST /admin/embeddings/search` finds both audiences when querying for
+    "ML platform inference and GPU capacity".
+  - `embed:sme_bio`, `embed:audience`, `admin_search` purpose tags all
+    distinct in `/admin/llm/stats`.
+- 📝 Note on Docling deferral: plan 12 swaps in `docling.chunking.HybridChunker`
+  for PDF inputs where layout-aware chunking actually pays off. For plain text
+  (manual entries, scraped boilerplate-stripped pages) the sentence-aware
+  chunker above is appropriate and avoids the ~500MB image hit.
 
 ### 2026-05-21 (afternoon revision)
 - 🔄 **Docling adopted** for PDF parsing + structure-aware chunking

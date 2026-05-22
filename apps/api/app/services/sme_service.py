@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+import structlog
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,29 @@ from app.db.models.entities import AudienceProfile, Sme, Topic
 from app.schemas.common import Page
 from app.schemas.sme import SmeCreate, SmeRead, SmeUpdate
 from app.services._common import model_to_audit_dict, paginate, write_audit
+from app.services.embeddings import embed_owner
+
+log = structlog.get_logger("scout.services.sme")
+
+
+async def _embed_bio_safely(db: AsyncSession, obj: Sme, *, purpose: str) -> None:
+    """Embed the SME's bio. Failure leaves the row un-indexed; admin can retry."""
+    try:
+        await embed_owner(
+            db,
+            owner_type="sme_bio",
+            owner_id=obj.id,
+            text=obj.bio,
+            purpose=purpose,
+        )
+        await db.commit()
+    except Exception as exc:
+        log.warning(
+            "sme.embed_failed",
+            sme_id=str(obj.id),
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        await db.rollback()
 
 
 async def _check_topic_ids(db: AsyncSession, ids: list[UUID]) -> None:
@@ -118,6 +142,7 @@ async def create_sme(
     )
     await db.commit()
     await db.refresh(obj)
+    await _embed_bio_safely(db, obj, purpose="embed:sme_bio:create")
     return obj
 
 
@@ -151,6 +176,7 @@ async def update_sme(
     )
     await db.commit()
     await db.refresh(obj)
+    await _embed_bio_safely(db, obj, purpose="embed:sme_bio:update")
     return obj
 
 

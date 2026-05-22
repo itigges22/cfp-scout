@@ -1,16 +1,14 @@
 """Messaging-documents service.
 
 Plan 09 surface: list / get / create / update / soft-delete.
-
-Embedding regeneration is enqueued on create/update once the embedder lands
-(plan 11). For now the service writes the row + audits; plan 11 hooks the
-``embed_owner`` task into the same paths.
+Plan 11 wires post-commit embedding via ``_embed_safely``.
 """
 
 from __future__ import annotations
 
 from uuid import UUID
 
+import structlog
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +21,53 @@ from app.schemas.messaging import (
     MessagingDocumentUpdate,
 )
 from app.services._common import model_to_audit_dict, paginate, write_audit
+from app.services.embeddings import embed_owner
+
+log = structlog.get_logger("scout.services.messaging")
+
+
+def _messaging_embed_text(m: MessagingDocument) -> str:
+    """Compose the text we embed for similarity search against this messaging doc.
+
+    The structured fields are joined into a single document so the matcher's
+    Stage A (messaging similarity) can hit any of them.
+    """
+    parts = [
+        m.title,
+        m.elevator_pitch,
+        "Target personas: " + "; ".join(m.target_personas),
+        "Key themes: " + "; ".join(m.key_themes),
+        "Talking points: " + "; ".join(m.talking_points),
+    ]
+    if m.differentiators:
+        parts.append("Differentiators: " + "; ".join(m.differentiators))
+    if m.competitive_position:
+        parts.append(f"Competitive position: {m.competitive_position}")
+    if m.raw_content:
+        # PDF-source docs have raw_content populated by plan 12; include it
+        # so chunking can split across the body too.
+        parts.append(m.raw_content)
+    return "\n".join(parts)
+
+
+async def _embed_safely(db: AsyncSession, obj: MessagingDocument, *, purpose: str) -> None:
+    """Embed in a separate logical step; failures don't break the create flow."""
+    try:
+        await embed_owner(
+            db,
+            owner_type="messaging",
+            owner_id=obj.id,
+            text=_messaging_embed_text(obj),
+            purpose=purpose,
+        )
+        await db.commit()
+    except Exception as exc:
+        log.warning(
+            "messaging.embed_failed",
+            messaging_id=str(obj.id),
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        await db.rollback()
 
 
 async def list_messaging_documents(
@@ -81,6 +126,7 @@ async def create_messaging_document(
     )
     await db.commit()
     await db.refresh(obj)
+    await _embed_safely(db, obj, purpose="embed:messaging:create")
     return obj
 
 
@@ -109,6 +155,7 @@ async def update_messaging_document(
     )
     await db.commit()
     await db.refresh(obj)
+    await _embed_safely(db, obj, purpose="embed:messaging:update")
     return obj
 
 

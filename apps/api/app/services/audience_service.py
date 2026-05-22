@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+import structlog
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +18,45 @@ from app.schemas.audience import (
 )
 from app.schemas.common import Page
 from app.services._common import model_to_audit_dict, paginate, write_audit
+from app.services.embeddings import embed_owner
+
+log = structlog.get_logger("scout.services.audience")
+
+
+def _audience_embed_text(a: AudienceProfile) -> str:
+    """Compose the text we embed for similarity search against this profile."""
+    parts = [
+        a.name,
+        a.description,
+        f"Industry: {a.industry}",
+        f"Seniority: {a.role_seniority}",
+        "Pain points: " + "; ".join(a.primary_pain_points),
+        "Key messages: " + "; ".join(a.key_messages),
+    ]
+    if a.exclusion_criteria:
+        parts.append("Exclusion: " + "; ".join(a.exclusion_criteria))
+    return "\n".join(parts)
+
+
+async def _embed_safely(db: AsyncSession, obj: AudienceProfile, *, purpose: str) -> None:
+    """Embed in a separate logical step. Failure leaves the entity un-indexed
+    but the row persists; admin can re-trigger via /admin/embeddings/embed-owner."""
+    try:
+        await embed_owner(
+            db,
+            owner_type="audience",
+            owner_id=obj.id,
+            text=_audience_embed_text(obj),
+            purpose=purpose,
+        )
+        await db.commit()
+    except Exception as exc:
+        log.warning(
+            "audience.embed_failed",
+            audience_id=str(obj.id),
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        await db.rollback()
 
 
 async def list_audience_profiles(
@@ -80,6 +120,7 @@ async def create_audience_profile(
     )
     await db.commit()
     await db.refresh(obj)
+    await _embed_safely(db, obj, purpose="embed:audience:create")
     return obj
 
 
@@ -108,6 +149,7 @@ async def update_audience_profile(
     )
     await db.commit()
     await db.refresh(obj)
+    await _embed_safely(db, obj, purpose="embed:audience:update")
     return obj
 
 
