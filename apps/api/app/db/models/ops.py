@@ -136,3 +136,27 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
+
+
+class AppSettingOverride(Base):
+    """Singleton-style key/value overrides for app/settings.py values.
+
+    Populated via ``PATCH /api/v1/admin/settings`` so admins can tune
+    matcher weights, decay flags, LLM budget, etc. without editing
+    ``.env``. Loaded into the Pydantic Settings instance on api startup;
+    a successful PATCH clears the lru_cache so the next request picks up
+    the new value (for runtime-tunable keys; secrets like LLM_API_KEY
+    still require a restart of the api container).
+    """
+
+    __tablename__ = "app_setting_overrides"
+    __table_args__ = {"schema": "app"}
+
+    name: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)  # JSON-encoded scalar/list
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    actor_label: Mapped[str] = mapped_column(
+        String(120), nullable=False, server_default=text("'system'")
+    )

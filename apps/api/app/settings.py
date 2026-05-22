@@ -250,7 +250,16 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """FastAPI dependency for accessing the singleton ``Settings`` instance.
 
-    Cached at module load — re-importing the module in tests with a different
-    env requires clearing the cache via ``get_settings.cache_clear()``.
+    Reads env vars, then merges runtime overrides from
+    ``app.services.settings_overrides`` (populated at startup from
+    ``app.app_setting_overrides``). Cached; call ``cache_clear()`` after
+    mutating overrides so the next read returns the new value.
     """
+    # Local import to avoid an import cycle (settings_overrides imports
+    # from `app.db.models.ops` which transitively pulls in this module).
+    from app.services import settings_overrides
+
+    overrides = settings_overrides.current()
+    if overrides:
+        return Settings(**overrides)  # type: ignore[arg-type]
     return Settings()  # type: ignore[call-arg]
