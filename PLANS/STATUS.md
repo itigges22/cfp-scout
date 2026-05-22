@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 24 pass 1 — CFP-closing digest; daily 09:00 cron, bell badge w/ bucketed dropdown + copy-to-clipboard Markdown)
+**Last updated:** 2026-05-22 (plan 25 pass 1 — Ebbinghaus decay + content versioning; daily cron, before_flush listener, field-level diffs, /versions endpoint)
 
 ## Plan status
 
@@ -34,7 +34,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 22 | Agent chat interface | 🚧 | Pass 1 done 2026-05-22 (sessions CRUD, RAG retrieval with friendly labels, prompt-injection wrapper, [n] citation extraction, /agent chat UI with sidebar + composer + cost meter). Pass 2: SSE streaming, /slash commands, intent classification, cancel button |
 | 23 | Conference series tracking | 🚧 | Pass 1 done 2026-05-22 (35-series seed catalog + detector w/ pg_trgm + Python trigram alias fallback + CRUD + assign/unassign + matcher recompute hook). Pass 2: /settings/series UI + "Previous editions" panel on conference detail + weekly cron |
 | 24 | CFP-closing digest | ✅ | Completed 2026-05-22 (daily 09:00 cron, 0-7/8-14/15-30 buckets, score-ranked, persists in notifications, bell badge dropdown, copy-to-clipboard Markdown) |
-| 25 | Data lifecycle decay & versioning | ⬜ | |
+| 25 | Data lifecycle decay & versioning | 🚧 | Pass 1 done 2026-05-22 (daily decay cron + freshness math + before_flush versioning listener + GET /versions endpoint). Pass 2: wire decay into pillar + SME ranker cosines, restore-version mutation, history viewer UI |
 | 26 | Observability & diagnostics | ⬜ | |
 | 27 | Testing strategy | ⬜ | |
 | 28 | CI/CD pipeline | ⬜ | |
@@ -470,6 +470,86 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 25 pass 1 — Decay + content versioning)
+- 🚧 **Plan 25 pass 1 complete**: two unrelated lifecycle features in one
+  package — Ebbinghaus freshness decay (with a daily cron and a retrieval
+  multiplier) and git-blame-style content versioning (SQLAlchemy
+  `before_flush` listener writing field-level diffs to
+  `audit.content_versions`).
+- **Decay** (`app/services/lifecycle/decay.py`):
+  - `compute_freshness(reference_time, half_life_days)` — pure
+    `exp(-age/half_life)`. Returns 1.0 for missing/future references.
+  - `apply_decay_multiplier(raw, freshness)` — `raw * (alpha + (1-alpha)*freshness)`
+    with `alpha=0.85`. So a totally stale chunk still contributes 85% of
+    its raw cosine — decay tilts ranking, doesn't hide content.
+  - Half-lives: chunks **60 d**, conferences **365 d**.
+  - **Future-event floor**: conferences whose `start_date` is in the
+    future get a freshness floor of `0.5` so newly-extracted NeurIPS 2027
+    doesn't start at zero.
+  - `run_decay_pass(db)` — daily cron:
+    - Archives conferences whose `end_date < today - 90d` to
+      `status='archived'`.
+    - Bulk-updates `conferences.freshness_score` (using `updated_at` as
+      the "we touched this" reference).
+    - No-op when `settings.decay_enabled=false` (true on/off toggle).
+- **Decay in the matcher** (`matcher/_scoring.py` + `matcher/messaging.py`):
+  - New `apply_chunk_decay(raw, chunk)` helper that pulls
+    `last_used_at`/`created_at` off the chunk, computes freshness, and
+    applies the multiplier when `DECAY_ENABLED=true`. Returns the raw
+    similarity unchanged when disabled.
+  - Wired into Stage A (messaging) cross-pair cosines — both the
+    conference chunk and the messaging chunk discount the pair's
+    similarity. Pillar (Stage B) + SME bio (plan 18) wiring is pass 2.
+  - **Verified math**: fresh chunk → unchanged; 60-day-old (1 half-life,
+    freshness=0.5) → 0.8 cosine becomes 0.74; 180-day-old
+    (~3 half-lives) → 0.8 becomes 0.69.
+- **Versioning** (`app/services/lifecycle/versioning.py`):
+  - SQLAlchemy `Session.before_flush` listener registered at app startup
+    (in `lifespan.py`). For every modified instance of a versioned
+    entity (conferences, messaging_documents, audience_profiles, smes,
+    topics, conference_series, decisions) it walks the attribute
+    history, computes a field-level diff (`{from, to}` per changed
+    attr; collections and `updated_at`/`created_at` excluded), and
+    appends an `audit.content_versions` row.
+  - Source of truth — feature code can't bypass the listener.
+  - **Actor + reason attribution**: per-instance via `setattr(obj,
+    "_actor_label", ...)` or task-scoped via `set_actor_label()` /
+    `set_reason()` context vars. Defaults to `"system"`. CSV imports
+    will set the label to `"csv_import:<filename>"` (plan 25 pass 2).
+  - Diff shape: `{"fields": {"bio": {"from": "...", "to": "..."}},
+    "version_number": N}` — directly renderable, no jsonpatch interpreter
+    needed client-side.
+- **Task + cron** (`app/tasks/run_decay_pass.py` + `app/scheduler.py`):
+  - `run_decay_pass_task` wrapped via `run_as_job`.
+  - Registered as APScheduler cron `decay_pass` daily 03:00 in
+    `settings.scheduler_timezone`.
+- **API** (`app/api/v1/versions.py`):
+  - `GET /api/v1/versions/entity/{entity_type}/{entity_id}` — full
+    history (oldest first), capped at 200.
+- **Admin** (`app/api/v1/admin_jobs.py`):
+  - `POST /admin/jobs/run_decay_pass/trigger` — manual fire (rate-limited).
+- 🟢 **Verified live (no rebuild needed — uvicorn hot-reload)**:
+  - `POST /admin/jobs/run_decay_pass/trigger` → ingest_jobs row
+    `{decay_enabled: true, conferences_scored: 3, conferences_archived: 0,
+    floor_pinned: 0, duration_ms: 12}`.
+  - Conferences with recent `updated_at` got freshness scores 0.9997-0.9999
+    (essentially 1.0; old conferences would drop sharply).
+  - PUT an audience to mutate `description` → `audit.content_versions`
+    got `version_number=1` with `{description: {from: "Refreshed...", to:
+    "Edited..."}}`, `actor_label="system"`.
+  - Second PUT → `version_number=2` row appended.
+  - `GET /api/v1/versions/entity/audience_profile/{id}` returned both
+    versions ordered oldest-first.
+- **Deferred to pass 2**:
+  - Wire `apply_chunk_decay` into the matcher's pillar (Stage B) +
+    SME-ranker bio cosines (currently only Stage A uses it).
+  - "Restore this version" mutation — non-destructive write that creates
+    a NEW version re-applying older state.
+  - History viewer UI panel (lives on the detail pages from plan 20).
+  - CSV imports set `set_actor_label("csv_import:<file>")` before flush.
+  - `/diagnostics` freshness histogram (groundwork already in
+    `decay.conference_freshness_histogram`; plan 26 surfaces it).
 
 ### 2026-05-22 (plan 24 — CFP-closing digest)
 - ✅ **Plan 24 complete**: daily 09:00 cron builds the CFP-closing digest,

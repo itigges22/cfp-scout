@@ -47,3 +47,35 @@ def cosine_from_distance(distance: float) -> float:
     rare; we treat them as 0.
     """
     return clamp01(1.0 - float(distance))
+
+
+def apply_chunk_decay(raw_similarity: float, chunk) -> float:
+    """Multiply a raw chunk-similarity by the chunk's freshness when decay
+    is enabled (plan 25). Gated by ``settings.decay_enabled``.
+
+    ``chunk`` is expected to be a ``DocumentChunk`` row or any object with
+    ``created_at`` and ``last_used_at`` attributes. Freshness uses the
+    more-recent of the two as the reference time (a chunk that's been
+    retrieved recently stays fresh even if it was created long ago).
+    """
+    # Lazy import to avoid a circular ref through app.services.lifecycle.
+    from app.services.lifecycle import (
+        CHUNK_HALF_LIFE_DAYS,
+        apply_decay_multiplier,
+        compute_freshness,
+    )
+    from app.settings import get_settings
+
+    if not get_settings().decay_enabled:
+        return clamp01(raw_similarity)
+    last_used = getattr(chunk, "last_used_at", None)
+    created = getattr(chunk, "created_at", None)
+    if last_used and created:
+        reference = max(last_used, created)
+    else:
+        reference = last_used or created
+    freshness = compute_freshness(
+        reference_time=reference,
+        half_life_days=CHUNK_HALF_LIFE_DAYS,
+    )
+    return apply_decay_multiplier(raw_similarity, freshness)

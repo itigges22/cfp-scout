@@ -22,6 +22,7 @@ from sqlalchemy import text
 
 from app.db.session import dispose_engine, get_engine
 from app.scheduler import start_scheduler, stop_scheduler
+from app.services.lifecycle import register_versioning_listeners
 from app.settings import get_settings
 
 log = structlog.get_logger("scout.lifespan")
@@ -54,6 +55,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.error("scout.db_unreachable", error=str(exc))
         # Re-raise so uvicorn exits non-zero and compose restarts us.
         raise
+
+    # Plan 25: register the content-versioning SQLAlchemy event listener.
+    # Idempotent — safe to call on every boot. Done BEFORE the scheduler
+    # so any startup task that mutates versioned entities gets logged.
+    register_versioning_listeners()
+    log.info("scout.versioning.ready")
 
     # Scheduler runs in-process. Start it AFTER the DB probe so a failed
     # boot doesn't leave a half-started scheduler. If uvicorn spawns multiple

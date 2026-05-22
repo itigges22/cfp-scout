@@ -24,6 +24,7 @@ from app.db.session import DbSession
 from app.scheduler import enqueue_now, get_scheduler
 from app.tasks.build_cfp_digest import build_cfp_digest_task
 from app.tasks.heartbeat import heartbeat as heartbeat_task
+from app.tasks.run_decay_pass import run_decay_pass_task
 
 log = structlog.get_logger("scout.api.admin_jobs")
 router = APIRouter(prefix="/api/v1/admin/jobs", tags=["admin.jobs"])
@@ -133,6 +134,20 @@ async def trigger_heartbeat() -> dict:
     job_id = enqueue_now(heartbeat_task, job_id="heartbeat-manual")
     log.info("admin.jobs.heartbeat_triggered", job_id=job_id)
     return {"queued_job_id": job_id, "kind": "heartbeat"}
+
+
+@router.post("/run_decay_pass/trigger", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_decay_pass() -> dict:
+    """Fire the daily decay-pass immediately (plan 25).
+
+    Rate-limited to one trigger per 30s. Recomputes
+    ``conferences.freshness_score`` + archives events older than 90 days.
+    No-op when ``DECAY_ENABLED=false`` (the task short-circuits).
+    """
+    _check_rate_limit("decay_pass")
+    job_id = enqueue_now(run_decay_pass_task, job_id="decay-pass-manual")
+    log.info("admin.jobs.decay_pass_triggered", job_id=job_id)
+    return {"queued_job_id": job_id, "kind": "run_decay_pass"}
 
 
 @router.post("/build_cfp_digest/trigger", status_code=status.HTTP_202_ACCEPTED)
