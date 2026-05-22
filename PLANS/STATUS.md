@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 30 pass 1 — operator runbook + README rewrite; 14 troubleshooting scenarios documented)
+**Last updated:** 2026-05-22 (plan 31 pass 1 — XLSX workbook import/export live; round-trip identity verified end-to-end)
 
 ## Plan status
 
@@ -40,7 +40,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 28 | CI/CD pipeline | 🚧 | Pass 1 done 2026-05-22 (ci.yaml: api lint+unit tests+typecheck, web tsc+build+lint; codeql.yaml: weekly + per-PR security/quality; dependabot.yaml: weekly pip+npm+actions updates). Pass 2: image build + Trivy + release workflow + branch protection |
 | 29 | Security review & hardening | 🚧 | Pass 1 done 2026-05-22 (CSP/HSTS/X-Frame/Referrer/Permissions headers middleware; SECURITY_REVIEW.md threat model + consolidated checklist; ruff/format codebase-wide). Pass 2: PDF page cap, cap_drop, Trivy + license audit, optional Llama-Guard |
 | 30 | Documentation & runbook | 🚧 | Pass 1 done 2026-05-22 (rewrote README with daily dev loop + routes table + docs map; new docs/ops/runbook.md covers 14 common troubleshooting scenarios). Pass 2: cold-clone walkthrough video, markdownlint CI, demo seed |
-| 31 | Configuration workbook (XLSX) | ⬜ | |
+| 31 | Configuration workbook (XLSX) | 🚧 | Pass 1 done 2026-05-22 (6 sheets — Pillars/Industries/Audiences/SMEs/Topics/Series; template + export + preview + apply endpoints; round-trip identity verified). Pass 2: Messaging + PastConferences sheets, /settings/import-export UI |
 | 32 | Multi-SME team recommendations | ⬜ | |
 | 33 | Conference brief export | ⬜ | |
 

@@ -49,6 +49,9 @@ dependencies = [
     # PyYAML is used by the plan-23 series seed migration (db/seeds/
     # conference_series.yaml). Tiny dep, widely-used + battle-tested.
     "pyyaml>=6.0",
+    # openpyxl powers plan-31's XLSX workbook import/export. Reads + writes
+    # only; never executes formulas. Round-trip identity is the contract.
+    "openpyxl>=3.1",
     # Extraction (plan 15): trafilatura strips boilerplate from scraped HTML
     # before the LLM sees the page; python-slugify generates conferences.slug.
     "trafilatura>=1.12",
