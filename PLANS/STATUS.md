@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 09 UI pass 2 — SME form + CSV drop-zone live + verified)
+**Last updated:** 2026-05-22 (plan 10 — LLM service layer live + verified in dry-run)
 
 ## Plan status
 
@@ -19,7 +19,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 07 | Config & secrets | ✅ | Completed 2026-05-21. Implementation done in plan 06; this pass added the operator runbook. |
 | 08 | Vite frontend skeleton | ✅ | Completed 2026-05-21 |
 | 09 | Manual data entry | 🚧 | Backend + lists + audience CRUD + SME form + CSV drop-zone live; messaging wizard remaining |
-| 10 | LLM service layer | ⬜ | |
+| 10 | LLM service layer | ✅ | Completed 2026-05-22 — dry-run verified end-to-end |
 | 11 | Embeddings & chunking | ⬜ | |
 | 12 | PDF/RAG ingestion | ⬜ | |
 | 13 | Background jobs (APScheduler) | ⬜ | |
@@ -388,6 +388,48 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
     elevator pitch / personas / themes+talking points / differentiators+
     competitive / review). Not blocking — XLSX workbook (plan 31) covers
     bulk messaging entry too. Defer to next pass.
+
+### 2026-05-22 (plan 10 — LLM service layer)
+- ✅ **Plan 10 complete**: `apps/api/app/services/llm/` package
+  - `models.py` — typed `ChatRequest`/`ChatResponse`/`EmbeddingRequest`/
+    `EmbeddingResponse` + `BudgetExceeded` exception. Provider-agnostic.
+    Callers downstream never see raw openai SDK types.
+  - `costs.py` — per-model price table seeded with the MaaS catalog
+    (granite-3-2-8b-instruct $0.50/M, nomic-embed-text-v1-5 $0.02/M input,
+    deepseek-r1-distill-qwen-14b $0.80/M, etc.). Override via `LLM_PRICES_JSON`.
+  - `retries.py` — tenacity-based `AsyncRetrying` for 429 / 5xx / network
+    errors. 4 attempts with jittered exponential backoff (1–30s).
+  - `rate_limit.py` — per-process async token bucket; two buckets (10 rps
+    sustained / 20 burst; 2000 tokens/sec sustained).
+  - `dry_run.py` — deterministic chat + embedding responses. Embeddings
+    are 768-dim seeded from sha256(text) so the rest of the pipeline (pgvector)
+    doesn't notice. Activated by `LLM_DRY_RUN=true`.
+  - `_recording.py` — `record_call(...)` stages an INSERT into
+    `app.llm_calls`; `month_to_date_spend()` + `check_budget()` enforce
+    `LLM_MONTHLY_BUDGET_USD`. Caller owns the transaction.
+  - `client.py` — `LLMClient.chat()` (single-shot + streaming) and
+    `LLMClient.embed()` (batched). Per-purpose model resolution (extract/
+    rationale/narrative/agent fall back to LLM_CHAT_MODEL). Module-level
+    `get_llm_client()` singleton.
+  - **Admin endpoints** at `/api/v1/admin/llm/test-chat`, `/test-embed`,
+    `/stats` — manual smoke tests and the json aggregator plan 26 will
+    surface in `/diagnostics`.
+- 🟢 **Verified live**: dry-run path tested end-to-end. Chat returned canned
+  content with token counts; embed returned a 768-dim deterministic vector;
+  `/stats` shows 3 mtd calls with correct breakdown by purpose. All calls
+  persisted in `app.llm_calls`.
+- 🐛 **Three bugs caught by running it**:
+  1. `before_sleep_log(log, logging_level=30)` — wrong kwarg name. tenacity
+     uses positional `level` not `logging_level`. Also tenacity wants a
+     stdlib logger, not a structlog binder. Switched to `_stdlib_log` +
+     positional `logging.WARNING`.
+  2. `.env` revert during sed: my sed flip of `LLM_DRY_RUN=true` got
+     reverted; ran via a small bash script to make sure it stuck.
+  3. **Cache invalidation in podman build**: `podman-compose --build`
+     didn't reliably invalidate the api COPY layer after small Python edits.
+     Added `make rebuild` that does an explicit `--no-cache` build.
+     **Note for future**: prefer `make rebuild` when you've edited
+     `apps/api/app/**`; `make up` is fine for code-free changes.
 
 ### 2026-05-21 (afternoon revision)
 - 🔄 **Docling adopted** for PDF parsing + structure-aware chunking

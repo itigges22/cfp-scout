@@ -70,6 +70,15 @@ sh:  ## Open a shell in a service: make sh SERVICE=api
 	@if [ -z "$(SERVICE)" ]; then echo "usage: make sh SERVICE=api"; exit 2; fi
 	@$(COMPOSE) exec $(SERVICE) /bin/bash
 
+.PHONY: rebuild
+rebuild:  ## Force a no-cache rebuild of the api image, then bring the stack up.
+	@echo "Force-rebuilding api image (no cache)..."
+	@$(COMPOSE) down 2>/dev/null || true
+	@$(CONTAINER_CLI) rmi -f localhost/scout/api:dev scout/api:dev 2>/dev/null || true
+	@$(CONTAINER_CLI) build --no-cache -f apps/api/Containerfile -t scout/api:dev .
+	@$(COMPOSE) up -d
+	@echo "OK — stack up with a freshly-built api image"
+
 .PHONY: nuke
 nuke:  ## Destroy stack + volumes (PROMPTS for confirmation)
 	@printf "This will delete all named volumes (postgres data, uploads, raw_pages). Type 'nuke' to confirm: " \
