@@ -1,0 +1,41 @@
+version: 2
+# Weekly dependency updates. PRs land on Monday mornings so the team
+# triages them in their CI queue before the work week ramps up.
+
+updates:
+  # api Python deps managed by uv (we don't have a lockfile committed yet;
+  # Dependabot uses pyproject.toml's version specifiers).
+  - package-ecosystem: pip
+    directory: "/apps/api"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+    labels: [deps, python]
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(api)"
+
+  # Frontend deps managed by pnpm.
+  - package-ecosystem: npm
+    directory: "/apps/web"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+    labels: [deps, web]
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(web)"
+
+  # GitHub Actions itself.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+    labels: [deps, ci]
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(ci)"
