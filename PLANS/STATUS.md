@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 21 pass 1 — graph exploration view live; force-directed canvas at /graph with kind/status/since filters)
+**Last updated:** 2026-05-22 (plan 22 pass 1 — agent chat live; RAG retrieval + citations + session persistence at /agent)
 
 ## Plan status
 
@@ -31,7 +31,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 19 | SME fit narrative | ✅ | Completed 2026-05-22 (top-K per conference, ≤400 chars, prompt-injection wrapped, quote post-validation with retry+UNAVAILABLE fallback, auto-enqueued after run_fit_match, idempotent on rerun) |
 | 20 | Dashboard & review UI | 🚧 | Pass 1 done 2026-05-22 (dashboard stat cards + top-5 + conferences list with filter/sort + detail with score/SME/sources/decision panels + decisions API). Pass 2: bulk actions, CSV export, sources/review-queue UI, saved views, keyboard shortcuts, react-flow graph viz |
 | 21 | Graph exploration view | 🚧 | Pass 1 done 2026-05-22 (force-directed canvas, kind/status/since filters, hover-highlight, click drawer with link to detail). Pass 2: pillar selector + entity-search autocomplete + saved views + PNG export + Louvain coloring |
-| 22 | Agent chat interface | ⬜ | |
+| 22 | Agent chat interface | 🚧 | Pass 1 done 2026-05-22 (sessions CRUD, RAG retrieval with friendly labels, prompt-injection wrapper, [n] citation extraction, /agent chat UI with sidebar + composer + cost meter). Pass 2: SSE streaming, /slash commands, intent classification, cancel button |
 | 23 | Conference series tracking | ⬜ | |
 | 24 | CFP-closing digest | ⬜ | |
 | 25 | Data lifecycle decay & versioning | ⬜ | |
@@ -470,6 +470,64 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 22 pass 1 — Agent chat interface)
+- 🚧 **Plan 22 pass 1 complete**: read-only RAG chat panel at `/agent`.
+  Every concrete claim from the assistant carries a numbered citation
+  that points back to a `document_chunks` row + a friendly source label
+  ("Conference: NeurIPS 2027", "Messaging: DAAM positioning", etc.).
+- **Backend** (`apps/api/app/services/agent/`):
+  - `prompts.py` — `agent.chat.v1`. System prompt declares
+    `<retrieved_context>...</retrieved_context>` interior as **untrusted
+    data**; the model is instructed to ignore embedded instructions and
+    say "I don't have that information" rather than hallucinate.
+  - `retrieval.py` — `retrieve_for_question(question, owner_types, k)`:
+    embeds via the existing `similar_chunks` (purpose `embed:agent_query`),
+    pulls 2K, dedupes by `(owner_type, owner_id)` so one verbose owner
+    can't crowd out the rest, hydrates per-kind labels via a batched
+    lookup per owner type. Returns numbered `RetrievedSnippet`s.
+  - `service.py` — `ask(session_id, message)` orchestrator:
+    persists the user turn → loads last 6 turns of history → retrieval →
+    LLM (`purpose='agent_chat'`, `temperature=0.2`, in-flight semaphore
+    capped at 5) → parses `[n]` marks back to `Citation` rows → persists
+    assistant turn with citations + token cost in `chat_messages.metadata_json`
+    → auto-titles the session on first user message.
+- **API** (`apps/api/app/api/v1/agent.py`):
+  - `POST /agent/sessions`                  — create
+  - `GET  /agent/sessions`                  — list (active by default)
+  - `GET  /agent/sessions/{id}`             — fetch
+  - `PATCH /agent/sessions/{id}`            — rename / archive
+  - `DELETE /agent/sessions/{id}`           — soft delete (archive)
+  - `GET  /agent/sessions/{id}/messages`    — full history
+  - `POST /agent/sessions/{id}/messages`    — ask; 404 if missing, 409 if
+                                              archived, 503 on budget hit
+- **Frontend** (`apps/web/src/routes/agent.tsx`):
+  - Left sidebar: sessions list, "+ New chat", per-row archive button.
+  - Main panel: scrolling message stream, user-right + assistant-left
+    bubbles, citation chips inline at the end of assistant messages
+    (conferences link directly to `/conferences/{id}`).
+  - Composer: Textarea + Enter-to-send (Shift+Enter newline), disabled
+    while a turn is in-flight.
+  - Session cost meter in the footer (running sum of `cost_usd` from
+    every assistant message's metadata).
+- **Dry-run LLM hook** (`app/services/llm/dry_run.py`): new canned
+  response for `purpose='agent_chat'` — extracts the question + counts
+  the `[n]` snippet markers in the prompt so the reply cites real
+  indices. Returns the polite "I don't know" sentence when no snippets
+  were retrieved.
+- 🟢 **Verified live (dry-run)**:
+  - `POST /agent/sessions` → returns 201 + session row.
+  - `POST /agent/sessions/{id}/messages` with "Which conferences focus on
+    RAG and what SMEs are recommended?" → returned a 78-token canned
+    reply with **2 citations** correctly resolved to
+    `"Messaging: DAAM Scout Phase 1 Plan"` and
+    `"Conference: Dry-Run Conference BC40C73612F7AC10"`.
+  - Session auto-titled with the first user message.
+  - Bundle ships a dedicated `agent-*.js` chunk (lazy-loaded on visit).
+- **Deferred to pass 2**: SSE streaming, `/slash` commands (`/explain
+  conf:<id>`, `/recommend audience:<id>`, `/draft cfp:<id>`), intent
+  classification, cancel/stop button, rename-session UI, markdown
+  rendering with `dompurify`.
 
 ### 2026-05-22 (plan 21 pass 1 — Graph exploration view)
 - 🚧 **Plan 21 pass 1 complete**: Obsidian-style force-directed canvas at

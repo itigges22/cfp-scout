@@ -11,6 +11,9 @@
  */
 
 import type {
+  AgentMessage,
+  AgentReply,
+  AgentSession,
   ApiProblem,
   AudienceProfileCreate,
   AudienceProfileRead,
@@ -326,4 +329,42 @@ export const graphApi = {
     }),
   invalidate: () =>
     request<void>(`${BASE}/graph/invalidate`, { method: "POST" }),
+};
+
+// ---------------------------------------------------------------------------
+// Agent chat (plan 22)
+// ---------------------------------------------------------------------------
+export const agentApi = {
+  listSessions: (params: { include_archived?: boolean; limit?: number } = {}) =>
+    request<{ sessions: AgentSession[] }>(`${BASE}/agent/sessions`, {
+      query: params,
+    }),
+  createSession: (title?: string) =>
+    request<AgentSession>(`${BASE}/agent/sessions`, {
+      method: "POST",
+      body: { title: title ?? null },
+    }),
+  getSession: (id: string) =>
+    request<AgentSession>(`${BASE}/agent/sessions/${id}`),
+  updateSession: (
+    id: string,
+    body: { title?: string | null; archived?: boolean },
+  ) =>
+    request<AgentSession>(`${BASE}/agent/sessions/${id}`, {
+      method: "PATCH",
+      body,
+    }),
+  archiveSession: (id: string) =>
+    request<{ id: string; archived: boolean }>(`${BASE}/agent/sessions/${id}`, {
+      method: "DELETE",
+    }),
+  listMessages: (id: string) =>
+    request<{ session_id: string; messages: AgentMessage[] }>(
+      `${BASE}/agent/sessions/${id}/messages`,
+    ),
+  ask: (id: string, content: string, k = 6) =>
+    request<AgentReply>(`${BASE}/agent/sessions/${id}/messages`, {
+      method: "POST",
+      body: { content, k },
+    }),
 };

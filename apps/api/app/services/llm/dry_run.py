@@ -44,6 +44,8 @@ def fake_chat(req: ChatRequest) -> ChatResponse:
         content = _canned_match_rationale(req, fingerprint)
     elif req.purpose == "sme_fit_narrative":
         content = _canned_sme_fit_narrative(req, fingerprint)
+    elif req.purpose == "agent_chat":
+        content = _canned_agent_chat(req, fingerprint)
     else:
         content = (
             f"[dry-run] chat response for purpose={req.purpose!r}, "
@@ -60,6 +62,39 @@ def fake_chat(req: ChatRequest) -> ChatResponse:
         cost_usd=0.0,
         latency_ms=1,
         request_id=str(uuid.uuid4()),
+    )
+
+
+def _canned_agent_chat(req: ChatRequest, fingerprint: str) -> str:
+    """Deterministic agent-chat reply for plan 22 in dry-run mode.
+
+    Extracts the user's question + counts the [n] snippets in the user
+    prompt so the canned reply cites real indices. Echoes the question
+    + a non-committal answer + citation marks per surviving snippet (max 3
+    cited). Honors the "say I don't know" rule when there are no snippets.
+    """
+    user_msg = next((m.content for m in req.messages if m.role == "user"), "")
+    # Pull the original question line.
+    question = ""
+    for line in user_msg.splitlines():
+        if line.startswith("User question:"):
+            question = line.split(":", 1)[1].strip()
+            break
+    # Count how many [n] snippets the prompt actually included.
+    import re as _re
+    indices = sorted({int(m.group(1)) for m in _re.finditer(r"^\[(\d{1,3})\]\s", user_msg, _re.M)})
+    if not indices:
+        return (
+            "[dry-run] I don't have that information in Scout's data. "
+            "(Real answers land when LLM_DRY_RUN=false.)"
+        )
+    citation_marks = " ".join(f"[{i}]" for i in indices[:3])
+    q_preview = (question[:140] + "…") if len(question) > 140 else question
+    return (
+        f"[dry-run agent reply] Looking at the available context, here's what "
+        f"Scout sees for your question {q_preview!r}: the retrieved snippets "
+        f"cover the relevant entities {citation_marks}. (Real responses with "
+        f"reasoned citations land when LLM_DRY_RUN=false; fingerprint {fingerprint[:8]}.)"
     )
 
 

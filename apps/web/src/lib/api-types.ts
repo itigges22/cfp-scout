@@ -367,6 +367,57 @@ export interface GraphResponse {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Agent chat (plan 22)
+// ---------------------------------------------------------------------------
+export interface AgentSession {
+  id: string;
+  title: string | null;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentMessage {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  metadata_json: {
+    prompt_version?: string;
+    citations?: AgentCitation[];
+    n_snippets?: number;
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    cost_usd?: number;
+    latency_ms?: number;
+  };
+  created_at: string;
+}
+
+export interface AgentCitation {
+  index: number;
+  chunk_id: string;
+  owner_type: string;
+  owner_id: string;
+  label: string;
+  similarity: number;
+}
+
+export interface AgentReply {
+  session_id: string;
+  user_message_id: string;
+  assistant_message_id: string;
+  role: "assistant";
+  content: string;
+  citations: AgentCitation[];
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_usd: number;
+  latency_ms: number | null;
+  prompt_version: string;
+}
+
 export interface DashboardStats {
   cards: {
     upcoming_approved: number;
