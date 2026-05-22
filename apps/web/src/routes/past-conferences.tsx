@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { Pagination } from "@/components/Pagination";
+import { CsvImportDialog } from "@/components/past-conferences/CsvImportDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +33,7 @@ function PastConferencesPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
   const [yearFilter, setYearFilter] = useState<string>("");
+  const [showImport, setShowImport] = useState(false);
 
   const yearAsNum = /^\d{4}$/.test(yearFilter) ? Number(yearFilter) : undefined;
 
@@ -81,9 +83,7 @@ function PastConferencesPage() {
               className="w-24"
               maxLength={4}
             />
-            <Button disabled title="Form + CSV import drop-zone lands next">
-              Import CSV
-            </Button>
+            <Button onClick={() => setShowImport(true)}>Import CSV</Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -140,6 +140,8 @@ function PastConferencesPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <CsvImportDialog open={showImport} onOpenChange={setShowImport} />
     </div>
   );
 }

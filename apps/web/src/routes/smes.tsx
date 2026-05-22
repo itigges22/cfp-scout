@@ -4,6 +4,7 @@ import { Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Pagination } from "@/components/Pagination";
+import { SmeFormDialog } from "@/components/sme/SmeFormDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +35,7 @@ function SmesPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
   const [teamFilter, setTeamFilter] = useState<TeamFilter>("all");
+  const [showCreate, setShowCreate] = useState(false);
 
   const queryClient = useQueryClient();
   const teamParam = teamFilter === "daam" ? "team" : undefined;
@@ -83,7 +85,7 @@ function SmesPage() {
               }}
               className="w-56"
             />
-            <Button disabled title="SME form lands next">New</Button>
+            <Button onClick={() => setShowCreate(true)}>New SME</Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -161,6 +163,8 @@ function SmesPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <SmeFormDialog open={showCreate} onOpenChange={setShowCreate} />
     </div>
   );
 }
