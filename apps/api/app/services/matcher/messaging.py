@@ -20,7 +20,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.vectors import DocumentChunk
-from app.services.matcher._scoring import clamp01, cosine_from_distance, topk_mean
+from app.services.matcher._scoring import (
+    apply_chunk_decay,
+    clamp01,
+    cosine_from_distance,
+    topk_mean,
+)
 
 log = structlog.get_logger("scout.matcher.messaging")
 
@@ -84,10 +89,16 @@ async def stage_a_messaging_fit(
         return MessagingStageResult(score=0.0, n_compared=0, snippets=[])
 
     # Cross-pair similarities. Each conf chunk against each messaging chunk.
+    # When DECAY_ENABLED, we multiply the raw cosine by min(conf, msg)
+    # freshness so a stale chunk pair contributes less. Picking the MIN of
+    # the two freshnesses (vs product or mean) keeps the math intuitive:
+    # one stale side is enough to discount the pair.
     all_pairs: list[tuple[float, DocumentChunk]] = []
     for cc in conf_chunks:
         for mc in messaging_chunks:
             sim = _cosine_sim(cc.embedding, mc.embedding)
+            sim = apply_chunk_decay(sim, cc)
+            sim = apply_chunk_decay(sim, mc)
             all_pairs.append((sim, mc))
 
     # Top-K mean is the headline score. Use the top-K snippets (by similarity)

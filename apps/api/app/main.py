@@ -41,6 +41,7 @@ from app.api.v1 import (
     sources,
     topics,
     uploads,
+    versions,
 )
 from app.lifespan import lifespan
 from app.logging import configure_logging
@@ -99,6 +100,7 @@ app.include_router(admin_jobs.router)
 app.include_router(admin_matcher.router)
 app.include_router(agent.router)
 app.include_router(notifications.router)
+app.include_router(versions.router)
 app.include_router(uploads.router)
 
 # ---- static SPA at / -----------------------------------------------------

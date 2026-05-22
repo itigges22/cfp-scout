@@ -255,6 +255,19 @@ def register_jobs(scheduler: AsyncIOScheduler) -> None:
         id="cfp_digest",
         replace_existing=True,
     )
+    # Plan 25: daily 03:00 decay pass. Recomputes conferences.freshness_score
+    # and archives events whose end_date is more than 90d old. No-op when
+    # DECAY_ENABLED=false (the task short-circuits).
+    from app.tasks.run_decay_pass import run_decay_pass_task
+
+    scheduler.add_job(
+        run_decay_pass_task,
+        trigger="cron",
+        hour=3,
+        minute=0,
+        id="decay_pass",
+        replace_existing=True,
+    )
     log.info("scheduler.jobs_registered", count=len(scheduler.get_jobs()))
 
 
