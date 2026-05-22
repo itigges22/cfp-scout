@@ -14,7 +14,7 @@ Create Date: 2026-05-22 13:00:00
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from alembic import op
 

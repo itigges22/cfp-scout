@@ -13,9 +13,8 @@ Create Date: 2026-05-22 15:00:00
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
-import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20260522_1500_scraper"
