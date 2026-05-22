@@ -2,7 +2,7 @@
 
 Single source of truth for build progress. Updated as each plan completes.
 
-**Last updated:** 2026-05-22 (plan 27 pass 1 — pytest unit suite live; 55 tests / 1.6s, caught a half-life bug in decay)
+**Last updated:** 2026-05-22 (plan 28 pass 1 — CI workflows; ci.yaml + codeql.yaml + dependabot.yaml, runs on every PR)
 
 ## Plan status
 
@@ -37,7 +37,7 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
 | 25 | Data lifecycle decay & versioning | 🚧 | Pass 1 done 2026-05-22 (daily decay cron + freshness math + before_flush versioning listener + GET /versions endpoint). Pass 2: wire decay into pillar + SME ranker cosines, restore-version mutation, history viewer UI |
 | 26 | Observability & diagnostics | 🚧 | Pass 1 done 2026-05-22 (6-panel aggregator @ /api/v1/diagnostics, 30s cache, /diagnostics page w/ auto-refresh, per-job retry, freshness histogram). Pass 2: WARN events on threshold crossing, optional OTel exporter |
 | 27 | Testing strategy | 🚧 | Pass 1 done 2026-05-22 (55 unit tests cover scoring, decay, extraction, narrative quote-guard, series detector; `make test-unit` runs in 1.6s). Pass 2: integration (testcontainers), Vitest, Playwright e2e, CodeQL workflow |
-| 28 | CI/CD pipeline | ⬜ | |
+| 28 | CI/CD pipeline | 🚧 | Pass 1 done 2026-05-22 (ci.yaml: api lint+unit tests+typecheck, web tsc+build+lint; codeql.yaml: weekly + per-PR security/quality; dependabot.yaml: weekly pip+npm+actions updates). Pass 2: image build + Trivy + release workflow + branch protection |
 | 29 | Security review & hardening | ⬜ | |
 | 30 | Documentation & runbook | ⬜ | |
 | 31 | Configuration workbook (XLSX) | ⬜ | |
@@ -470,6 +470,29 @@ Legend: ⬜ pending · 🚧 in progress · ✅ complete · ⏸️ blocked
   for PDF inputs where layout-aware chunking actually pays off. For plain text
   (manual entries, scraped boilerplate-stripped pages) the sentence-aware
   chunker above is appropriate and avoids the ~500MB image hit.
+
+### 2026-05-22 (plan 28 pass 1 — CI workflows)
+- 🚧 **Plan 28 pass 1 complete**: GitHub Actions wired for every push +
+  PR. Three workflow files; no external infra required.
+- **`.github/workflows/ci.yaml`** — two parallel jobs:
+  - `api · lint + unit tests` — checks out, sets up Python 3.12 + uv
+    (cached), `uv sync`, runs `ruff check` + `ruff format --check`,
+    `mypy app` (continue-on-error for now while type debt works down),
+    `pytest tests/unit`. 10-min timeout.
+  - `web · typecheck + build` — Node 22 + pnpm 9.12, `pnpm install
+    --frozen-lockfile`, `pnpm build` (runs `tsr generate && tsc -b &&
+    vite build`), `pnpm lint`.
+  - Concurrency group cancels superseded runs on the same branch/PR.
+- **`.github/workflows/codeql.yaml`** — CodeQL Action v3 with the
+  `security-and-quality` query suite, matrix over `python` and
+  `javascript-typescript`. Triggers: push to main, PR to main, weekly
+  Monday 04:13 UTC cron.
+- **`.github/dependabot.yaml`** — weekly Monday PRs for pip, npm,
+  github-actions. Labeled + prefixed commit messages so they're easy to
+  triage.
+- **Deferred to pass 2**: image build + Trivy + GHCR push, release
+  workflow on git tags, branch-protection enforcement, e2e job (gated by
+  `e2e` PR label).
 
 ### 2026-05-22 (plan 27 pass 1 — Unit test smoke suite)
 - 🚧 **Plan 27 pass 1 complete**: pytest unit suite in `apps/api/tests/`,

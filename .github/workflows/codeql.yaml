@@ -1,0 +1,48 @@
+name: codeql
+
+# CodeQL security + quality analysis across Python and TS.
+# Runs on every push to main, every PR, and weekly so freshly-disclosed
+# vulns get flagged even on a quiet branch.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays 04:13 UTC — off-peak, deterministic.
+    - cron: "13 4 * * 1"
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write  # required to upload SARIF results
+
+jobs:
+  analyze:
+    name: CodeQL · ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["python", "javascript-typescript"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # security-and-quality is broader than security-extended; pick
+          # the higher-coverage one for our small repo.
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
