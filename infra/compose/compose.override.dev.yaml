@@ -29,6 +29,10 @@ services:
       - ../../apps/api/app:/app/app
       - ../../apps/api/alembic:/app/alembic
       - ../../apps/api/static:/app/static
+      # Plan 27: tests visible in-container so `make test-unit` can run
+      # against the live venv without rebuilding the image.
+      - ../../apps/api/tests:/app/tests
+      - ../../apps/api/pyproject.toml:/app/pyproject.toml
     command:
       [
         "uvicorn",

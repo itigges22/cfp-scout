@@ -196,28 +196,35 @@ build-spa:  ## Build the Vite SPA (throwaway node container; deposits in apps/ap
 # Tests — implemented in step 27
 # ---------------------------------------------------------------------------
 .PHONY: test
-test:  ## Run unit + integration + frontend tests (step 27)
-	@echo "make test: implemented in step 27" && exit 1
+test: test-unit  ## Run all tests (today == test-unit; integration + e2e are plan 27 pass 2)
 
 .PHONY: test-unit
-test-unit:
-	@echo "make test-unit: implemented in step 27" && exit 1
+test-unit:  ## Run the api unit suite inside the running api container
+	@if ! $(CONTAINER_CLI) ps --filter name=scout-api --format '{{.Names}}' 2>/dev/null | grep -q scout-api; then \
+	  echo "scout-api container not running — try \`make dev\` first."; exit 2; \
+	fi
+	@echo "Bootstrapping pip + dev test deps into the live venv (idempotent)..."
+	@$(CONTAINER_CLI) exec scout-api python -c 'import pip' 2>/dev/null \
+	  || $(CONTAINER_CLI) exec scout-api python -m ensurepip --quiet
+	@$(CONTAINER_CLI) exec scout-api python -m pip install --quiet pytest pytest-asyncio
+	@echo "Running unit tests..."
+	@$(CONTAINER_CLI) exec -e PYTHONPATH=/app scout-api python -m pytest /app/tests/unit -q
 
 .PHONY: test-int
-test-int:
-	@echo "make test-int: implemented in step 27" && exit 1
+test-int:  ## Integration tests against real Postgres (plan 27 pass 2)
+	@echo "make test-int: plan 27 pass 2 will wire testcontainers" && exit 1
 
 .PHONY: test-web
-test-web:
-	@echo "make test-web: implemented in step 27" && exit 1
+test-web:  ## Frontend Vitest suite (plan 27 pass 2)
+	@echo "make test-web: plan 27 pass 2 will wire Vitest" && exit 1
 
 .PHONY: e2e
-e2e:
-	@echo "make e2e: implemented in step 27" && exit 1
+e2e:  ## Playwright end-to-end (plan 27 pass 2)
+	@echo "make e2e: plan 27 pass 2 will wire Playwright" && exit 1
 
 .PHONY: eval
-eval:
-	@echo "make eval: implemented in step 27" && exit 1
+eval:  ## LLM evals (plan 27 pass 2)
+	@echo "make eval: plan 27 pass 2 will wire evals" && exit 1
 
 # ---------------------------------------------------------------------------
 # Lint / typecheck / security

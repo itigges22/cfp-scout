@@ -68,8 +68,13 @@ def compute_freshness(
     half_life_days: int,
     now: datetime | None = None,
 ) -> float:
-    """exp(-age / half_life). Returns 1.0 for a missing or future
-    reference_time (treats unseen rows as 'just-arrived', not stale).
+    """Standard half-life decay.
+
+    ``freshness(age) = 0.5 ** (age / half_life)``  — equivalently
+    ``exp(-ln(2) * age / half_life)``. At ``age == half_life`` the value
+    is exactly 0.5; at ``2 * half_life`` it is 0.25. Returns 1.0 for a
+    missing or future reference_time (treats unseen rows as
+    'just-arrived', not stale).
     """
     if reference_time is None:
         return 1.0
@@ -81,7 +86,9 @@ def compute_freshness(
     if age_seconds <= 0:
         return 1.0
     half_life_s = half_life_days * 86_400
-    return math.exp(-age_seconds / half_life_s)
+    # ln(2) factor → exact half-life semantics. Without it, this would be
+    # an e-fold (~0.37 at one "half-life") rather than 0.5.
+    return math.exp(-math.log(2) * age_seconds / half_life_s)
 
 
 def apply_decay_multiplier(
