@@ -90,7 +90,24 @@ class SmeUpdate(SmeBase):
 
 
 class SmeRead(SmeBase):
+    """SME row as returned by the API.
+
+    Inherits the field set from ``SmeBase`` but **relaxes** the
+    min-length constraints on the four fields that ``SmeBase`` requires
+    on write. The read surface has to be able to serialize any row
+    already in the DB — including partially-seeded rows uploaded via
+    the workbook with placeholder bios + empty topic/audience arrays,
+    which is a deliberate "fill in later" workflow.
+
+    Strict validation still applies on ``SmeCreate`` / ``SmeUpdate``.
+    """
+
     model_config = READ_CONFIG
+
+    expertise_areas: list[str] = []
+    primary_topics: list[UUID] = []
+    audience_focus: list[UUID] = []
+    bio: Annotated[str, Field(max_length=2000)] = ""
 
     id: UUID
     created_at: datetime
