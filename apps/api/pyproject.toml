@@ -38,7 +38,7 @@ dependencies = [
     # `make down/up`. psycopg (v3) is the sync driver for the jobstore — the
     # rest of the app rides asyncpg, but APScheduler 3.x is sync-only.
     "apscheduler[sqlalchemy]>=3.10",
-    "psycopg[binary]>=3.2",
+    "psycopg[binary]>=3.3.4",
     # Scraper (plan 14): HTTP-only fetching via httpx for curated sources.
     # Feed parsing via feedparser, HTML parsing via selectolax (fast
     # lexbor-based, much smaller than lxml).
