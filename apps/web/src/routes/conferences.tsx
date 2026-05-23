@@ -6,8 +6,9 @@
  * deferred to a future pass.
  */
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { NewConferenceDialog } from "@/components/conferences/NewConferenceDialog";
@@ -130,49 +131,77 @@ function ConferencesPage() {
 
 function ConferenceRow({ c }: { c: import("@/lib/api-types").ConferenceListItem }) {
   const overall = c.overall_score ?? null;
+  const queryClient = useQueryClient();
+  const deleteMut = useMutation({
+    mutationFn: () => conferencesApi.delete(c.id, "user_delete"),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["conferences"] }),
+  });
+
+  const onDelete = () => {
+    if (deleteMut.isPending) return;
+    if (
+      !window.confirm(
+        `Delete "${c.name}"? This removes the conference and all of its matches, ` +
+          `decisions, raw pages, and team recommendations. Can't be undone.`,
+      )
+    ) {
+      return;
+    }
+    deleteMut.mutate();
+  };
+
   return (
-    <Link
-      to="/conferences/$id"
-      params={{ id: c.id }}
-      className="block rounded-lg border border-border bg-surface-1 p-4 transition-colors hover:border-border-strong hover:bg-surface-2"
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 truncate">
-            <h2 className="truncate text-base font-medium text-fg">{c.name}</h2>
-            <StatusPill status={c.status} />
-            {c.is_virtual ? <Badge variant="muted">Virtual</Badge> : null}
-          </div>
-          <p className="mt-1 text-xs text-fg-muted">
-            {c.start_date ?? "TBD"}
-            {c.location_city || c.location_country
-              ? ` · ${[c.location_city, c.location_country].filter(Boolean).join(", ")}`
-              : ""}
-          </p>
-          {c.topics && c.topics.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {c.topics.slice(0, 6).map((t) => (
-                <Badge key={t} variant="muted">
-                  {t}
-                </Badge>
-              ))}
-            </div>
-          ) : null}
+    <div className="group relative flex items-start gap-4 rounded-lg border border-border bg-surface-1 p-4 transition-colors hover:border-border-strong hover:bg-surface-2">
+      <Link
+        to="/conferences/$id"
+        params={{ id: c.id }}
+        className="min-w-0 flex-1"
+      >
+        <div className="flex items-center gap-2 truncate">
+          <h2 className="truncate text-base font-medium text-fg">{c.name}</h2>
+          <StatusPill status={c.status} />
+          {c.is_virtual ? <Badge variant="muted">Virtual</Badge> : null}
         </div>
-        <div className="flex w-44 flex-col items-end gap-2">
-          <div className="flex items-baseline gap-1 tabular-nums">
-            <span className="text-2xl font-semibold">
-              {overall !== null ? Math.round(overall * 100) : "—"}
-            </span>
-            <span className="text-xs text-fg-muted">/ 100</span>
+        <p className="mt-1 text-xs text-fg-muted">
+          {c.start_date ?? "TBD"}
+          {c.location_city || c.location_country
+            ? ` · ${[c.location_city, c.location_country].filter(Boolean).join(", ")}`
+            : ""}
+        </p>
+        {c.topics && c.topics.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {c.topics.slice(0, 6).map((t) => (
+              <Badge key={t} variant="muted">
+                {t}
+              </Badge>
+            ))}
           </div>
-          {overall !== null ? <Progress value={overall} className="w-full" /> : null}
-          <p className="text-[10px] uppercase tracking-wider text-fg-subtle">
-            overall fit
-          </p>
+        ) : null}
+      </Link>
+      <div className="flex w-44 flex-col items-end gap-2">
+        <div className="flex items-baseline gap-1 tabular-nums">
+          <span className="text-2xl font-semibold">
+            {overall !== null ? Math.round(overall * 100) : "—"}
+          </span>
+          <span className="text-xs text-fg-muted">/ 100</span>
         </div>
+        {overall !== null ? <Progress value={overall} className="w-full" /> : null}
+        <p className="text-xs font-medium uppercase tracking-wider text-fg-muted">
+          overall fit
+        </p>
       </div>
-    </Link>
+      <button
+        type="button"
+        onClick={onDelete}
+        disabled={deleteMut.isPending}
+        title={deleteMut.isPending ? "Deleting…" : "Delete conference"}
+        aria-label={`Delete ${c.name}`}
+        className="absolute right-2 top-2 rounded p-1.5 text-fg-muted opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger group-hover:opacity-100 focus:opacity-100"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </div>
   );
 }
 

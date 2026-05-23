@@ -309,6 +309,11 @@ export const conferencesApi = {
       method: "POST",
       body,
     }),
+  delete: (id: string, actor_label = "user_delete") =>
+    request<void>(`${BASE}/conferences/${id}`, {
+      method: "DELETE",
+      query: { actor_label },
+    }),
   match: (id: string) => request<ConferenceMatchResponse>(`${BASE}/conferences/${id}/match`),
   sources: (id: string) =>
     request<ConferenceSourcesResponse>(`${BASE}/conferences/${id}/sources`),

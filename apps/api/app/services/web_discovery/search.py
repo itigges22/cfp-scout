@@ -88,17 +88,26 @@ async def web_search(
 # ---------------------------------------------------------------------------
 async def _search_ddg(prompt: str, max_results: int) -> list[SearchHit]:
     """Wraps ``duckduckgo_search.DDGS`` in a threadpool — DDGS is sync
-    and the library doesn't ship an async API yet."""
+    and the library doesn't ship an async API yet.
+
+    DDG is *aggressively* rate-limited: empty result pages and CAPTCHA
+    fallbacks happen mid-stream. We retry with exponential backoff up
+    to 3 times. If the prompt is >120 chars the search box also tends
+    to return nothing, so we fall back to a truncated version on the
+    second attempt.
+    """
+    import asyncio
+
     from anyio import to_thread
 
-    def _run() -> list[SearchHit]:
+    def _run(query: str) -> list[SearchHit]:
         # Local import — duckduckgo_search has a noisy import path that
         # we don't want at module-level (slow startup).
         from duckduckgo_search import DDGS
 
         hits: list[SearchHit] = []
         with DDGS() as ddgs:
-            for r in ddgs.text(prompt, max_results=max_results):
+            for r in ddgs.text(query, max_results=max_results):
                 if not r or not r.get("href"):
                     continue
                 hits.append(
@@ -110,10 +119,38 @@ async def _search_ddg(prompt: str, max_results: int) -> list[SearchHit]:
                 )
         return hits
 
-    try:
-        return await to_thread.run_sync(_run)
-    except Exception as exc:
-        raise SearchError(f"DuckDuckGo search failed: {exc}") from exc
+    # Three attempts: full prompt, then a shorter version (first 8 words)
+    # which DDG handles much more reliably, then full prompt again.
+    short_prompt = " ".join(prompt.split()[:8])
+    attempts: list[tuple[str, float]] = [
+        (prompt, 0.0),
+        (short_prompt, 2.0),
+        (prompt, 5.0),
+    ]
+    last_error: Exception | None = None
+    for query, delay in attempts:
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            hits = await to_thread.run_sync(lambda q=query: _run(q))
+            if hits:
+                return hits
+            log.info(
+                "discovery.search.ddg.retry_empty",
+                query_chars=len(query),
+                used_short=(query == short_prompt),
+            )
+        except Exception as exc:
+            log.warning(
+                "discovery.search.ddg.attempt_failed",
+                error=str(exc)[:200],
+                query_chars=len(query),
+            )
+            last_error = exc
+
+    if last_error is not None:
+        raise SearchError(f"DuckDuckGo search failed: {last_error}") from last_error
+    return []
 
 
 # ---------------------------------------------------------------------------
