@@ -9,10 +9,11 @@
  *   - Ask Scout: small prompt-and-answer panel (one-shot, no session)
  */
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
+import { AgentChatPanel } from "@/components/agent/AgentChatPanel";
 import { StatusPill } from "@/components/conferences/StatusPill";
 import { WorldMap } from "@/components/dashboard/WorldMap";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +27,7 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { agentApi, conferencesApi } from "@/lib/api";
+import { conferencesApi } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard")({
   component: DashboardPage,
@@ -94,8 +95,22 @@ function DashboardPage() {
         />
       </div>
 
-      {/* World map — city-level dots, clickable for the underlying events */}
-      <WorldMap items={mapQ.data?.items ?? []} />
+      {/* Map (left) + Ask Scout chat (right). On lg+ they split the row
+          50/50; below that they stack with the map first. Heights match so
+          neither one looks visually awkward beside the other. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="min-h-[460px]">
+          <WorldMap items={mapQ.data?.items ?? []} />
+        </div>
+        <div className="min-h-[460px]">
+          <AgentChatPanel
+            title="Ask Scout"
+            storageKey="scout-dashboard-chat-session-id"
+            defaultSessionTitle="Dashboard chat"
+            placeholder="e.g. 'AI conferences in Europe this quarter and who to send'"
+          />
+        </div>
+      </div>
 
       {/* Top conferences — paginated */}
       <div className="flex items-baseline justify-between">
@@ -130,8 +145,6 @@ function DashboardPage() {
         </>
       )}
 
-      {/* Agent quick-ask panel */}
-      <AskScout />
     </div>
   );
 }
@@ -355,78 +368,6 @@ function Pagination({
         </Button>
       </div>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Embedded one-shot agent prompt — for the user who just wants to ask
-// a quick question without leaving the dashboard.
-// ---------------------------------------------------------------------------
-function AskScout() {
-  const [q, setQ] = useState("");
-  const [answer, setAnswer] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-
-  const mut = useMutation({
-    mutationFn: async (prompt: string) => {
-      // Lazily create / reuse a single dashboard session.
-      let sid = sessionId;
-      if (!sid) {
-        const created = await agentApi.createSession("Dashboard quick ask");
-        sid = created.id;
-        setSessionId(sid);
-      }
-      const reply = await agentApi.ask(sid, prompt);
-      return reply.content;
-    },
-    onSuccess: (content) => setAnswer(content),
-  });
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Ask Scout</CardTitle>
-        <CardDescription>
-          Quick question about your conferences, SMEs, or messaging. Threaded
-          conversations live in{" "}
-          <Link to="/settings" className="text-accent hover:underline">
-            Settings → Agent chat
-          </Link>
-          .
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!q.trim() || mut.isPending) return;
-            mut.mutate(q.trim());
-          }}
-        >
-          <input
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.currentTarget.value)}
-            placeholder="e.g. 'What AI conferences in Europe close their CFP this month?'"
-            className="flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm"
-          />
-          <Button type="submit" disabled={mut.isPending || !q.trim()}>
-            {mut.isPending ? "Thinking…" : "Ask"}
-          </Button>
-        </form>
-        {mut.isError && (
-          <div className="rounded border border-danger/40 bg-danger/10 p-2 text-xs text-danger">
-            {String((mut.error as Error)?.message)}
-          </div>
-        )}
-        {answer && (
-          <div className="rounded-md border border-border-subtle bg-surface-2 p-3 text-sm text-fg whitespace-pre-wrap">
-            {answer}
-          </div>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 

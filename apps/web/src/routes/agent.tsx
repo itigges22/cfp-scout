@@ -18,6 +18,7 @@ import {
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { MarkdownText } from "@/components/agent/MarkdownText";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -327,7 +328,11 @@ function MessageBubble({ m }: { m: AgentMessage }) {
             : "bg-surface-2 text-fg",
         ].join(" ")}
       >
-        <p className="whitespace-pre-wrap">{m.content}</p>
+        {isUser ? (
+          <p className="whitespace-pre-wrap">{m.content}</p>
+        ) : (
+          <MarkdownText>{m.content}</MarkdownText>
+        )}
         {!isUser && citations.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1">
             {citations.map((c) => (

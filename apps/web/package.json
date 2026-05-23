@@ -33,7 +33,9 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-force-graph-2d": "^1.27.0",
+    "react-markdown": "^9.0.1",
     "react-simple-maps": "^3.0.0",
+    "remark-gfm": "^4.0.0",
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
