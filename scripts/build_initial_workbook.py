@@ -28,10 +28,12 @@ from openpyxl.utils import get_column_letter
 # ---------------------------------------------------------------------------
 
 PILLARS = [
-    # Sourced from the Q4 2026 Red Hat AI messaging guide. These are the
-    # four official "Why Red Hat AI" pillars.
+    # Verbatim from the Red Hat AI Platform Customer Deck — these are the
+    # four customer-facing pillars on the "Scaling AI across the hybrid
+    # cloud" master slide. Cross-checked against the Q4 2026 messaging
+    # guide where the same four show up as the "Why Red Hat AI" sections.
     {
-        "name": "Efficient inferencing",
+        "name": "Flexible and efficient inferencing",
         "description": (
             "Fast, flexible, and cost-effective model deployments across a "
             "diverse footprint. vLLM for maximum throughput + minimum "
@@ -58,24 +60,24 @@ PILLARS = [
     {
         "name": "Agentic AI innovation",
         "description": (
-            "Flexible, scalable platform for delivering agentic AI: core "
-            "services for managing, deploying, and running agent workflows; "
-            "a unified Llama Stack API layer for RAG / safety / evaluation / "
-            "telemetry; the AI hub + gen AI studio dashboards for platform "
-            "and AI engineers respectively; and Model Context Protocol (MCP) "
-            "as the standardized translator to external tools and data."
+            "Agile, stable foundation to accelerate the development + "
+            "deployment of AI agentic workflows. Built-in frameworks via "
+            "ogx (previously Llama Stack), standardized communication "
+            "protocols (MCP), the flexibility to integrate preferred tools "
+            "(LangChain, Crew AI), agents as microservices, and the AI hub "
+            "+ Gen AI studio dashboards for platform and AI engineers."
         ),
         "display_order": 3,
     },
     {
-        "name": "Hybrid cloud AI at scale",
+        "name": "Scaling AI across the hybrid cloud",
         "description": (
-            "Build, deploy, and run AI models across any hardware platform "
-            "and hybrid cloud environment at scale. Intelligent GPU "
-            "utilization with workload scheduling + quotas, distributed "
-            "workloads, MLOps + GenAIOps, MaaS gateway, model observability "
-            "and bias / drift detection, on-prem + air-gapped deployment "
-            "support. Counter-positions against single-cloud lock-in."
+            "Enterprise-grade, flexible, and secure AI platform that builds, "
+            "deploys, and manages AI models + agentic apps at scale across "
+            "edge, private cloud, physical, virtual, and public cloud "
+            "footprints. Private and sovereign AI practices, enhanced "
+            "observability (platform metrics, zero-config GPU, AI "
+            "performance metrics), on-prem + air-gapped deployment support."
         ),
         "display_order": 4,
     },
@@ -96,175 +98,262 @@ INDUSTRIES = [
 ]
 
 AUDIENCES = [
+    # The Brand and Audience insights Team's 11 canonical Red Hat personas,
+    # transcribed from "Writing for Red Hat Notes". Goal / Content Needs /
+    # Challenges / Solution-criteria all sourced verbatim and mapped into
+    # Scout's audience_profiles shape.
     {
-        "name": "Platform engineer",
-        "industry": "Technology",
-        "role_seniority": "ic",
-        "description": (
-            "Owns the Kubernetes / OpenShift platform that AI workloads "
-            "run on. Cares about GPU scheduling, multi-tenancy, "
-            "observability, day-2 operations, and avoiding bespoke "
-            "tooling for each ML team."
-        ),
-        "primary_pain_points": [
-            "Fragmented runtimes per accelerator",
-            "GPU utilization and cost",
-            "Unified monitoring across model serving",
-            "Compliance and access controls for sensitive data",
-        ],
-        "key_messages": [
-            "vLLM unifies inference across NVIDIA/AMD/Intel accelerators",
-            "Granite-on-OpenShift gives you a tested, supported stack",
-            "Built-in observability + role-based access controls",
-        ],
-    },
-    {
-        "name": "MLOps / GenAIOps engineer",
-        "industry": "Technology",
-        "role_seniority": "ic",
-        "description": (
-            "Bridges model development and production. Owns model "
-            "evaluation, deployment automation, monitoring, drift "
-            "detection, and rollout governance."
-        ),
-        "primary_pain_points": [
-            "Manual deployment and rollback workflows",
-            "Lack of model evaluation tooling",
-            "Drift detection and re-training triggers",
-            "Pipeline portability across clouds",
-        ],
-        "key_messages": [
-            "OpenShift AI ships managed pipelines for fine-tune + serve",
-            "Integrated evaluation framework with built-in guardrails",
-            "Same pipeline runs on AWS, Azure, GCP, on-prem",
-        ],
-    },
-    {
-        "name": "Application developer",
-        "industry": "Technology",
-        "role_seniority": "ic",
-        "description": (
-            "Building AI-powered features into customer-facing apps. "
-            "Wants a stable OpenAI-compatible endpoint, predictable "
-            "latency, and RAG building blocks that don't lock them into "
-            "one vendor's SDK."
-        ),
-        "primary_pain_points": [
-            "Vendor lock-in via proprietary SDKs",
-            "Cold-start latency under load",
-            "Embedding model + vector DB integration burden",
-            "Cost of high-volume inference calls",
-        ],
-        "key_messages": [
-            "OpenAI-compatible API on top of any model",
-            "Bring-your-own retrieval / vector store",
-            "vLLM continuous batching for sub-second p95",
-        ],
-    },
-    {
-        "name": "Data scientist / AI engineer",
-        "industry": "Technology",
-        "role_seniority": "ic",
-        "description": (
-            "Designs, fine-tunes, and evaluates models. Cares about "
-            "experiment tracking, distributed training, fine-tune "
-            "throughput on available GPUs, and accuracy benchmarks."
-        ),
-        "primary_pain_points": [
-            "Slow fine-tune throughput on limited hardware",
-            "Reproducibility across runs and environments",
-            "Eval / benchmark framework fragmentation",
-            "Data residency rules constrain training location",
-        ],
-        "key_messages": [
-            "InstructLab + LAB tuning runs on your own GPUs",
-            "Eval harness ships with the platform",
-            "Train where the data is — on-prem, in-region, anywhere",
-        ],
-    },
-    {
-        "name": "AI / ML platform lead",
-        "industry": "Technology",
-        "role_seniority": "manager",
-        "description": (
-            "Manages the team that builds and operates internal AI "
-            "platforms. Reports to a director or VP. Owns roadmap, "
-            "vendor selection, build-vs-buy decisions, and headcount."
-        ),
-        "primary_pain_points": [
-            "Roadmap pressure to ship gen-AI features fast",
-            "Skill gap on the team for distributed training",
-            "Build-vs-buy on model-serving infra",
-            "Justifying spend on enterprise model platforms",
-        ],
-        "key_messages": [
-            "Buy the platform, build the differentiation on top",
-            "Granite + Red Hat support beats DIY total cost",
-            "Onboard your team to a single stack across products",
-        ],
-    },
-    {
-        "name": "ITOps decision-maker",
-        "industry": "Technology",
-        "role_seniority": "director",
-        "description": (
-            "Director or senior manager owning IT operations for "
-            "enterprise AI workloads. Cares about uptime SLOs, security "
-            "posture, vendor support, and integration with existing IT "
-            "service management."
-        ),
-        "primary_pain_points": [
-            "Indemnification and IP-safety on third-party models",
-            "Audit trail for regulated environments",
-            "Integrating AI ops with existing ITSM tooling",
-            "Vendor consolidation across the AI stack",
-        ],
-        "key_messages": [
-            "Red Hat indemnifies Granite + supports open-source models",
-            "RBAC + audit log built in; pairs with your SIEM",
-            "One vendor, one support contract across the AI lifecycle",
-        ],
-    },
-    {
-        "name": "VP Engineering / CTO",
+        "name": "C-Suite",
         "industry": "Technology",
         "role_seniority": "executive",
         "description": (
-            "Owns the engineering org's AI strategy. Cares about time-"
-            "to-production for AI initiatives, total cost, talent, and "
-            "competitive differentiation."
+            "Helping their team and company grow. Buys based on business "
+            "outcomes, ROI, and vendor stability — not features. Decides "
+            "(or vetoes) at the strategic level; content has to lead with "
+            "outcomes and proof of established reputation."
         ),
         "primary_pain_points": [
-            "Translating GenAI hype into production wins",
-            "Avoiding vendor lock-in at strategic scale",
-            "Cost-per-inference at enterprise volume",
-            "Hiring + retaining ML platform expertise",
+            "Financial concerns",
+            "People: resources, alignment across groups, partners, competitors",
+            "Replacing outdated or unsupported tech",
+            "Reacting to changes from clients, partners, competitors",
         ],
         "key_messages": [
-            "Hybrid-cloud AI without re-platforming",
-            "Open models + Red Hat support de-risks the bet",
-            "Plug into the OpenShift install you already run",
+            "Cost / price efficiency",
+            "Established vendor with strong reputation",
+            "Proven ability to solve business issues",
+            "Clear ROI or efficiency story",
         ],
     },
     {
-        "name": "Cloud / infrastructure architect",
+        "name": "Line of Business (LOB)",
+        "industry": "Technology",
+        "role_seniority": "executive",
+        "description": (
+            "VP / Director of a business unit. Goal: satisfy customers. "
+            "Buys when content informs strategic decisions, handles "
+            "competitive threats, and meets financial objectives. "
+            "Customer testimonials and reputation carry real weight."
+        ),
+        "primary_pain_points": [
+            "Modernizing technology fast enough to stay ahead of competitors",
+            "Legislation, especially around data security",
+            "Changing market factors",
+        ],
+        "key_messages": [
+            "Cost and ROI",
+            "Customer testimonials",
+            "Reputation",
+            "Demonstrated impact on customer satisfaction",
+        ],
+    },
+    {
+        "name": "App Dev ITDM",
         "industry": "Technology",
         "role_seniority": "director",
         "description": (
-            "Owns the cloud reference architecture. Decides where "
-            "workloads run, how they connect, how they're secured. "
-            "Brought in as an architect when AI scales out of pilot."
+            "Application Development IT Decision Maker — director or "
+            "manager of a specialized dept. Buys when content addresses "
+            "specific business needs, meets financial objectives, and "
+            "meets client demand. Aligns the team's tooling with "
+            "executive priorities."
         ),
         "primary_pain_points": [
-            "Data residency and sovereignty rules",
-            "GPU capacity planning across regions",
-            "Network and security posture for model serving",
-            "Multi-cluster, multi-cloud consistency",
+            "Labor and skill shortages",
+            "Alignment with executives",
+            "Security",
+            "Maintaining compliance with changing internal + external regulations",
         ],
         "key_messages": [
-            "Same operator model on every cloud",
-            "Bring AI to the data, not data to the AI",
-            "Air-gapped install path supported end-to-end",
+            "Cost or ROI",
+            "Alignment with executives",
+            "Security posture",
+            "Stable, reliable solutions",
+        ],
+    },
+    {
+        "name": "I.T. Operations (Manager of IT)",
+        "industry": "Technology",
+        "role_seniority": "manager",
+        "description": (
+            "Manager of IT operations. Goal: having an impact on end "
+            "users and the business. Buys when content addresses "
+            "modernization, handles specific incidents (data breaches, "
+            "competitive threats), and supports tech-sunsetting paths."
+        ),
+        "primary_pain_points": [
+            "Security",
+            "External influences",
+            "Labor shortages",
+            "Culture (resistance to change, alignment difficulty on initiatives)",
+        ],
+        "key_messages": [
+            "Cost and overall value — support, services, functionality, training",
+            "Business or industry knowledge",
+            "Reputation",
+            "Tested, proven solutions",
+        ],
+    },
+    {
+        "name": "Enterprise Architect",
+        "industry": "Technology",
+        "role_seniority": "director",
+        "description": (
+            "Goal: acquiring new skills and working with new tech. Buys "
+            "when content helps them stay competitive and aware of new "
+            "technologies, improves productivity, and provides a "
+            "refresh / replace path for hardware or unsupported software."
+        ),
+        "primary_pain_points": [
+            "Culture (change management, buy vs build)",
+            "People (talent gaps, differing values)",
+            "Impact on existing systems when implementing new technology",
+        ],
+        "key_messages": [
+            "Proven knowledge of the industry or business",
+            "Existing relationship with the company",
+            "Established company with strong reputation",
+            "Appealing support structure that meets business / team needs",
+        ],
+    },
+    {
+        "name": "Procurement",
+        "industry": "Technology",
+        "role_seniority": "manager",
+        "description": (
+            "Goal: meeting personal goals and tackling challenging "
+            "tasks. Buys when content addresses external challenges "
+            "(competitive threats, partner shifts, client expectations) "
+            "and meets financial objectives."
+        ),
+        "primary_pain_points": [
+            "External influences (buying cycle, profits, market changes, supply chain)",
+            "Technology — automation, efficiency, supporting remote work",
+        ],
+        "key_messages": [
+            "Cost and ROI",
+            "Meets business needs",
+            "Offers support for implementation and beyond",
+            "Credible vendor with good reputation and expertise",
+        ],
+    },
+    {
+        "name": "Sys Admin",
+        "industry": "Technology",
+        "role_seniority": "ic",
+        "description": (
+            "Goal: overcoming challenges with new technologies and "
+            "improving the lives of others. Buys when content meets "
+            "specific business needs, modernization or innovation "
+            "needs, and financial objectives."
+        ),
+        "primary_pain_points": [
+            "Financial — staying under budget, cost reduction, budget limits",
+            "Keeping up with technology changes and digital transformation",
+            "Security (data, cloud, threat actors)",
+        ],
+        "key_messages": [
+            "Cost-effectiveness",
+            "Reliability under change",
+            "Security-by-default posture",
+            "Operator-friendly tooling",
+        ],
+    },
+    {
+        "name": "I.T. Security Practitioner",
+        "industry": "Technology",
+        "role_seniority": "director",
+        "description": (
+            "CISO or Head of Security. Goal: addressing new challenges "
+            "with security tech, working with their team, making a "
+            "difference at their company. Buys when content addresses "
+            "audit gaps, replaces outdated tech, and meets specific "
+            "client requirements."
+        ),
+        "primary_pain_points": [
+            "Dynamic threat landscape",
+            "Resource constraints",
+            "Maintaining high security in a changing tech landscape",
+            "Ensuring employees follow protocol",
+        ],
+        "key_messages": [
+            "Pricing",
+            "Appealing support structure",
+            "Proven knowledge of industry or business",
+            "Strong reputation; no recent breaches",
+        ],
+        "exclusion_criteria": [
+            "Vendors with prior data breaches or major security incidents",
+        ],
+    },
+    {
+        "name": "Automation Architect",
+        "industry": "Technology",
+        "role_seniority": "ic",
+        "description": (
+            "Goal: using data analytics and figuring out creative "
+            "automation solutions. Buys when content addresses urgent "
+            "need (EOL, expired support, security crisis), demonstrates "
+            "process improvement, supports strategic initiatives, and "
+            "integrates easily with existing systems."
+        ),
+        "primary_pain_points": [
+            "Staying up to date with automation + cloud trends",
+            "Getting the right tools into employees' hands",
+            "People (talent retention, hiring, resistance to remote, automation limits)",
+        ],
+        "key_messages": [
+            "Vendor stability and reputation",
+            "Understanding of business processes and needs",
+            "Industry expertise",
+            "Easy integration with existing systems",
+        ],
+    },
+    {
+        "name": "Data Scientist",
+        "industry": "Technology",
+        "role_seniority": "ic",
+        "description": (
+            "Goal: using data analytics to drive innovation and growth. "
+            "Buys when content addresses strategic initiatives, "
+            "overcomes obsolescence or operational inefficiencies, and "
+            "addresses data-privacy / security concerns."
+        ),
+        "primary_pain_points": [
+            "Staying current in a rapidly changing field",
+            "Optimizing use of available data and best practices",
+            "Financial constraints",
+            "Getting data into a workable format (cleaning, combining sheets)",
+        ],
+        "key_messages": [
+            "De-risks adopting new techniques",
+            "Reduces data-prep burden",
+            "Privacy + security guardrails built in",
+            "Drives measurable business outcomes from data",
+        ],
+    },
+    {
+        "name": "Developer",
+        "industry": "Technology",
+        "role_seniority": "ic",
+        "description": (
+            "Senior / lead software engineer. Goal: developing "
+            "solutions that are widely used. Buys when content "
+            "addresses specific use cases, shows cost reduction, "
+            "demonstrates obsolescence of current tooling, and proves "
+            "the solution delivers."
+        ),
+        "primary_pain_points": [
+            "Staying ahead amid a constantly changing tech landscape",
+            "Communication (changes within ecosystem breaking products, fix prioritization)",
+            "Resources (finding the right people with the right skills)",
+            "Architectural challenges",
+        ],
+        "key_messages": [
+            "Cost (discounts available)",
+            "Reputation, credibility, and stability",
+            "Solution meets specific business needs",
+            "Strong developer experience and documentation",
         ],
     },
 ]
