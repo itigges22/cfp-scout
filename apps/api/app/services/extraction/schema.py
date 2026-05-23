@@ -113,18 +113,48 @@ class CfpDeadline(BaseModel):
     def _accept_llm_variants(cls, data: object) -> object:
         if not isinstance(data, dict):
             return data
-        # Rename common aliases. Last-write-wins; canonical key wins
-        # when both are present.
-        if "kind" not in data and "type" in data:
-            data["kind"] = data.pop("type")
+        # Field-name aliases. The LLM returns whatever it feels like:
+        # `kind` (canonical), `type`, `name`, `phase`, `label`, …
+        if "kind" not in data:
+            for alias in ("type", "name", "phase", "label", "category"):
+                if alias in data:
+                    data["kind"] = data[alias]
+                    # We pop only if we won't also use the alias as
+                    # description — leave 'name' since it's often
+                    # the human-readable form ("Abstract submission
+                    # deadline") that doubles as a description.
+                    if alias != "name":
+                        data.pop(alias, None)
+                    break
+        # `name` was likely the descriptive label — keep as description
+        # if we have no description yet.
+        if "description" not in data and "name" in data and data.get("name") != data.get("kind"):
+            data["description"] = data.pop("name", None)
+        elif "name" in data:
+            # If we already used name → kind above, drop the redundant.
+            data.pop("name", None)
+
         if "deadline_date" not in data:
-            if "deadline" in data:
-                data["deadline_date"] = data.pop("deadline")
-            elif "date" in data:
-                data["deadline_date"] = data.pop("date")
+            for alias in ("deadline", "date", "due", "due_date"):
+                if alias in data:
+                    data["deadline_date"] = data.pop(alias)
+                    break
+
+        # Last-resort: derive `kind` from `description` if the LLM didn't
+        # give us a separate one ("Abstract submission deadline" →
+        # 'abstract'). Better than failing the whole extraction over a
+        # default-to-'other' value.
+        if "kind" not in data and "description" in data:
+            data["kind"] = _normalize_kind(data["description"])
+
         # Normalize kind keyword + ISO-datetime → date.
         if "kind" in data:
             data["kind"] = _normalize_kind(data["kind"])
+        else:
+            # Truly nothing usable — fall back to OTHER so the row still
+            # validates. Better to keep the deadline_date with kind=other
+            # than throw the whole conference away.
+            data["kind"] = CfpDeadlineKind.OTHER.value
         if isinstance(data.get("deadline_date"), str):
             raw_d = data["deadline_date"]
             if "T" in raw_d:

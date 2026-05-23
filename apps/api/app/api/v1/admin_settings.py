@@ -340,6 +340,20 @@ SPECS: list[SettingSpec] = [
         max_value=23,
         restart_required=True,
     ),
+    SettingSpec(
+        name="discovery_seed_urls",
+        kind="list_str",
+        group="discovery",
+        label="Seed URLs (always crawled)",
+        description="Aggregator / known-conference URLs that discovery always crawls in addition to search hits. Gives a reliable signal floor when DDG/Brave/Tavily return nothing.",
+    ),
+    SettingSpec(
+        name="discovery_url_blocklist",
+        kind="list_str",
+        group="discovery",
+        label="URL blocklist (case-insensitive substrings)",
+        description="Discovery skips any URL containing one of these strings. Default cuts known-junk results (wikipedia, openreview, twitter, github, …) before paying for a Crawl4AI fetch + LLM extraction.",
+    ),
     # Scraper -----------------------------------------------------------
     SettingSpec(
         name="scraper_default_politeness_seconds",

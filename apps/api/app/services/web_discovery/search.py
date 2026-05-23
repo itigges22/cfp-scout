@@ -87,8 +87,8 @@ async def web_search(
 # DuckDuckGo HTML
 # ---------------------------------------------------------------------------
 async def _search_ddg(prompt: str, max_results: int) -> list[SearchHit]:
-    """Wraps ``duckduckgo_search.DDGS`` in a threadpool — DDGS is sync
-    and the library doesn't ship an async API yet.
+    """Wraps ``ddgs.DDGS`` in a threadpool — DDGS is sync and the library
+    doesn't ship an async API yet.
 
     DDG is *aggressively* rate-limited: empty result pages and CAPTCHA
     fallbacks happen mid-stream. We retry with exponential backoff up
@@ -101,9 +101,9 @@ async def _search_ddg(prompt: str, max_results: int) -> list[SearchHit]:
     from anyio import to_thread
 
     def _run(query: str) -> list[SearchHit]:
-        # Local import — duckduckgo_search has a noisy import path that
-        # we don't want at module-level (slow startup).
-        from duckduckgo_search import DDGS
+        # Local import — ddgs has a noisy import path that we don't want
+        # at module-level (slow startup).
+        from ddgs import DDGS
 
         hits: list[SearchHit] = []
         with DDGS() as ddgs:

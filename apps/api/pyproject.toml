@@ -53,7 +53,10 @@ dependencies = [
     # DuckDuckGo search adapter — no API key, free; the default search
     # backend for the discovery orchestrator. Operators can flip to
     # Brave/Tavily via settings (no extra deps; both are simple HTTP APIs).
-    "duckduckgo-search>=6.2",
+    # The old package name `duckduckgo-search` was renamed to `ddgs`
+    # upstream; we pin to the new one. Slightly more reliable rate-limit
+    # behaviour + active maintenance.
+    "ddgs>=9.0",
     # PyYAML is used by the plan-23 series seed migration (db/seeds/
     # conference_series.yaml). Tiny dep, widely-used + battle-tested.
     "pyyaml>=6.0",

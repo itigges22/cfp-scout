@@ -136,11 +136,52 @@ async def run_discovery(
     except SearchError as exc:
         log.warning("discovery.search.failed", error=str(exc))
         result.search_error = str(exc)
-        result.finished_at = _now_iso()
-        return result
+        # don't return — seed URLs below still give us a signal floor.
+        hits = []
 
     result.search_hits = len(hits)
+
+    # ---- 1b. Merge in operator-configured seed URLs --------------------
+    # These are aggregator / known-good conference hubs (aideadlin.es,
+    # papercall.io, wikicfp, …). They give discovery a reliable signal
+    # floor when the search backend returns nothing.
+    seed_urls = list(getattr(settings, "discovery_seed_urls", []) or [])
+    seed_hits: list[SearchHit] = [
+        SearchHit(
+            url=u,
+            title="(seed)",
+            snippet="Operator-configured discovery seed URL",
+        )
+        for u in seed_urls
+    ]
+    # Dedup by URL — search step may have already returned a seed.
+    seen_urls: set[str] = {h.url for h in hits}
+    for sh in seed_hits:
+        if sh.url not in seen_urls:
+            hits.append(sh)
+            seen_urls.add(sh.url)
+
+    # ---- 1c. URL blocklist --------------------------------------------
+    # Drop known-junk patterns (wikipedia, openreview, social media, …)
+    # before paying for a Crawl4AI fetch + LLM extraction.
+    blocklist: list[str] = [
+        b.lower()
+        for b in (getattr(settings, "discovery_url_blocklist", []) or [])
+        if b
+    ]
+    if blocklist:
+        before_count = len(hits)
+        hits = [
+            h
+            for h in hits
+            if not any(b in h.url.lower() for b in blocklist)
+        ]
+        dropped = before_count - len(hits)
+        if dropped:
+            log.info("discovery.url_blocklist.dropped", count=dropped)
+
     if not hits:
+        log.info("discovery.no_candidate_urls")
         result.finished_at = _now_iso()
         return result
 

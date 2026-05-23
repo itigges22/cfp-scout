@@ -145,16 +145,59 @@ class Settings(BaseSettings):
     discovery_tavily_api_key: SecretStr | None = None
     discovery_template_prompt: str = Field(
         default=(
-            "Upcoming AI conferences with open call for papers (CFP) "
-            "closing in the next six months. Focus on large language "
-            "models, RAG, agentic AI, MLOps, model serving, AI safety, "
-            "inference performance, GPU infrastructure, AI evaluations, "
-            "and AI for enterprise software."
+            'AI conference 2026 "call for papers" site:conferences OR '
+            "CFP submissions deadline LLM agentic"
         ),
-        description="Default search prompt for discovery. Editable from /settings/tunables.",
+        description=(
+            "Search prompt for /discover. Short + specific works better; "
+            "DDG returns garbage for long queries. Editable per-run."
+        ),
     )
     discovery_max_results_per_run: int = Field(default=20, ge=1, le=100)
     discovery_cron_hour_utc: int = Field(default=6, ge=0, le=23)
+
+    # Curated seed URLs the orchestrator ALWAYS crawls in addition to
+    # whatever the search step returns. Gives Scout a reliable conference
+    # signal independent of search-API flakiness. Operators can edit /
+    # extend in /settings/tunables.
+    discovery_seed_urls: list[str] = Field(
+        default_factory=lambda: [
+            "https://aideadlin.es/",  # AI deadline tracker (community-maintained)
+            "https://papercall.io/cfps",  # CFP listings
+            "https://www.wikicfp.com/cfp/call?conference=artificial%20intelligence",
+            "https://huggingface.co/blog",  # often announces conference talks
+        ],
+        description=(
+            "URLs always crawled by discovery, regardless of the search "
+            "step. Aggregators / known conference hubs."
+        ),
+    )
+
+    # URL substrings whose pages we refuse to crawl during discovery. The
+    # LLM extractor can't make a conference row out of a generic Wikipedia
+    # article, OpenReview group page, or social-media post — and burning
+    # tokens trying wastes budget. Match is case-insensitive substring.
+    discovery_url_blocklist: list[str] = Field(
+        default_factory=lambda: [
+            "wikipedia.org",
+            "openreview.net",
+            "twitter.com",
+            "x.com/",
+            "linkedin.com",
+            "youtube.com",
+            "youtu.be",
+            "facebook.com",
+            "reddit.com",
+            "/r/",
+            "github.com",
+            "stackoverflow.com",
+            "medium.com",
+        ],
+        description=(
+            "Discovery skips URLs whose strings contain any of these. "
+            "Trims junk results from search step before crawling."
+        ),
+    )
 
     # ------------------------------------------------------------------
     # CORS (only relevant when the Vite dev server runs separately)

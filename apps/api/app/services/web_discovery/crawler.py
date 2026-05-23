@@ -102,7 +102,11 @@ async def crawl_many(urls: list[str]) -> list[CrawlResult]:
             md = getattr(raw, "markdown", None) or ""
             html_bytes = len((getattr(raw, "html", None) or "").encode("utf-8"))
             status_code = int(getattr(raw, "status_code", 0) or 0)
-            title = getattr(raw, "metadata", {}).get("title") if hasattr(raw, "metadata") else None
+            # Crawl4AI's metadata can be missing, None, or a dict. Defend
+            # against all three — the getattr-default trick fails when
+            # the attribute exists but is None.
+            meta = getattr(raw, "metadata", None) or {}
+            title = meta.get("title") if isinstance(meta, dict) else None
 
             out.append(
                 CrawlResult(
