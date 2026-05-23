@@ -80,7 +80,6 @@ infra/
 db/seeds/        seed data
 docs/            ARCHITECTURE.md, ADRs, ops runbooks
 evals/           LLM evaluation fixtures
-PLANS/           Phase 1 implementation plans (see PLANS/phase-1/00-INDEX.md)
 ```
 
 ## Routes you'll use
@@ -111,8 +110,6 @@ events, hit `POST /api/v1/admin/discovery/geocode-backfill` (rate-limited).
 - [`docs/ops/`](docs/ops/) — per-topic runbooks (backups, secrets, migrations, database, data guardrails)
 - [`docs/security/SECURITY_REVIEW.md`](docs/security/SECURITY_REVIEW.md) — threat model + per-control status
 - [`docs/ADR/`](docs/ADR/) — architecture decision records
-- [`PLANS/phase-1/00-INDEX.md`](PLANS/phase-1/00-INDEX.md) — the full Phase 1 plan
-- [`PLANS/STATUS.md`](PLANS/STATUS.md) — current build progress and recent work (every plan's status with changelog)
 
 ## Reporting a security issue
 

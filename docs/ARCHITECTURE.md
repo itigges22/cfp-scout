@@ -1,7 +1,8 @@
 # Scout — Architecture
 
-> **Status:** skeleton. Filled in as the build proceeds. The authoritative
-> design lives in [`PLANS/phase-1/00-INDEX.md`](../PLANS/phase-1/00-INDEX.md).
+> **Status:** current as of plans 34/35 + post-plan-33 UX work
+> (see [`docs/web-discovery.md`](web-discovery.md) for the discovery pipeline,
+> and the [`ADR/`](ADR/) directory for individual architectural decisions).
 
 ## One-paragraph summary
 
@@ -226,5 +227,10 @@ See [`ADR/`](ADR/). The most consequential records:
 
 ## Build status
 
-Current implementation state and outstanding work live in
-[`/PLANS/STATUS.md`](../PLANS/STATUS.md).
+Phase 1 is complete; subsequent work has shipped in two areas:
+**plan 34** (PDF/Docling OOM hardening via subprocess-isolated tiered
+fallback) and **plan 35** (autonomous web discovery — feed ingest,
+multilingual AI filter, geocoded city map, inline auto-matcher, edit
+UIs for SMEs/Audiences/Messaging, graph force controls). See
+[`web-discovery.md`](web-discovery.md) and the [`ADR/`](ADR/)
+directory for the relevant design decisions.
