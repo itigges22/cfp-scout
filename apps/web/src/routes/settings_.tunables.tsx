@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/routes/dashboard";
 
-export const Route = createFileRoute("/settings/tunables")({
+export const Route = createFileRoute("/settings_/tunables")({
   component: TunablesPage,
 });
 

@@ -219,8 +219,18 @@ test-web:  ## Frontend Vitest suite (plan 27 pass 2)
 	@echo "make test-web: plan 27 pass 2 will wire Vitest" && exit 1
 
 .PHONY: e2e
-e2e:  ## Playwright end-to-end (plan 27 pass 2)
-	@echo "make e2e: plan 27 pass 2 will wire Playwright" && exit 1
+e2e:  ## Playwright end-to-end smoke against the running api (host-network)
+	@if ! $(CONTAINER_CLI) ps --filter name=scout-api --format '{{.Names}}' 2>/dev/null | grep -q scout-api; then \
+	  echo "scout-api container not running — try \`make dev\` first."; exit 2; \
+	fi
+	@echo "Running Playwright suite via mcr.microsoft.com/playwright (no host node needed)..."
+	@$(CONTAINER_CLI) run --rm \
+	    --net=host \
+	    -e BASE_URL=http://localhost:8000 \
+	    -v "$$PWD/apps/web:/work:Z" \
+	    -w /work \
+	    mcr.microsoft.com/playwright:v1.50.0-jammy \
+	    bash -c "test -d node_modules || npm install --no-audit --no-fund --prefer-offline && npx playwright test"
 
 .PHONY: eval
 eval:  ## LLM evals (plan 27 pass 2)

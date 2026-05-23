@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/routes/dashboard";
 import { messagingApi } from "@/lib/api";
 
-export const Route = createFileRoute("/messaging/new")({
+export const Route = createFileRoute("/messaging_/new")({
   component: NewMessagingDocPage,
 });
 
