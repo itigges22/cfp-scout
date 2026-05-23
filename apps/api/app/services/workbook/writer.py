@@ -191,7 +191,63 @@ async def _rows_for_sheet(
             for r in rows
         ]
 
+    if spec.name == "Settings":
+        return _settings_rows(populate_with_current=True)
+
     return []
+
+
+def _settings_rows(*, populate_with_current: bool) -> list[dict]:
+    """Build the Settings sheet rows.
+
+    populate_with_current=True (used by export) writes the live settings
+    values, including secrets unwrapped. populate_with_current=False (used
+    by the template) leaves the `value` column blank so the operator
+    fills it in.
+    """
+    # Local import — avoids a hard dependency on the api layer at module load.
+    from pydantic import SecretStr
+
+    from app.api.v1.admin_settings import SPECS as _SETTING_SPECS
+    from app.settings import get_settings
+
+    s = get_settings() if populate_with_current else None
+    out: list[dict] = []
+    for spec in _SETTING_SPECS:
+        if populate_with_current and s is not None:
+            raw = getattr(s, spec.name, None)
+            if isinstance(raw, SecretStr):
+                raw = raw.get_secret_value() or ""
+            value_str = _format_setting_value(spec.kind, raw)
+        else:
+            value_str = ""
+        out.append(
+            {
+                "name": spec.name,
+                "value": value_str,
+                "kind": spec.kind,
+                "group": spec.group,
+                "description": spec.description,
+                "restart_required": "TRUE" if spec.restart_required else "FALSE",
+                "is_secret": "TRUE" if spec.kind == "secret" else "FALSE",
+            }
+        )
+    return out
+
+
+def _format_setting_value(kind: str, raw) -> str:
+    """Render a settings value for the workbook cell — list_str joins with
+    `; `, bool emits TRUE/FALSE, secrets pass through (caller has already
+    unwrapped SecretStr). None becomes empty string."""
+    if raw is None:
+        return ""
+    if kind == "bool":
+        return "TRUE" if bool(raw) else "FALSE"
+    if kind == "list_str":
+        if isinstance(raw, (list, tuple)):
+            return "; ".join(str(x) for x in raw)
+        return str(raw)
+    return str(raw)
 
 
 # ---------------------------------------------------------------------------

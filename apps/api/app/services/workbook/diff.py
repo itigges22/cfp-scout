@@ -113,6 +113,22 @@ async def compute_diff(db: AsyncSession, parsed: ParsedWorkbook) -> DiffResult:
         plans: list[RowPlan] = []
         ins = upd = dele = 0
 
+        # Settings is special — name-keyed, no UUIDs, no insert/delete via
+        # workbook. Each parsed row is either a no-op (value matches
+        # current) or an update.
+        if sheet_name == "Settings":
+            plans, sheet_errors, upd = _settings_diff(spec_rows, ps)
+            result.errors.extend(sheet_errors)
+            result.plans_by_sheet[sheet_name] = plans
+            result.by_sheet[sheet_name] = {
+                "inserts": 0,
+                "updates": upd,
+                "deletes": 0,
+                "errors": len(sheet_errors),
+            }
+            result.summary["updates"] += upd
+            continue
+
         # Fetch the DB-side rows once per sheet (small N at our scale).
         existing = await _existing_for_sheet(db, sheet_name)
 
@@ -313,6 +329,74 @@ async def _db_industries(db: AsyncSession) -> set[str]:
         )
     ).all()
     return {r[0] for r in rows if r[0]}
+
+
+def _settings_diff(spec_rows, ps) -> tuple[list[RowPlan], list[SheetRowError], int]:
+    """Diff the Settings sheet against current settings.
+
+    Returns (plans, errors, update_count). Settings are name-keyed; rows
+    that match current values are no-ops. Empty `value` cells are also
+    no-ops (operator left it blank intentionally). Unknown setting names
+    produce errors.
+    """
+    from pydantic import SecretStr
+
+    from app.api.v1.admin_settings import SPECS as _SETTING_SPECS
+    from app.services.workbook.writer import _format_setting_value
+    from app.settings import get_settings
+
+    by_name = {s.name: s for s in _SETTING_SPECS}
+    s = get_settings()
+
+    plans: list[RowPlan] = []
+    errors: list[SheetRowError] = []
+    upd = 0
+
+    for raw in spec_rows:
+        name = raw.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue  # already errored at parse, or empty padding row
+        if name not in by_name:
+            errors.append(
+                SheetRowError(
+                    sheet="Settings",
+                    row=_infer_row_number(ps, raw),
+                    field="name",
+                    value=str(name),
+                    message=(
+                        f"unknown setting '{name}' — was it renamed in a "
+                        "newer Scout version? Safe to delete the row."
+                    ),
+                )
+            )
+            continue
+
+        new_value = raw.get("value")
+        if new_value is None or (isinstance(new_value, str) and not new_value.strip()):
+            continue  # blank value means "leave alone"
+
+        # Compare against current effective value.
+        current_raw = getattr(s, name, None)
+        if isinstance(current_raw, SecretStr):
+            current_raw = current_raw.get_secret_value() or ""
+        spec_kind = by_name[name].kind
+        current_str = _format_setting_value(spec_kind, current_raw)
+        new_str = _format_setting_value(spec_kind, new_value)
+        if current_str == new_str:
+            continue  # no-op
+
+        plans.append(
+            RowPlan(
+                sheet="Settings",
+                row=_infer_row_number(ps, raw),
+                action="update",
+                scout_id=None,
+                values={"name": name, "value": new_str, "kind": spec_kind},
+            )
+        )
+        upd += 1
+
+    return plans, errors, upd
 
 
 # ---------------------------------------------------------------------------

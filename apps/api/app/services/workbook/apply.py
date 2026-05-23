@@ -86,8 +86,18 @@ async def apply_diff(
 
     # APPLY ORDER MATTERS: topics + industries + audiences first, so SME
     # rows can name-reference them within the same transaction.
-    # Pillars + Series are independent.
-    sheet_order = ["Pillars", "Industries", "Topics", "Audiences", "SMEs", "Series"]
+    # Pillars + Series are independent. Settings are also independent —
+    # processed first so a workbook that bumps the LLM budget AND adds
+    # new SMEs applies the budget before any embeddings burn it.
+    sheet_order = [
+        "Settings",
+        "Pillars",
+        "Industries",
+        "Topics",
+        "Audiences",
+        "SMEs",
+        "Series",
+    ]
 
     # SME rows whose embed needs regenerating after commit.
     sme_embed_targets: list[Sme] = []
@@ -97,7 +107,9 @@ async def apply_diff(
         plans = diff.plans_by_sheet.get(sheet, [])
         ins = upd = dele = 0
         for plan in plans:
-            if sheet == "Pillars":
+            if sheet == "Settings":
+                await _apply_setting(db, plan)
+            elif sheet == "Pillars":
                 await _apply_pillar(db, plan)
             elif sheet == "Industries":
                 # Industries is a derived vocab — no DB table; rows are
@@ -391,3 +403,33 @@ async def _apply_series(db: AsyncSession, plan) -> None:
         row.homepage = plan.values["homepage"]
     if plan.values.get("is_active") is not None:
         row.is_active = plan.values["is_active"]
+
+
+
+# ---------------------------------------------------------------------------
+# Settings sheet — calls into the same settings_overrides path the
+# /api/v1/admin/settings PATCH endpoint uses, plus the same _coerce()
+# logic so TRUE/FALSE → bool, "0.5" → float, "a; b; c" → list, etc.
+# ---------------------------------------------------------------------------
+async def _apply_setting(db: AsyncSession, plan) -> None:
+    from app.api.v1.admin_settings import SPECS as _SETTING_SPECS, _coerce
+    from app.services import settings_overrides
+    from app.settings import get_settings
+
+    name = plan.values["name"]
+    raw_value = plan.values["value"]
+    by_name = {s.name: s for s in _SETTING_SPECS}
+    spec = by_name.get(name)
+    if spec is None:
+        return  # diff stage should have flagged this; defensive no-op
+
+    # list_str values arrive as the semicolon-joined display form. Split
+    # back into a list before coercion.
+    if spec.kind == "list_str" and isinstance(raw_value, str):
+        raw_value = [item.strip() for item in raw_value.split(";") if item.strip()]
+
+    coerced = _coerce(spec, raw_value)
+    await settings_overrides.upsert(
+        db, name=name, value=coerced, actor_label="workbook_import"
+    )
+    get_settings.cache_clear()

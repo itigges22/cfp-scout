@@ -63,7 +63,10 @@ def build_empty_template() -> bytes:
     for spec in SHEET_SPECS:
         ws = wb.create_sheet(spec.name)
         _write_header(ws, spec)
-        _write_sample_row(ws, spec)
+        if spec.name == "Settings":
+            _write_settings_rows(ws, spec)
+        else:
+            _write_sample_row(ws, spec)
         _attach_validation(ws, spec)
         _set_column_widths(ws, spec)
         ws.sheet_view.showGridLines = True
@@ -73,167 +76,534 @@ def build_empty_template() -> bytes:
     return out.getvalue()
 
 
+def _write_settings_rows(ws: Worksheet, spec: SheetSpec) -> None:
+    """Pre-populate the Settings tab with all 41 settings + their default
+    metadata. `value` cells are left BLANK for secrets (operator fills in
+    LLM API key) and for everything else the cell shows the env-default
+    so the operator can see what's currently in effect. Edit any cell to
+    set an override; leave blank to inherit."""
+    from app.services.workbook.writer import _settings_rows
+
+    rows = _settings_rows(populate_with_current=False)
+    for r in rows:
+        ws.append([r.get(col.name, "") for col in spec.columns])
+
+    # Style metadata columns (name, kind, group, description,
+    # restart_required, is_secret) so operators see they're read-only.
+    # Only the `value` column is operator-editable.
+    from openpyxl.styles import Font, PatternFill
+
+    metadata_fill = PatternFill("solid", fgColor="F3F4F6")  # gray-100
+    metadata_font = Font(color="6B7280", size=10)  # gray-500
+    secret_value_fill = PatternFill("solid", fgColor="FEE2E2")  # red-100
+
+    for row_idx in range(2, ws.max_row + 1):
+        # Find the column indexes once.
+        col_by_name = {col.name: i + 1 for i, col in enumerate(spec.columns)}
+        is_secret_idx = col_by_name.get("is_secret")
+        if is_secret_idx and ws.cell(row=row_idx, column=is_secret_idx).value == "TRUE":
+            # Highlight the value cell red for secret rows so the API-key
+            # field jumps out visually.
+            value_idx = col_by_name["value"]
+            ws.cell(row=row_idx, column=value_idx).fill = secret_value_fill
+
+        # De-emphasize the metadata cells.
+        for col_name in ("name", "kind", "group", "description", "restart_required", "is_secret"):
+            idx = col_by_name.get(col_name)
+            if idx:
+                cell = ws.cell(row=row_idx, column=idx)
+                cell.fill = metadata_fill
+                cell.font = metadata_font
+
+
 # ---------------------------------------------------------------------------
 # README sheet — the friendly entry point
 # ---------------------------------------------------------------------------
 def _build_readme_sheet(ws: Worksheet) -> None:
-    ws.column_dimensions["A"].width = 28
-    ws.column_dimensions["B"].width = 90
+    """The README is the operator's primary onboarding doc. It's the first
+    tab so it's what you see when you open the file. Goal: a fresh user
+    can fill in this workbook + run a fresh install without ever reading
+    the GitHub repo's docs.
+    """
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 100
     ws.sheet_view.showGridLines = False
 
-    # Hero
+    # --- Hero ----------------------------------------------------------
     ws.merge_cells("A1:B1")
     ws["A1"] = "Scout — Configuration Workbook"
-    ws["A1"].font = Font(bold=True, size=20, color="111827")
+    ws["A1"].font = Font(bold=True, size=22, color="111827")
 
     ws.merge_cells("A2:B2")
     ws["A2"] = (
-        "This workbook is how you tell Scout about your team — who your SMEs "
-        "are, who you're trying to reach, your strategic pillars, and the "
-        "conference series you care about. Edit any tab below, save, then "
-        "upload at Settings → Workbook in the running app."
+        "One file. Everything Scout needs to run: your LLM API keys, "
+        "your matcher tuning, and the team data (SMEs, audiences, "
+        "messaging, pillars). Fill it in once, upload at Settings → "
+        "Workbook, and you have a working install."
     )
     ws["A2"].alignment = Alignment(wrap_text=True, vertical="top")
-    ws["A2"].font = Font(size=11, color="374151")
-    ws.row_dimensions[2].height = 50
+    ws["A2"].font = Font(size=12, color="374151")
+    ws.row_dimensions[2].height = 60
 
-    # How to use
-    _readme_section(ws, 4, "How to use this workbook")
-    _readme_para(
+    # Track our current row so adding/removing sections is a one-line edit.
+    row = 4
+
+    # --- Quick install -------------------------------------------------
+    row = _readme_section(ws, row, "Quick install — clone to running in ~5 minutes")
+    row = _readme_numbered(
         ws,
-        5,
+        row,
+        [
+            (
+                "Install Docker Desktop or Podman + podman-compose. "
+                "Anything that runs containers will work."
+            ),
+            (
+                "Clone the repo: git clone "
+                "https://github.com/<your-org>/scout (or your fork)."
+            ),
+            (
+                "Copy .env.example to .env. Open .env in a text editor and "
+                "paste your your LLM endpoint API key into the LLM_API_KEY field. "
+                "If you don't have a key yet, leave LLM_DRY_RUN=true and "
+                "Scout will boot with canned LLM responses so you can poke "
+                "the UI offline."
+            ),
+            ("Run `make up` (~2 min first time). Then `make migrate` (~5 sec)."),
+            (
+                "Open http://localhost:8000 in your browser. You should see "
+                "the Scout dashboard with empty stats — that's correct, you "
+                "haven't loaded any data yet."
+            ),
+            (
+                "Go to Settings → Workbook → Import. Upload THIS file. Scout "
+                "will preview what will change. Click Apply. Done."
+            ),
+        ],
+    )
+    row += 1
+
+    # --- Step 1 of fill-in: LLM API key (most important) --------------
+    row = _readme_section(ws, row, "Step 1 — Your LLM API keys (Settings tab)")
+    row = _readme_para(
+        ws,
+        row,
         (
-            "1. Open in Excel, Google Sheets, or LibreOffice — anything that "
-            "reads XLSX.\n"
-            "2. Click each tab at the bottom of the window. Each tab is one "
-            "kind of data (Pillars, Audiences, SMEs, etc.).\n"
-            "3. Replace the yellow sample row with your real data, or add "
-            "new rows below it.\n"
-            "4. Save as XLSX. Upload at Settings → Workbook. Scout will "
-            "show you a preview of what will change before anything is "
-            "written to the database."
+            "Open the Settings tab. Look for the row where name = "
+            "'llm_api_key'. The value cell is highlighted in red — that's "
+            "the cell you NEED to fill in for Scout to do anything useful. "
+            "Paste your LLM API chat-model API key there. If your embedding "
+            "model uses a separate key (different scope), also fill in "
+            "llm_embedding_api_key.\n\n"
+            "Where to get a LLM key: log into your your LLM endpoint dashboard, "
+            "create a token with access to llama-scout-17b for chat and "
+            "nomic-embed-text-v1-5 for embeddings. The base URL Scout uses "
+            "by default is https://litellm-prod.apps.maas.redhatworkshops.io/v1 "
+            "— update llm_base_url if yours is different."
         ),
     )
+    row += 1
 
-    # What you CAN change
-    _readme_section(ws, 11, "What you CAN change")
-    _readme_bullets(
+    # --- Step 2: team data ---------------------------------------------
+    row = _readme_section(ws, row, "Step 2 — Your team data")
+    row = _readme_para(
         ws,
-        12,
+        row,
+        (
+            "These tabs tell Scout who you are and what you care about. The "
+            "minimum-to-be-useful is:"
+        ),
+    )
+    row = _readme_bullets(
+        ws,
+        row,
         [
-            "Any value in any white-background cell.",
-            "Add new rows below the existing data.",
-            "Delete the yellow Sample rows (or leave them — the importer "
-            "skips any row whose name starts with 'Sample —').",
-            "Mark a row for deletion by typing 'delete' into its _action "
-            "column. The row is soft-deleted (kept in the DB with "
-            "is_active=false), not erased.",
-            "Re-order rows freely. Order doesn't affect anything except "
-            "the Pillars tab, where display_order controls it.",
+            (
+                "At least one Audience (so the matcher can compute "
+                "audience overlap). Try one persona you actually pitch to."
+            ),
+            (
+                "At least one SME with a real, 200+ character bio and 2+ "
+                "topic assignments. The matcher embeds the bio for "
+                "similarity, so 'Sarah works on AI' is useless — write the "
+                "kind of paragraph you'd put on her speaker page."
+            ),
+            (
+                "At least one Topic (or 5-10 — the matcher uses topic "
+                "overlap heavily)."
+            ),
+            (
+                "Pillars and Series are useful but optional for first run. "
+                "Series only matters once you have past conferences logged."
+            ),
         ],
     )
-
-    # What you CAN'T change
-    _readme_section(ws, 19, "What you should NOT change")
-    _readme_bullets(
+    row = _readme_para(
         ws,
-        20,
+        row,
+        (
+            "Once you have one row in each of those four tabs, Scout can "
+            "score events. More data = better recommendations."
+        ),
+    )
+    row += 1
+
+    # --- Step 3: upload -----------------------------------------------
+    row = _readme_section(ws, row, "Step 3 — Upload and apply")
+    row = _readme_numbered(
+        ws,
+        row,
         [
-            "The sheet names (tabs at the bottom). The importer looks "
-            "them up by name.",
-            "The column names (row 1 of each tab). Renaming a column "
-            "means the importer can't find it.",
-            "The _scout_id column. Leave it blank on new rows; Scout "
-            "fills it in when you export later.",
-            "Don't add formulas (cells starting with =, +, -, @ are "
-            "rejected on import for security).",
+            "Save the workbook as .xlsx (File → Download → Excel in Google Sheets).",
+            "In Scout: Settings → Workbook → drop the file into the upload area.",
+            (
+                "Scout runs a PREVIEW first. It shows what would change in each "
+                "tab: how many new rows, how many updates, how many deletes "
+                "(if any). Nothing is written yet."
+            ),
+            (
+                "Review the preview. If it looks right, click Apply. The whole "
+                "import is one database transaction — either everything lands "
+                "or nothing changes."
+            ),
         ],
     )
+    row += 1
 
-    # Cell types
-    _readme_section(ws, 26, "Cell types you'll see")
+    # --- Tabs at a glance ----------------------------------------------
+    row = _readme_section(ws, row, "The 7 tabs in this workbook")
+    tab_descriptions = [
+        ("Settings", (
+            "Every runtime tunable in one place: LLM keys, matcher "
+            "weights, gate thresholds, AI keyword filter, log level. Edit "
+            "the value column; leave blank to keep the current value. "
+            "Rows with red value cells are SECRETS — handle the file "
+            "carefully."
+        )),
+        ("Pillars", (
+            "your strategic pillars. Edit display_order to "
+            "control how they're listed on the dashboard. You probably "
+            "have 3-5 of these."
+        )),
+        ("Industries", (
+            "Allowed values for the Audiences.industry column. Adding an "
+            "industry here lets a new audience row use it. Single column."
+        )),
+        ("Audiences", (
+            "Who you're trying to reach at conferences (personas: "
+            "Platform Engineering Lead, ML Ops Director, C-Suite, etc.). "
+            "Each persona has pain points and key messages that the "
+            "matcher uses to predict event fit."
+        )),
+        ("SMEs", (
+            "Your subject-matter experts. Bio quality matters — the "
+            "matcher embeds the bio text for similarity scoring. "
+            "primary_topics and audience_focus reference Topics and "
+            "Audiences by NAME (not UUID) and get resolved on import."
+        )),
+        ("Topics", (
+            "Your controlled topic vocabulary. Adding a topic here "
+            "promotes it to 'active' so the matcher uses it. Aliases let "
+            "you collapse 'NeurIPS' and 'Neural Information Processing "
+            "Systems' to the same topic."
+        )),
+        ("Series", (
+            "Year-over-year conference series. If you've been to PyCon "
+            "2024, this tab is what lets Scout know PyCon 2026 is the "
+            "next edition (and apply the past-attendance bonus to "
+            "matching)."
+        )),
+    ]
+    for name, desc in tab_descriptions:
+        ws.cell(row=row, column=1, value=name).font = Font(
+            bold=True, color="2563EB", size=11
+        )
+        ws.cell(row=row, column=2, value=desc).alignment = Alignment(
+            wrap_text=True, vertical="top"
+        )
+        ws.row_dimensions[row].height = max(38, (len(desc) // 90 + 1) * 18)
+        row += 1
+    row += 1
+
+    # --- The Settings tab in detail ------------------------------------
+    row = _readme_section(ws, row, "The Settings tab — groups explained")
+    row = _readme_para(
+        ws,
+        row,
+        (
+            "The Settings tab has 41 rows. Don't be intimidated — most have "
+            "sensible defaults. Here's what each group of settings controls:"
+        ),
+    )
+    setting_groups = [
+        ("llm", (
+            "LLM API connection: base URL, API key, chat + embedding model "
+            "names, dry-run toggle, monthly USD budget cap. THIS IS WHERE "
+            "YOUR API KEY GOES."
+        )),
+        ("matcher", (
+            "How the fit score is computed. m_gate / p_gate / s_gate set "
+            "the minimum score for each stage to count. w_messaging / "
+            "w_pillar / w_sme are the weights — they should sum to 1.0."
+        )),
+        ("sme", (
+            "How the per-SME composite score is built: weights for topic "
+            "overlap, audience overlap, bio similarity, location, and "
+            "past attendance."
+        )),
+        ("team", (
+            "Multi-person team recommendation: how many candidates to "
+            "consider, weights for individual fit vs coverage vs "
+            "redundancy avoidance."
+        )),
+        ("decay", (
+            "Whether old data 'fades' over time (Ebbinghaus-style)."
+        )),
+        ("discovery", (
+            "Where Scout looks for events. Includes the multilingual AI "
+            "keyword filter (148 terms by default), the search provider "
+            "(DDG/Brave/Tavily) and any optional API keys, seed URLs to "
+            "always crawl, URL blocklist, and the cron schedule."
+        )),
+        ("scraper", (
+            "Default politeness delay and User-Agent for outbound HTTP."
+        )),
+        ("logging", (
+            "Log level + format (json for production log shippers, "
+            "console for human reading)."
+        )),
+    ]
+    for group, desc in setting_groups:
+        ws.cell(row=row, column=1, value=group).font = Font(
+            bold=True, color="0F766E", size=11
+        )
+        ws.cell(row=row, column=2, value=desc).alignment = Alignment(
+            wrap_text=True, vertical="top"
+        )
+        ws.row_dimensions[row].height = max(38, (len(desc) // 90 + 1) * 18)
+        row += 1
+    row += 1
+
+    # --- Cell types ----------------------------------------------------
+    row = _readme_section(ws, row, "Cell types you'll see")
     type_rows = [
         ("Text", "Plain text, e.g. \"Platform Engineering Leaders\"."),
-        (
-            "List of text",
+        ("List of text", (
             "Multiple values in one cell, separated by semicolons. e.g. "
-            "\"RAG; Embeddings; Vector DBs\". No trailing semicolon.",
-        ),
-        ("Boolean", "TRUE or FALSE (case doesn't matter)."),
-        ("Number", "Whole or decimal, e.g. 1 or 0.6."),
-        ("Date", "YYYY-MM-DD format, e.g. 2026-09-15."),
-        (
-            "Dropdown",
+            "\"RAG; Embeddings; Vector DBs\". No trailing semicolon."
+        )),
+        ("Boolean", "TRUE or FALSE (case doesn't matter). Settings tab uses dropdowns."),
+        ("Number", "Whole (1, 42) or decimal (0.5, 1.0)."),
+        ("Date", "YYYY-MM-DD, e.g. 2026-09-15."),
+        ("Dropdown", (
             "Click the cell — a dropdown arrow appears with the valid "
-            "values. Used for things like role_seniority.",
-        ),
-        ("ISO country code", "Two letters, uppercase, e.g. US or DE."),
+            "values. Used for enums like role_seniority, _action, log_level."
+        )),
+        ("ISO country", "Two letters, uppercase, e.g. US, DE, JP."),
+        ("Secret (API key)", (
+            "Plain text, but treated as sensitive — file should be "
+            "chmod 600 and never committed to git."
+        )),
     ]
-    for i, (label, body) in enumerate(type_rows):
-        row = 27 + i
+    for label, body in type_rows:
         ws.cell(row=row, column=1, value=label).font = Font(bold=True, size=11)
         ws.cell(row=row, column=1).alignment = Alignment(vertical="top")
         ws.cell(row=row, column=2, value=body).alignment = Alignment(
             wrap_text=True, vertical="top"
         )
+        ws.row_dimensions[row].height = max(26, (len(body) // 95 + 1) * 18)
+        row += 1
+    row += 1
 
-    # Header colour key
-    _readme_section(ws, 36, "Header colour key")
+    # --- Colour key ----------------------------------------------------
+    row = _readme_section(ws, row, "Header & cell colour key")
     key_rows = [
-        ("Red header", "Required — the importer rejects the row if empty.", _REQUIRED_FILL),
-        ("Dark grey header", "Optional — fill in if you have the info.", _OPTIONAL_FILL),
-        ("Slate header", "System columns (_scout_id, _action) — leave alone.", _SYSTEM_FILL),
-        ("Yellow row", "Sample row. Replace with your data, or delete.", _SAMPLE_FILL),
+        ("Red header", "Required column — the importer rejects the row if blank.", _REQUIRED_FILL),
+        ("Dark grey header", "Optional column — fill in if you have the data.", _OPTIONAL_FILL),
+        ("Slate header", "System column (_scout_id, _action) — leave alone.", _SYSTEM_FILL),
+        ("Light grey cell", "Metadata column on Settings tab — read-only, do not edit.", PatternFill("solid", fgColor="F3F4F6")),
+        ("Red value cell", "Secret (API key) on Settings tab — fill in carefully.", PatternFill("solid", fgColor="FEE2E2")),
+        ("Amber row", "Sample row — replace or leave; the importer skips it.", _SAMPLE_FILL),
     ]
-    for i, (label, body, fill) in enumerate(key_rows):
-        row = 37 + i
-        ws.cell(row=row, column=1, value=label).fill = fill
-        ws.cell(row=row, column=1).font = Font(bold=True, color="F9FAFB" if fill is not _SAMPLE_FILL else "92400E")
-        ws.cell(row=row, column=2, value=body).alignment = Alignment(wrap_text=True, vertical="top")
-
-    # Tabs in this workbook
-    _readme_section(ws, 43, "Tabs in this workbook")
-    for i, spec in enumerate(SHEET_SPECS):
-        row = 44 + i
-        ws.cell(row=row, column=1, value=spec.name).font = Font(bold=True, color="2563EB")
-        ws.cell(row=row, column=2, value=spec.description).alignment = Alignment(
+    for label, body, fill in key_rows:
+        c1 = ws.cell(row=row, column=1, value=label)
+        c1.fill = fill
+        if fill in (_REQUIRED_FILL, _OPTIONAL_FILL, _SYSTEM_FILL):
+            c1.font = Font(bold=True, color="F9FAFB")
+        ws.cell(row=row, column=2, value=body).alignment = Alignment(
             wrap_text=True, vertical="top"
         )
+        row += 1
+    row += 1
 
-    # Safety footer
-    footer_row = 44 + len(SHEET_SPECS) + 2
-    _readme_section(ws, footer_row, "Safety notes")
-    _readme_bullets(
+    # --- What gets backed up here ---------------------------------------
+    row = _readme_section(ws, row, "What this workbook DOES back up")
+    row = _readme_bullets(
         ws,
-        footer_row + 1,
+        row,
         [
-            "Scout shows you a preview of every change before writing to "
-            "the database. You can always cancel.",
-            "Rows in the database that are missing from your upload are "
-            "kept, not deleted. To remove a row, you must explicitly set "
-            "its _action to 'delete'.",
-            "This workbook does NOT contain API keys or secrets. Those "
-            "live in your .env file and the settings JSON backup "
-            "(GET /api/v1/admin/settings/export).",
+            "All settings: LLM API keys, matcher weights, AI keyword filter, etc.",
+            "All your reference data: pillars, audiences, SMEs, topics, series.",
+            (
+                "Enough to bring a fresh install back to your operational "
+                "state in one upload."
+            ),
+        ],
+    )
+
+    row = _readme_section(ws, row, "What this workbook does NOT back up")
+    row = _readme_bullets(
+        ws,
+        row,
+        [
+            (
+                "Conferences themselves. These are re-discovered from the "
+                "live web feed each install — a feature, not a bug. You "
+                "get this week's events, not last month's."
+            ),
+            (
+                "Match scores, brief PDFs, decisions, agent chat history. "
+                "These are derived from the data + settings above and get "
+                "recomputed automatically."
+            ),
+            (
+                "Past conferences (the log of what your team has attended). "
+                "Not in the workbook yet; manually re-enter via the "
+                "/past-conferences page after restore."
+            ),
+            "Messaging documents. Also manual re-entry via /messaging after restore.",
+        ],
+    )
+    row += 1
+
+    # --- Restore / move install ----------------------------------------
+    row = _readme_section(ws, row, "Restore from this workbook (fresh install or new machine)")
+    row = _readme_numbered(
+        ws,
+        row,
+        [
+            "Save your most recent workbook export somewhere safe.",
+            (
+                "If moving machines: copy this workbook + your .env file to the "
+                "new machine."
+            ),
+            (
+                "On the new machine, run the quick-install steps above (clone, "
+                ".env, make up, make migrate)."
+            ),
+            (
+                "Open http://localhost:8000/settings, upload the workbook, "
+                "Preview, Apply."
+            ),
+            (
+                "Click Discover more on /conferences to re-pull this week's "
+                "events from the live feed."
+            ),
+            (
+                "On first open of any conference detail or brief page, the "
+                "matcher auto-runs (5-30 sec, shows a skeleton). You're back "
+                "in business."
+            ),
+        ],
+    )
+    row += 1
+
+    # --- Common mistakes -----------------------------------------------
+    row = _readme_section(ws, row, "Common mistakes (and how to avoid them)")
+    row = _readme_bullets(
+        ws,
+        row,
+        [
+            (
+                "Renaming a column header. The importer looks columns up by "
+                "name; rename = importer can't find it = row error. Don't "
+                "edit row 1 of any tab."
+            ),
+            (
+                "Renaming a tab. Same issue. The 7 tab names are wired into "
+                "the importer."
+            ),
+            (
+                "Adding a formula. Cells starting with =, +, -, @ are "
+                "rejected on import (formula injection defense)."
+            ),
+            (
+                "Wrong country code. ISO-3166-1 alpha-2 — TWO letters, "
+                "uppercase. 'United States' = wrong, 'US' = right."
+            ),
+            (
+                "Forgetting the semicolon separator. Lists are 'A; B; C' "
+                "with semicolons + spaces, not 'A, B, C' commas."
+            ),
+            (
+                "Trying to delete a setting by clearing the value. Blank "
+                "value = 'leave alone'. To reset a setting to its env "
+                "default, use the /settings/tunables UI's reset button."
+            ),
+            (
+                "Importing the workbook before .env has a valid LLM key. "
+                "Scout's startup validator rejects the placeholder. Either "
+                "set LLM_DRY_RUN=true in .env, or put your real key in .env "
+                "before running 'make up'."
+            ),
+        ],
+    )
+    row += 1
+
+    # --- Safety / final notes -------------------------------------------
+    row = _readme_section(ws, row, "Safety notes")
+    row = _readme_bullets(
+        ws,
+        row,
+        [
+            (
+                "Scout always previews changes before writing. You can cancel."
+            ),
+            (
+                "Rows in the database that are MISSING from your upload are "
+                "KEPT, not deleted. The only way to delete is to explicitly "
+                "set _action=delete on the row (soft-delete; row stays in DB "
+                "with is_active=false)."
+            ),
+            (
+                "This file contains your LLM API keys IN PLAIN TEXT. Save "
+                "with chmod 600, store on encrypted disk, never commit to "
+                "git, never share in Slack. Treat it like a password file."
+            ),
+            (
+                "Need help? See docs/ops/runbook.md in the repo, or the "
+                "Documentation section of the project README."
+            ),
         ],
     )
 
 
-def _readme_section(ws: Worksheet, row: int, title: str) -> None:
-    ws.cell(row=row, column=1, value=title).font = Font(bold=True, size=14, color="111827")
+def _readme_section(ws: Worksheet, row: int, title: str) -> int:
+    """Write a section heading and return the next free row."""
+    ws.cell(row=row, column=1, value=title).font = Font(
+        bold=True, size=14, color="111827"
+    )
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+    return row + 1
 
 
-def _readme_para(ws: Worksheet, row: int, body: str) -> None:
+def _readme_para(ws: Worksheet, row: int, body: str) -> int:
+    """Write a paragraph (handles embedded \\n line breaks) and return
+    the next free row. Height auto-scales to fit the wrapped text."""
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
     cell = ws.cell(row=row, column=1, value=body)
     cell.alignment = Alignment(wrap_text=True, vertical="top")
-    # Bump the row height to fit a few lines of wrapped text.
-    line_count = body.count("\n") + 1
-    ws.row_dimensions[row].height = max(20, line_count * 18)
+    # Approximation: assume ~110 chars per visual line at our column width,
+    # plus account for explicit \n splits.
+    visual_lines = 0
+    for chunk in body.split("\n"):
+        visual_lines += max(1, len(chunk) // 110 + (1 if len(chunk) % 110 else 0))
+    ws.row_dimensions[row].height = max(20, visual_lines * 18)
+    return row + 1
 
 
-def _readme_bullets(ws: Worksheet, start_row: int, items: list[str]) -> None:
+def _readme_bullets(ws: Worksheet, start_row: int, items: list[str]) -> int:
+    """Write a bullet list and return the next free row."""
     for i, item in enumerate(items):
         row = start_row + i
         ws.cell(row=row, column=1, value="•").alignment = Alignment(
@@ -242,7 +612,24 @@ def _readme_bullets(ws: Worksheet, start_row: int, items: list[str]) -> None:
         ws.cell(row=row, column=2, value=item).alignment = Alignment(
             wrap_text=True, vertical="top"
         )
-        ws.row_dimensions[row].height = max(18, (len(item) // 80 + 1) * 18)
+        ws.row_dimensions[row].height = max(20, (len(item) // 95 + 1) * 18)
+    return start_row + len(items)
+
+
+def _readme_numbered(ws: Worksheet, start_row: int, items: list[str]) -> int:
+    """Write a numbered list — same as bullets but with '1.' / '2.' /…
+    in the first column. Returns the next free row."""
+    for i, item in enumerate(items):
+        row = start_row + i
+        ws.cell(row=row, column=1, value=f"{i + 1}.").alignment = Alignment(
+            horizontal="right", vertical="top"
+        )
+        ws.cell(row=row, column=1).font = Font(bold=True, color="111827")
+        ws.cell(row=row, column=2, value=item).alignment = Alignment(
+            wrap_text=True, vertical="top"
+        )
+        ws.row_dimensions[row].height = max(20, (len(item) // 95 + 1) * 18)
+    return start_row + len(items)
 
 
 # ---------------------------------------------------------------------------
