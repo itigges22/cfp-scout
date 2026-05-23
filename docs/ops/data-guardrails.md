@@ -3,10 +3,8 @@
 This page is what to consult when the api returns a 422 from a manual
 form, a CSV import, or an XLSX workbook upload.
 
-The schemas live in `apps/api/app/schemas/`. The design rationale is in
-[plan 05](../../PLANS/phase-1/05-data-input-guardrails.md). This doc
-exists for operators ("why was my row rejected?") rather than for
-implementers.
+The schemas live in `apps/api/app/schemas/`. This doc exists for
+operators ("why was my row rejected?") rather than for implementers.
 
 ## The core rules
 
@@ -132,9 +130,9 @@ expected to be clean since the team collaborates on them in Google Sheets.
   layer's job too (it batches the validated rows, then checks uniqueness
   before the transaction commits).
 
-## Related plans
+## See also
 
-- [plan 05](../../PLANS/phase-1/05-data-input-guardrails.md) — design
-- [plan 09](../../PLANS/phase-1/09-manual-data-entry.md) — UI wizards consuming these schemas
-- [plan 15](../../PLANS/phase-1/15-data-validation-and-routing.md) — LLM extraction respects the same shape
-- [plan 31](../../PLANS/phase-1/31-configuration-workbook-import-export.md) — XLSX import runs every row through these schemas
+- `apps/api/app/schemas/` — the schemas themselves
+- `apps/api/app/api/v1/` — UI wizards + manual entry endpoints consuming these schemas
+- `apps/api/app/services/extraction/` — LLM extraction validates against the same shapes
+- `apps/api/app/services/workbook/` — XLSX import runs every row through these schemas

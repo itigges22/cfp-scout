@@ -11,8 +11,8 @@ superseded_by: ""
 
 ## Context
 
-The Phase 1 plan document (`PLANS/team Scout.pdf`) outlines three possible
-routes:
+The original Phase 1 plan (local-only design document; not in the repo)
+outlined three possible routes:
 
 - **Route 1** — Hybrid API cloud via LLM API (FastAPI + Postgres + frontend +
   hosted models)
@@ -87,7 +87,6 @@ Use **Route 1** but locally installed:
 
 ## References
 
-- `PLANS/team Scout.pdf` — original phase plan
-- `PLANS/phase-1/00-INDEX.md` — full Phase 1 plan index
-- `PLANS/phase-1/02-containerization-foundation.md` — 2-container build details
-- `PLANS/phase-1/08-frontend-vite-skeleton.md` — Vite + serve-from-FastAPI details
+- [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) — current system overview
+- Original Phase 1 plan + per-plan design docs lived under `PLANS/` but
+  were scrubbed from the repo on 2026-05-23 (local-only artifacts).

@@ -110,5 +110,5 @@ has a Match row is a no-op for the matcher.
 - [ADR-0001](0001-route-1-local-install-2-containers.md) — single-process,
   single-user constraints that make inline blocking acceptable.
 - `apps/api/app/services/matcher/` — the matcher pipeline itself
-- `PLANS/phase-1/35-on-demand-discovery.md` — the bulk-ingest path that
-  motivated this change
+- [`docs/web-discovery.md`](../web-discovery.md) — the bulk-ingest path
+  that motivated this change

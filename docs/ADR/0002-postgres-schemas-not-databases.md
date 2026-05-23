@@ -76,6 +76,5 @@ DELETE are not granted, enforcing the append-only invariant at the DB level.
 ## References
 
 - `infra/postgres/init/02-roles-and-schemas.sql` — implementation
-- `docs/ops/database.md` — operator-facing description
-- [plan 03](../../PLANS/phase-1/03-data-layer-postgres-pgvector.md) — design
-- [plan 04](../../PLANS/phase-1/04-database-schema.md) — table-level details
+- [`docs/ops/database.md`](../ops/database.md) — operator-facing description
+- [`docs/data-model.md`](../data-model.md) — full ERD + per-table notes

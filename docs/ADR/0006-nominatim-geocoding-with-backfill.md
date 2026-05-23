@@ -119,5 +119,5 @@ that identifies the app and a contact email.
 - [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/)
 - [ADR-0001](0001-route-1-local-install-2-containers.md) — image-size and
   dep-surface constraints that ruled out PostGIS.
-- `PLANS/phase-1/35-on-demand-discovery.md` — the bulk feed ingest that
-  motivated city-level geocoding.
+- [`docs/web-discovery.md`](../web-discovery.md) — the bulk feed ingest
+  that motivated city-level geocoding.

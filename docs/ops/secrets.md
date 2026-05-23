@@ -6,8 +6,7 @@ the `app`-role password, future Eventbrite/Meetup API keys if those sources
 get enabled). This runbook covers what they are, where they live, how to
 rotate them, and what to do if one leaks.
 
-Design intent is in [plan 07](../../PLANS/phase-1/07-config-and-secrets.md);
-the code that enforces it is in `apps/api/app/settings.py` +
+The code that enforces it is in `apps/api/app/settings.py` +
 `apps/api/app/logging.py` + `apps/api/app/lifespan.py`.
 
 ## What counts as a secret
@@ -197,5 +196,4 @@ In order of "first to fail" → "last line":
 - [`backups.md`](backups.md) — `db-dump` artifacts also contain table data; treat backups as sensitive
 - [`data-guardrails.md`](data-guardrails.md) — input-side guardrails (different layer of "what we trust")
 - [ADR-0001](../ADR/0001-route-1-local-install-2-containers.md) — local-install threat model
-- [plan 07](../../PLANS/phase-1/07-config-and-secrets.md) — design
-- [plan 29](../../PLANS/phase-1/29-security-review-and-hardening.md) — full security review (Phase 1 close-out)
+- [`docs/security/SECURITY_REVIEW.md`](../security/SECURITY_REVIEW.md) — full security review (Phase 1 close-out)

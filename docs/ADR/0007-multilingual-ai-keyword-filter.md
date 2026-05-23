@@ -130,6 +130,6 @@ line.
 - [ADR-0005](0005-auto-run-matcher-on-first-view.md) — the matcher is
   fast and self-healing, which is what lets us be permissive at the
   pre-filter.
-- `PLANS/phase-1/35-on-demand-discovery.md` — the discovery pipeline this
-  filter gates.
+- [`docs/web-discovery.md`](../web-discovery.md) — the discovery pipeline
+  this filter gates.
 - `apps/api/app/services/web_discovery/feeds.py` — implementation

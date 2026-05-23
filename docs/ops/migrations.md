@@ -97,4 +97,3 @@ audit_log + content_versions in `audit`, the APScheduler jobstore in `jobs`.
 - [`database.md`](database.md) — schemas, roles, init SQL ordering
 - [`backups.md`](backups.md) — `make db-dump` / `make db-restore`
 - [ADR-0004](../ADR/0004-async-sqlalchemy-and-alembic.md) — why async SQLAlchemy + Alembic
-- [plan 06](../../PLANS/phase-1/06-backend-fastapi-skeleton.md) — design doc

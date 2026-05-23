@@ -128,7 +128,7 @@ gunzip -c old-dump.sql.gz | grep -v 'ALTER .* OWNER TO' | gzip > fixed-dump.sql.
 Big embedding tables take a while because the HNSW index has to rebuild on
 restore. There's no faster path without dump-format trickery; ride it out.
 
-## Related plans
+## See also
 
-- [plan 03](../../PLANS/phase-1/03-data-layer-postgres-pgvector.md) — defines the make targets
-- [plan 30](../../PLANS/phase-1/30-documentation-and-runbook.md) — long-term docs polish
+- `Makefile` — `db-dump`, `db-restore` targets
+- [`database.md`](database.md) — Postgres schemas + roles this backs up

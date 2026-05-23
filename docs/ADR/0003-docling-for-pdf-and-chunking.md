@@ -80,7 +80,8 @@ Add a `chunk_metadata jsonb` column to `document_chunks` to capture Docling's st
 
 - [Docling on GitHub](https://github.com/DS4SD/docling)
 - [Docling docs](https://ds4sd.github.io/docling/)
-- `PLANS/phase-1/11-embeddings-and-chunking.md` — chunker integration
-- `PLANS/phase-1/12-pdf-rag-ingestion.md` — parser integration
-- `PLANS/phase-1/04-database-schema.md` — `chunk_metadata` column
-- `docs/data-model.md` — same column, operator-facing
+- `apps/api/app/services/extraction/pipeline.py` — parser integration with
+  subprocess-isolated tiered fallback (see ADR-0008-equivalent prose in
+  `docs/ARCHITECTURE.md` under "OOM hardening")
+- [`docs/data-model.md`](../data-model.md) — `document_chunks.chunk_metadata`
+  column, operator-facing

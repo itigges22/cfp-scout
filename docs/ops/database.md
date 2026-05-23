@@ -130,10 +130,10 @@ EXPLAIN ANALYZE SELECT ... FROM vectors.document_chunks ORDER BY embedding <=> '
 ### Container won't start: "directory not empty"
 The data volume has data but the env vars don't match. Postgres init only runs against an empty data directory. Either restore matching env, or `make nuke` if you don't need the data.
 
-## Related plans
+## See also
 
-- [plan 03](../../PLANS/phase-1/03-data-layer-postgres-pgvector.md) — this layer's design doc
-- [plan 04](../../PLANS/phase-1/04-database-schema.md) — actual table schemas
-- [plan 06](../../PLANS/phase-1/06-backend-fastapi-skeleton.md) — Alembic, async session, role switch-over
-- [plan 11](../../PLANS/phase-1/11-embeddings-and-chunking.md) — pgvector HNSW index
-- [plan 13](../../PLANS/phase-1/13-background-jobs-scheduling.md) — APScheduler jobstore in `jobs` schema
+- [`../data-model.md`](../data-model.md) — full ERD + per-table notes
+- [`migrations.md`](migrations.md) — Alembic workflow
+- [`backups.md`](backups.md) — dump / restore
+- [ADR-0002](../ADR/0002-postgres-schemas-not-databases.md) — schema separation rationale
+- [ADR-0004](../ADR/0004-async-sqlalchemy-and-alembic.md) — async SQLAlchemy + Alembic

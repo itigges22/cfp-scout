@@ -3,9 +3,8 @@
 The authoritative description of Scout's database schema. Every table,
 column, index, and the *why* behind each design choice.
 
-- **Implementation**: SQLAlchemy ORM + Alembic migrations land in [plan 06](../PLANS/phase-1/06-backend-fastapi-skeleton.md)
+- **Implementation**: SQLAlchemy ORM + Alembic migrations under `apps/api/app/db/models/` and `apps/api/alembic/versions/`
 - **Schema-level layout (schemas, roles)**: [docs/ops/database.md](ops/database.md) + [ADR-0002](ADR/0002-postgres-schemas-not-databases.md)
-- **Per-plan source**: [plan 04](../PLANS/phase-1/04-database-schema.md) drives the design
 
 ## Conventions
 
@@ -20,7 +19,8 @@ Every table follows:
 | Casing | `snake_case` |
 | Types | Prefer typed columns over JSON. JSON only where the shape is genuinely open (LLM tool outputs, scrape stats) |
 
-User-input data is governed by the strict guardrails in [plan 05](../PLANS/phase-1/05-data-input-guardrails.md);
+User-input data is governed by the strict Pydantic v2 guardrails under
+`apps/api/app/schemas/` (see [`docs/ops/data-guardrails.md`](ops/data-guardrails.md));
 the schema's typed columns are the foundation those guardrails validate against.
 
 ## ERD overview

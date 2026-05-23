@@ -47,7 +47,7 @@ The PDF only specifies "Postgres" so the rest is our call.
 ## Alternatives considered
 
 - **Sync SQLAlchemy + `psycopg`** — Would block the event loop on every query. Workarounds (`run_in_threadpool`) defeat the point of async in the first place.
-- **SQLModel** (Pydantic + SQLAlchemy) — Tempting because schemas and models could share definitions. Rejected because SQLModel is still pre-1.0, has rough edges around async + complex relationships, and our [plan 05](../../PLANS/phase-1/05-data-input-guardrails.md) input schemas have intentionally different shapes from the DB tables (e.g. SME wizard validates a UUID list, the DB stores a junction).
+- **SQLModel** (Pydantic + SQLAlchemy) — Tempting because schemas and models could share definitions. Rejected because SQLModel is still pre-1.0, has rough edges around async + complex relationships, and our input-validation schemas (see `apps/api/app/schemas/`) have intentionally different shapes from the DB tables (e.g. SME wizard validates a UUID list, the DB stores a junction).
 - **Tortoise ORM** — Async-first ORM. Considered but loses SQLAlchemy's ecosystem (Alembic, type stubs, broader query API). Not worth the trade.
 - **Raw asyncpg + hand-written SQL** — Considered for the embedding path specifically (vector ops are clearer in raw SQL). We can still drop to raw SQL inside an SQLAlchemy session for those queries; no need to commit the whole project to raw SQL.
 - **`yoyo-migrations` / `migra` instead of Alembic** — Alembic is the SQLAlchemy ecosystem default. Autogenerate isn't perfect but it's good enough for our scale; reviewing the generated migration before commit is mandatory anyway.
@@ -66,5 +66,5 @@ The PDF only specifies "Postgres" so the rest is our call.
 - [SQLAlchemy 2.0 async docs](https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html)
 - [Alembic async cookbook](https://alembic.sqlalchemy.org/en/latest/cookbook.html#using-asyncio-with-alembic)
 - [ADR-0002](0002-postgres-schemas-not-databases.md) — schema separation + role rationale
-- `docs/ops/migrations.md` — operator runbook
-- [plan 06](../../PLANS/phase-1/06-backend-fastapi-skeleton.md) — design doc
+- [`docs/ops/migrations.md`](../ops/migrations.md) — operator runbook
+- [`docs/data-model.md`](../data-model.md) — full schema + per-table notes
