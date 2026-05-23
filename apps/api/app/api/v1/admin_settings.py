@@ -22,7 +22,7 @@ from typing import Any, Literal
 
 import structlog
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from app.db.session import DbSession
 from app.services import settings_overrides
@@ -563,6 +563,146 @@ async def reset_setting(db: DbSession, name: str) -> dict:
     await db.commit()
     get_settings.cache_clear()
     return {"name": name, "deleted": deleted}
+
+
+# ---------------------------------------------------------------------------
+# Full backup / restore — JSON file with every setting (including secrets)
+# so the operator can move installs or recover from a wipe without
+# re-pasting API keys and re-tuning 33 knobs.
+# ---------------------------------------------------------------------------
+class SettingsBackup(BaseModel):
+    """The export shape. Includes secret values in plain text.
+
+    Treat the file as sensitive — it contains the LLM API key. Save with
+    chmod 600, don't commit to git, don't share in chat.
+    """
+
+    scout_version: str = "0.1.0"
+    exported_at: str
+    warning: str = (
+        "Contains secret API keys in plain text. Store with chmod 600, "
+        "never commit to git, never share."
+    )
+    settings: dict[str, Any]
+
+
+@router.get("/export", response_model=SettingsBackup)
+async def export_settings(db: DbSession) -> SettingsBackup:
+    """Snapshot every known setting (including secrets) for backup / move.
+
+    The returned JSON is a full restore source: every key in `Settings` that
+    has a registered SettingSpec is included with its current effective value
+    (env default merged with active override). Secrets are emitted in plain
+    text — the export is intended for the operator's local disk, not for
+    sharing.
+    """
+    from datetime import UTC, datetime
+
+    s = get_settings()
+    payload: dict[str, Any] = {}
+    for spec in SPECS:
+        raw = getattr(s, spec.name, None)
+        # Unwrap SecretStr so the JSON file is round-trip importable.
+        if isinstance(raw, SecretStr):
+            payload[spec.name] = raw.get_secret_value()
+        else:
+            payload[spec.name] = raw
+    log.warning(
+        "admin.settings.exported",
+        n_keys=len(payload),
+        includes_secrets=True,
+    )
+    return SettingsBackup(
+        exported_at=datetime.now(tz=UTC).isoformat(timespec="seconds"),
+        settings=payload,
+    )
+
+
+class SettingsImportRequest(BaseModel):
+    settings: dict[str, Any]
+    actor_label: str = Field(default="import", max_length=120)
+    skip_unknown: bool = Field(
+        default=True,
+        description=(
+            "If true, silently skip keys not in the current settings spec "
+            "(e.g. a setting renamed since the export). If false, 400 on "
+            "unknown keys."
+        ),
+    )
+
+
+class SettingsImportResponse(BaseModel):
+    imported: list[str]
+    skipped: list[str]
+    restart_required_for: list[str]
+
+
+@router.post("/import", response_model=SettingsImportResponse)
+async def import_settings(
+    db: DbSession,
+    payload: SettingsImportRequest,
+) -> SettingsImportResponse:
+    """Apply a settings backup. Idempotent — re-importing the same file is
+    a no-op. Existing overrides for keys not in the import are NOT touched
+    (use DELETE /{name} or PATCH to undo individual settings)."""
+    incoming = dict(payload.settings or {})
+    if not incoming:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="settings payload is empty",
+        )
+
+    unknown = [k for k in incoming if k not in _BY_NAME]
+    if unknown and not payload.skip_unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"unknown settings: {sorted(unknown)}",
+        )
+
+    coerced: dict[str, Any] = {}
+    skipped: list[str] = list(unknown)
+    for name, value in incoming.items():
+        if name not in _BY_NAME:
+            continue
+        if value is None:
+            # Treat null as "leave alone" — different from PATCH's strictness.
+            skipped.append(name)
+            continue
+        coerced[name] = _coerce(_BY_NAME[name], value)
+
+    # Validate the full Settings shape with everything applied. Catches
+    # cross-field invariants like "matcher weights must sum to 1.0".
+    candidate = {**settings_overrides.current(), **coerced}
+    try:
+        Settings(**candidate)  # type: ignore[arg-type]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"settings validator rejected the import: {exc}",
+        ) from exc
+
+    for name, value in coerced.items():
+        await settings_overrides.upsert(
+            db, name=name, value=value, actor_label=payload.actor_label
+        )
+    await db.commit()
+    get_settings.cache_clear()
+
+    restart_keys = [
+        name for name in coerced if _BY_NAME[name].restart_required
+    ]
+    log.info(
+        "admin.settings.imported",
+        imported=list(coerced),
+        skipped=skipped,
+        actor=payload.actor_label,
+        restart_required=restart_keys,
+    )
+    return SettingsImportResponse(
+        imported=sorted(coerced),
+        skipped=sorted(set(skipped)),
+        restart_required_for=restart_keys,
+    )
 
 
 # ---------------------------------------------------------------------------
