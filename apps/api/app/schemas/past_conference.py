@@ -40,6 +40,10 @@ class PastConferenceBase(StrictBase):
     series_id: UUID | None = None  # FK to conference_series (plan 23)
 
     attended_sme_ids: Annotated[list[UUID], Field(min_length=1)]
+    # Raw attendee names from the source CSV/spreadsheet — captures who
+    # actually attended even when those people aren't (yet) active SMEs.
+    # Optional on create/update; populated automatically by bulk imports.
+    attended_by_names_raw: list[str] = []
 
     role: PastConferenceRole
     session_type: PastConferenceSessionType | None = None

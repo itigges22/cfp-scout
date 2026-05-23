@@ -139,6 +139,9 @@ export interface PastConferenceBase {
   year: number;
   series_id: string | null;
   attended_sme_ids: string[];
+  /** Raw attendee names from the source CSV — captures who actually
+   * attended even if those people aren't SMEs in Scout yet. */
+  attended_by_names_raw: string[];
   role: PastConferenceRole;
   session_type: PastConferenceSessionType | null;
   notes: string | null;

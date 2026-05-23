@@ -183,12 +183,22 @@ async def _map_past_conference(
         )
     ).scalar_one_or_none()
 
-    summary = f"{ev.name} ({year}) · {ev.city}, {ev.country} · {len(resolved_attendees)} attendees"
+    # All attendee names from the CSV, whether they resolved or not —
+    # stored verbatim so the row always answers "who was there?" even
+    # when those people aren't SMEs yet.
+    all_attendee_names = split_attendees(ev.attendees_raw)
+    summary = (
+        f"{ev.name} ({year}) · {ev.city}, {ev.country} · "
+        f"{len(all_attendee_names)} attendee"
+        f"{'' if len(all_attendee_names) == 1 else 's'} from CSV "
+        f"({len(resolved_attendees)} linked to SMEs)"
+    )
     # Surface the 0-match case so the operator knows to add SMEs + edit later.
     if not resolved_attendees and unresolved_attendees:
         warnings.append(
-            "0 SMEs matched — row kept with attendee names preserved in notes "
-            "so nothing is lost. Add the SMEs on /smes, then edit this row."
+            "0 SMEs matched — raw attendee names captured in "
+            "attended_by_names_raw. Add the SMEs on /smes, then edit "
+            "this row to link them in."
         )
 
     if existing is None:
@@ -197,9 +207,10 @@ async def _map_past_conference(
                 name=ev.name[:150],
                 year=year,
                 attended_sme_ids=resolved_attendees,
+                attended_by_names_raw=all_attendee_names,
                 role=PAST_ROLE_DEFAULT,
                 session_type=PAST_SESSION_TYPE,
-                notes=_build_notes(ev, unresolved_attendees=unresolved_attendees),
+                notes=_build_notes(ev),
                 imported_from=actor_label,
             )
             db.add(row)
@@ -212,10 +223,13 @@ async def _map_past_conference(
             warnings=warnings,
         )
 
-    # Existing past_conference — update attendee list + notes if changed.
+    # Existing past_conference — refresh attendee links + raw names + notes.
     if apply:
         existing.attended_sme_ids = resolved_attendees or existing.attended_sme_ids
-        new_notes = _build_notes(ev, unresolved_attendees=unresolved_attendees)
+        # Always overwrite the raw names from the latest CSV — the source
+        # spreadsheet is the source of truth for "who was there."
+        existing.attended_by_names_raw = all_attendee_names
+        new_notes = _build_notes(ev)
         if new_notes and new_notes != existing.notes:
             existing.notes = new_notes
         existing.imported_from = actor_label
@@ -299,14 +313,12 @@ async def _map_conference(
     )
 
 
-def _build_notes(ev: LintedEvent, *, unresolved_attendees: list[str] | None = None) -> str:
+def _build_notes(ev: LintedEvent) -> str:
     """Compose the notes string for a past_conferences row.
 
-    Includes any unresolved attendee names from the source spreadsheet so
-    nothing is lost — even when the matcher's SME-name lookup fails (the
-    typical case being a person who attended the event but isn't an
-    active SME in Scout yet). Operator can later add the SME on /smes
-    and edit the row to link them up.
+    Unmatched attendee names are NOT stuffed here anymore — they go into
+    the structured `attended_by_names_raw` column. Notes is just the
+    type / description / activities prose from the source row.
     """
     parts: list[str] = []
     if ev.type:
@@ -315,11 +327,6 @@ def _build_notes(ev: LintedEvent, *, unresolved_attendees: list[str] | None = No
         parts.append(ev.description)
     if ev.activities:
         parts.append(f"Activities: {ev.activities}")
-    if unresolved_attendees:
-        parts.append(
-            "Unmatched attendees from source spreadsheet "
-            f"(add as SMEs then link here): {', '.join(unresolved_attendees)}"
-        )
     return "\n\n".join(parts)
 
 

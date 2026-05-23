@@ -164,8 +164,29 @@ function PastConferencesPage() {
                     <TableCell className="text-fg-muted">
                       {p.session_type ?? "—"}
                     </TableCell>
-                    <TableCell className="text-fg-muted text-xs tabular-nums">
-                      {p.attended_sme_ids.length}
+                    <TableCell className="text-fg-muted text-xs">
+                      {p.attended_by_names_raw && p.attended_by_names_raw.length > 0 ? (
+                        <span title={p.attended_by_names_raw.join(", ")}>
+                          {p.attended_by_names_raw.slice(0, 3).join(", ")}
+                          {p.attended_by_names_raw.length > 3
+                            ? ` +${p.attended_by_names_raw.length - 3}`
+                            : ""}
+                          {p.attended_sme_ids.length === 0 ? (
+                            <span
+                              className="ml-1 text-warning"
+                              title="None of these names are linked to an active SME yet. Add the people on /smes and edit this row to link them."
+                            >
+                              ⚠
+                            </span>
+                          ) : (
+                            <span className="ml-1 text-fg-subtle tabular-nums">
+                              ({p.attended_sme_ids.length} linked)
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-fg-subtle">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Button

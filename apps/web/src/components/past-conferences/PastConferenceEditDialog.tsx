@@ -51,6 +51,7 @@ const EMPTY: PastConferenceCreate = {
   year: CURRENT_YEAR,
   series_id: null,
   attended_sme_ids: [],
+  attended_by_names_raw: [],
   role: "attendee",
   session_type: null,
   notes: "",
@@ -84,6 +85,7 @@ export function PastConferenceEditDialog({ open, initial, onOpenChange }: Props)
         year: initial.year,
         series_id: initial.series_id,
         attended_sme_ids: [...initial.attended_sme_ids],
+        attended_by_names_raw: [...(initial.attended_by_names_raw ?? [])],
         role: initial.role,
         session_type: initial.session_type,
         notes: initial.notes ?? "",
@@ -197,8 +199,30 @@ export function PastConferenceEditDialog({ open, initial, onOpenChange }: Props)
             </Field>
           </div>
 
+          {form.attended_by_names_raw.length > 0 ? (
+            <Field label="Attendees from source CSV">
+              <p className="text-xs text-fg-subtle">
+                Names as written in the spreadsheet. To link a name to an
+                SME, add the person on /smes first, then select them in the
+                picker below — their SME chip becomes the canonical link.
+              </p>
+              <div className="mt-1 flex flex-wrap gap-1 rounded-md border border-border-subtle bg-surface-2 p-2">
+                {form.attended_by_names_raw.map((n, i) => (
+                  <Badge
+                    key={`${n}-${i}`}
+                    variant="muted"
+                    className="text-xs"
+                    title="From source CSV"
+                  >
+                    {n}
+                  </Badge>
+                ))}
+              </div>
+            </Field>
+          ) : null}
+
           <Field
-            label={`Attendees (${form.attended_sme_ids.length} selected, at least 1 required)`}
+            label={`Linked SMEs (${form.attended_sme_ids.length} selected, at least 1 required to save)`}
             error={fieldErrors.attended_sme_ids}
           >
             <p className="text-xs text-fg-subtle">

@@ -207,6 +207,16 @@ class PastConference(TimestampedMixin, Base):
         ARRAY(UUID(as_uuid=True)), nullable=False
     )
 
+    # Raw attendee NAMES from the source CSV/spreadsheet. Includes BOTH
+    # names that resolved to an SME (mirrored into attended_sme_ids) AND
+    # names that didn't — so nothing the CSV told us is lost when an
+    # attendee isn't an active SME yet. Calendar-sync mapper writes both
+    # columns; manual entry through the UI only writes attended_sme_ids
+    # (the dialog won't let you save without ≥1 real SME).
+    attended_by_names_raw: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
+
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     session_type: Mapped[str | None] = mapped_column(String(20))
     notes: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
