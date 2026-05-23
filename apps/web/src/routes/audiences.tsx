@@ -29,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { ApiError, audiencesApi } from "@/lib/api";
 import type { AudienceProfileCreate, RoleSeniority } from "@/lib/api-types";
+import { TeamGuidance } from "@/components/team/TeamGuidance";
 import { PageHeader } from "@/routes/dashboard";
 
 export const Route = createFileRoute("/audiences")({
@@ -66,7 +67,12 @@ function AudiencesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Audiences"
-        description="<vendor> personas. Defined by the team; used by the matcher's Stage A + SME ranker."
+        description="<vendor> personas. Used by the matcher to predict which conference attendees the team is trying to reach."
+      />
+      <TeamGuidance
+        storedHere="The 11 <vendor> audience personas (C-Suite, App Dev ITDM, Data Scientist, …) with their pain points, key messages, and exclusion criteria. The SME ranker uses these to compute SME ↔ audience overlap; the matcher uses them when scoring conference fit."
+        addInline="+ New audience"
+        workbookSheet="Audiences"
       />
 
       <Card>

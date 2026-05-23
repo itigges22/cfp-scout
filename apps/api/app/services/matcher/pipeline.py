@@ -26,10 +26,11 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import Conference
+from app.db.models.junctions import ConferencePillar, ConferenceSme
 from app.db.models.matching import Match
 from app.services.matcher._scoring import clamp01
 from app.services.matcher.messaging import (
@@ -183,6 +184,40 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
     # OUT of the extraction-set 'discovered'/'needs_review' states; we
     # don't clobber 'quarantined' from above).
     conference.status = status
+    await db.flush()
+
+    # ---- Persist semantic edges for the graph ----------------------
+    # The knowledge graph (plan 21) reads conference_pillars + conference_smes
+    # as edges; without these the /graph page renders nodes but no
+    # connections. Replace any prior rows for this conference so a re-run
+    # is idempotent. Floor at 0.1 to keep noise edges out of the viz.
+    EDGE_FLOOR = 0.1
+    await db.execute(
+        delete(ConferencePillar).where(ConferencePillar.conference_id == conference.id)
+    )
+    for hit in pl.per_pillar:
+        if hit.score < EDGE_FLOOR:
+            continue
+        db.add(
+            ConferencePillar(
+                conference_id=conference.id,
+                pillar_id=UUID(hit.pillar_id),
+                score=float(hit.score),
+            )
+        )
+    await db.execute(
+        delete(ConferenceSme).where(ConferenceSme.conference_id == conference.id)
+    )
+    for rec in sm.recommendations:
+        if rec.score < EDGE_FLOOR:
+            continue
+        db.add(
+            ConferenceSme(
+                conference_id=conference.id,
+                sme_id=UUID(rec.sme_id),
+                score=float(rec.score),
+            )
+        )
     await db.flush()
 
     # Enqueue plan-19 narratives for the top-K SMEs of this conference.

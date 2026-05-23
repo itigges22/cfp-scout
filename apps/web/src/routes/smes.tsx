@@ -21,6 +21,7 @@ import {
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { smesApi } from "@/lib/api";
 import { ErrorBox } from "@/routes/audiences";
+import { TeamGuidance } from "@/components/team/TeamGuidance";
 import { PageHeader } from "@/routes/dashboard";
 
 export const Route = createFileRoute("/smes")({
@@ -64,7 +65,12 @@ function SmesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="SMEs"
-        description="team and Non-team subject-matter experts. Profiles drive the matcher."
+        description="Subject-matter experts. Their topic + audience focus drives the matcher's Stage C (who to send)."
+      />
+      <TeamGuidance
+        storedHere="team + non-team SMEs with their expertise areas, primary topics, audience focus, location, and bio. Bio similarity, topic overlap, and audience overlap all feed the per-conference SME ranker."
+        addInline="+ New SME"
+        workbookSheet="SMEs"
       />
 
       <Card>

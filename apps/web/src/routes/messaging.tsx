@@ -20,6 +20,7 @@ import {
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { messagingApi } from "@/lib/api";
 import { ErrorBox } from "@/routes/audiences";
+import { TeamGuidance } from "@/components/team/TeamGuidance";
 import { PageHeader } from "@/routes/dashboard";
 
 export const Route = createFileRoute("/messaging")({
@@ -48,7 +49,11 @@ function MessagingPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Messaging & positioning"
-        description="The team's elevator pitch, themes, talking points. Drives the matcher's Stage A."
+        description="Active product messaging documents. The matcher's Stage A scores every conference against these."
+      />
+      <TeamGuidance
+        storedHere="Structured messaging documents per product / positioning (elevator pitch, key themes, talking points, differentiators, competitive position). Each one is embedded and used as the comparison corpus for conference matching."
+        addInline="+ New messaging document"
       />
 
       <Card>

@@ -20,6 +20,7 @@ import {
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { pastConferencesApi } from "@/lib/api";
 import { ErrorBox } from "@/routes/audiences";
+import { TeamGuidance } from "@/components/team/TeamGuidance";
 import { PageHeader } from "@/routes/dashboard";
 
 export const Route = createFileRoute("/past-conferences")({
@@ -51,8 +52,13 @@ function PastConferencesPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Past conferences"
-        description="History of who attended what. Powers the past-attendance signal in the SME matcher."
+        title="Past events"
+        description="History of who on the team attended what. Powers the past-attendance signal in the SME ranker."
+      />
+      <TeamGuidance
+        storedHere="One row per (event, year) the team attended in the past, with the SMEs who went, role (speaker / sponsor / attendee), session type, and free-form notes. The SME ranker uses this for the 'has-attended-this-series-before' boost."
+        addInline="+ New past event"
+        workbookSheet="PastConferences"
       />
 
       <Card>
