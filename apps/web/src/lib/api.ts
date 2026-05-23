@@ -252,6 +252,11 @@ export const pastConferencesApi = {
       body,
       query: { actor_label },
     }),
+  delete: (id: string, actor_label = "user_delete") =>
+    request<void>(`${BASE}/past-conferences/${id}`, {
+      method: "DELETE",
+      query: { actor_label },
+    }),
   importCsv: (file: File, ignore_errors = false, actor_label = "csv_import") => {
     const form = new FormData();
     form.append("file", file);

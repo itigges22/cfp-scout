@@ -1,10 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Pagination } from "@/components/Pagination";
 import { CalendarSyncImportDialog } from "@/components/past-conferences/CalendarSyncImportDialog";
 import { CsvImportDialog } from "@/components/past-conferences/CsvImportDialog";
+import { PastConferenceEditDialog } from "@/components/past-conferences/PastConferenceEditDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +39,16 @@ function PastConferencesPage() {
   const [yearFilter, setYearFilter] = useState<string>("");
   const [showImport, setShowImport] = useState(false);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<
+    import("@/lib/api-types").PastConferenceRead | null
+  >(null);
+
+  const qc = useQueryClient();
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => pastConferencesApi.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["past-conferences"] }),
+  });
 
   const yearAsNum = /^\d{4}$/.test(yearFilter) ? Number(yearFilter) : undefined;
 
@@ -91,6 +103,10 @@ function PastConferencesPage() {
               className="w-24"
               maxLength={4}
             />
+            <Button variant="outline" onClick={() => setShowCreate(true)}>
+              <Plus className="mr-1 size-4" />
+              New
+            </Button>
             <Button variant="outline" onClick={() => setShowImport(true)}>
               Import CSV
             </Button>
@@ -122,11 +138,24 @@ function PastConferencesPage() {
                   <TableHead>Role</TableHead>
                   <TableHead>Session</TableHead>
                   <TableHead>Attendees</TableHead>
+                  <TableHead className="w-8" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {query.data.items.map((p) => (
-                  <TableRow key={p.id}>
+                  <TableRow
+                    key={p.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setEditing(p)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setEditing(p);
+                      }
+                    }}
+                    className="cursor-pointer hover:bg-surface-2"
+                  >
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell className="tabular-nums">{p.year}</TableCell>
                     <TableCell>
@@ -137,6 +166,26 @@ function PastConferencesPage() {
                     </TableCell>
                     <TableCell className="text-fg-muted text-xs tabular-nums">
                       {p.attended_sme_ids.length}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (
+                            window.confirm(
+                              `Delete "${p.name}" (${p.year})? This removes the row + its audit trail. Cannot be undone.`,
+                            )
+                          ) {
+                            deleteMut.mutate(p.id);
+                          }
+                        }}
+                        disabled={deleteMut.isPending}
+                        aria-label={`delete ${p.name}`}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -158,6 +207,18 @@ function PastConferencesPage() {
       <CalendarSyncImportDialog
         open={showCalendarSync}
         onOpenChange={setShowCalendarSync}
+      />
+      <PastConferenceEditDialog
+        open={showCreate}
+        initial={null}
+        onOpenChange={setShowCreate}
+      />
+      <PastConferenceEditDialog
+        open={editing !== null}
+        initial={editing}
+        onOpenChange={(o) => {
+          if (!o) setEditing(null);
+        }}
       />
     </div>
   );

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, File, Query, UploadFile, status
+from fastapi import APIRouter, File, Query, Response, UploadFile, status
 
 from app.db.session import DbSession
 from app.schemas.common import Page
@@ -59,6 +59,20 @@ async def update_(
         db, pc_id, payload, actor_label=actor_label
     )
     return PastConferenceRead.model_validate(obj)
+
+
+@router.delete("/{pc_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_(
+    db: DbSession,
+    pc_id: UUID,
+    actor_label: str = Query("system"),
+) -> Response:
+    """Hard-delete a past-conference row."""
+    await past_conference_service.delete_past_conference(
+        db, pc_id, actor_label=actor_label
+    )
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/import")

@@ -133,6 +133,29 @@ async def update_past_conference(
     return obj
 
 
+async def delete_past_conference(
+    db: AsyncSession,
+    pc_id: UUID,
+    *,
+    actor_label: str = "system",
+) -> None:
+    """Hard-delete a past-conference row. There's no `is_active` column on
+    `past_conferences` (history is supposed to be additive), so delete
+    really means delete. Caller commits."""
+    obj = await get_past_conference(db, pc_id)
+    before = model_to_audit_dict(obj)
+    await db.delete(obj)
+    await write_audit(
+        db,
+        action="delete",
+        target_type="past_conference",
+        target_id=pc_id,
+        before=before,
+        after=None,
+        actor_label=actor_label,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CSV import
 # ---------------------------------------------------------------------------

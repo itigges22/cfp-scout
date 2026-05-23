@@ -124,12 +124,27 @@ def lint_calendar_sync_csv(
             isn't parseable as CSV at all — caller should then try the
             Docling fallback.
     """
+    # utf-8-sig strips a BOM if Excel/Numbers added one. Fall back to
+    # replace-decoded errors so a single funny byte in a description
+    # cell doesn't crash the whole import.
     try:
-        text = content.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise LinterFormatError(f"CSV is not valid UTF-8: {exc}") from exc
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = content.decode("utf-8", errors="replace")
 
-    reader = csv.DictReader(io.StringIO(text))
+    # Normalize line endings BEFORE handing to csv. Google Sheets exports
+    # as \n, but files round-tripped through Excel / Outlook / Word can
+    # arrive with \r\n or bare \r — and the csv module raises "new-line
+    # character seen in unquoted field" the moment it sees a stray \r
+    # inside what it thinks is an unquoted cell. Collapsing everything to
+    # \n means csv only ever has to recognize one line terminator, and
+    # any real embedded-newline-inside-quoted-field still works because
+    # csv handles \n inside quotes natively.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # newline="" on StringIO tells it not to do its own translation, so
+    # csv sees the bytes verbatim. Standard pattern from the csv docs.
+    reader = csv.DictReader(io.StringIO(text, newline=""))
     if reader.fieldnames is None:
         raise LinterFormatError("CSV has no header row")
 
