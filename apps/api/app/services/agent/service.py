@@ -37,6 +37,7 @@ from app.services.agent.retrieval import (
     RetrievedSnippet,
     retrieve_for_question,
 )
+from app.services.agent.structured_context import fetch_structured_blocks
 from app.services.llm import ChatMessage as LLMChatMessage
 from app.services.llm import ChatRequest, get_llm_client
 
@@ -95,7 +96,7 @@ async def ask(
     session_id: UUID,
     user_message: str,
     owner_types: list[str] | None = None,
-    k: int = 6,
+    k: int = 16,
 ) -> AgentReply:
     """Run one turn of the agent. Caller commits."""
     if not user_message.strip():
@@ -121,20 +122,38 @@ async def ask(
     # 2. Recent history (oldest first, exclude the row we just added).
     history = await _recent_history(db, session.id, exclude=user_row.id)
 
-    # 3. Retrieval.
+    # 3. Retrieval (RAG snippets) + structured context (authoritative
+    # pre-fetched DB results based on detected intent). Serial because
+    # both share the request's DbSession and asyncpg single-connection
+    # semantics forbid concurrent queries on the same session.
     snippets = await retrieve_for_question(
         db,
         question=user_message,
         owner_types=owner_types or DEFAULT_OWNER_TYPES,
         k=k,
     )
+    structured = await fetch_structured_blocks(db, question=user_message)
 
     # 4. LLM call.
     prompt_user = build_user_prompt(
         history=[(m.role, m.content) for m in history],
         question=user_message,
         snippets=[s.text for s in snippets],
+        structured_blocks=[b.to_prompt_string() for b in structured],
     )
+    # max_tokens scales with how much structured context we surfaced.
+    # A list query that returns 25 conferences needs ~1500 tokens to
+    # enumerate cleanly, plus room for a "who to send" pairing. Without
+    # this, the response gets truncated mid-list and the user thinks the
+    # agent is holding back.
+    n_structured_rows = sum(len(b.rows) for b in structured)
+    if n_structured_rows >= 20:
+        max_tokens = 3000
+    elif n_structured_rows >= 5:
+        max_tokens = 1500
+    else:
+        max_tokens = 800
+
     req = ChatRequest(
         messages=[
             LLMChatMessage(role="system", content=SYSTEM_PROMPT),
@@ -142,7 +161,7 @@ async def ask(
         ],
         purpose="agent_chat",
         temperature=0.2,
-        max_tokens=700,
+        max_tokens=max_tokens,
     )
 
     async with _inflight_sem:

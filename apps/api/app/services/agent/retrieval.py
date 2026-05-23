@@ -63,37 +63,60 @@ async def retrieve_for_question(
     *,
     question: str,
     owner_types: list[str] | None = None,
-    k: int = 6,
+    k: int = 16,
+    k_per_type: int = 4,
 ) -> list[RetrievedSnippet]:
     """Retrieve numbered snippets for ``question``.
 
+    Stratified by owner_type so no single category dominates the context
+    window. The DB has ~553 conferences, ~16 SMEs, ~21 audiences, ~6
+    messaging docs — without stratification, a flat top-k returns 6
+    conferences for almost any query and the agent never sees SMEs.
+
     Behaviour:
-      * Embeds ``question`` once via :mod:`.similar_chunks` (cost-accounted
-        as ``embed:agent_query``).
-      * Pulls 2*k chunks, dedupes by ``owner_id``, returns the top-K.
-      * Hydrates a friendly label per owner (one extra round-trip per
-        owner_type, batched).
+      * Embeds ``question`` ONCE via :mod:`.similar_chunks` per owner type
+        (cost-accounted as ``embed:agent_query``).
+      * Pulls ``k_per_type`` chunks per type independently.
+      * Concats, dedupes by (owner_type, owner_id), sorts by similarity,
+        truncates to ``k``.
+      * Hydrates a friendly label per owner (one batched query per
+        owner_type).
     """
     if not question.strip():
         return []
 
     types = owner_types or DEFAULT_OWNER_TYPES
-    hits = await similar_chunks(
-        db,
-        query=question,
-        owner_types=types,
-        k=max(k * 2, k),
-        purpose="embed:agent_query",
-        bump_last_used=True,
-    )
-    if not hits:
+
+    # Per-type retrieval — serial because asyncpg can't multiplex queries
+    # on a single connection (which is what the request's DbSession is).
+    # The embedding call is cached by the LLM client after the first hit,
+    # so the per-type cost is dominated by the cheap cosine SELECTs.
+    per_type_hits: list[list[DocumentChunk]] = []
+    for t in types:
+        hits = await similar_chunks(
+            db,
+            query=question,
+            owner_types=[t],
+            k=k_per_type,
+            purpose="embed:agent_query",
+            bump_last_used=True,
+        )
+        per_type_hits.append(hits)
+
+    # Flatten + sort by similarity (closest first). _similarity_of pulls
+    # the __cosine_similarity__ attr set by similar_chunks.
+    combined: list[DocumentChunk] = []
+    for hits in per_type_hits:
+        combined.extend(hits)
+    if not combined:
         return []
+    combined.sort(key=_similarity_of, reverse=True)
 
     # Dedup: at most ONE chunk per (owner_type, owner_id) so a long PDF
-    # doesn't dominate the answer.
+    # doesn't dominate. Cap at k overall.
     seen: set[tuple[str, str]] = set()
     keep: list[DocumentChunk] = []
-    for c in hits:
+    for c in combined:
         key = (c.owner_type, str(c.owner_id))
         if key in seen:
             continue

@@ -74,7 +74,7 @@ class AskBody(BaseModel):
     owner_types: (
         list[Literal["conference", "messaging", "sme_bio", "audience", "pillar", "raw_page"]] | None
     ) = Field(default=None)
-    k: int = Field(default=6, ge=1, le=20)
+    k: int = Field(default=16, ge=1, le=40)
 
 
 # ---------------------------------------------------------------------------
