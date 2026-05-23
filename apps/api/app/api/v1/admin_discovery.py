@@ -25,6 +25,10 @@ from pydantic import BaseModel, Field
 from app.db.session import DbSession
 from app.scheduler import enqueue_now
 from app.services.web_discovery import run_discovery
+from app.services.web_discovery.feeds import (
+    FeedFilters,
+    ingest_developers_events,
+)
 from app.settings import get_settings
 
 log = structlog.get_logger("scout.api.admin_discovery")
@@ -95,3 +99,43 @@ async def run_now_async(
         },
     )
     return {"queued_job_id": job_id}
+
+
+# ---------------------------------------------------------------------------
+# Structured-feed ingestion (developers.events JSON — plan 35.3)
+# ---------------------------------------------------------------------------
+class FeedIngestRequest(BaseModel):
+    only_ai: bool = Field(
+        default=True,
+        description="Filter to AI/ML/data events only. Off = ingest everything.",
+    )
+    future_only: bool = Field(
+        default=True,
+        description="Skip events whose start_date is in the past.",
+    )
+    limit: int | None = Field(
+        default=None,
+        ge=1,
+        le=10000,
+        description="Cap how many filtered events get persisted this run. Null = unlimited.",
+    )
+
+
+@router.post("/ingest-feed")
+async def ingest_feed(
+    db: DbSession,
+    body: Annotated[FeedIngestRequest, Body()] = FeedIngestRequest(),
+) -> dict:
+    """Pull the developers.events JSON feed and create Conference rows
+    for every matching event. No LLM extraction — the feed is already
+    structured. Way cheaper than the scrape+extract path."""
+    result = await ingest_developers_events(
+        db,
+        filters=FeedFilters(
+            only_ai=body.only_ai,
+            future_only=body.future_only,
+            limit=body.limit,
+        ),
+        actor_label="ingest_feed_manual",
+    )
+    return result.to_dict()
