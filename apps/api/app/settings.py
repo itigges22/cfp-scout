@@ -129,6 +129,26 @@ class Settings(BaseSettings):
     decay_enabled: bool = True
 
     # ------------------------------------------------------------------
+    # Discovery (plan 35, PRD §1 + §4): autonomous conference finder
+    # ------------------------------------------------------------------
+    discovery_enabled: bool = True
+    discovery_search_provider: Literal["ddg", "brave", "tavily"] = "ddg"
+    discovery_brave_api_key: SecretStr | None = None
+    discovery_tavily_api_key: SecretStr | None = None
+    discovery_template_prompt: str = Field(
+        default=(
+            "Upcoming AI conferences with open call for papers (CFP) "
+            "closing in the next six months. Focus on large language "
+            "models, RAG, agentic AI, MLOps, model serving, AI safety, "
+            "inference performance, GPU infrastructure, AI evaluations, "
+            "and AI for enterprise software."
+        ),
+        description="Default search prompt for discovery. Editable from /settings/tunables.",
+    )
+    discovery_max_results_per_run: int = Field(default=20, ge=1, le=100)
+    discovery_cron_hour_utc: int = Field(default=6, ge=0, le=23)
+
+    # ------------------------------------------------------------------
     # CORS (only relevant when the Vite dev server runs separately)
     # ------------------------------------------------------------------
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])

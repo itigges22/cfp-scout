@@ -128,12 +128,16 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
+    HOME=/home/scout \
     XDG_CACHE_HOME=/home/scout/.cache \
     HF_HOME=/home/scout/.cache/huggingface \
-    DOCLING_CACHE_DIR=/home/scout/.cache/docling
+    DOCLING_CACHE_DIR=/home/scout/.cache/docling \
+    CRAWL4_AI_BASE_DIRECTORY=/home/scout/.cache/crawl4ai
 
 # Pre-create the cache subtree as scout so first model fetch doesn't EACCES.
-RUN mkdir -p /home/scout/.cache/huggingface /home/scout/.cache/docling \
+RUN mkdir -p /home/scout/.cache/huggingface \
+              /home/scout/.cache/docling \
+              /home/scout/.cache/crawl4ai \
  && chown -R scout:scout /home/scout/.cache
 
 USER 1002

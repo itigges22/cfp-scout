@@ -428,3 +428,43 @@ export const diagnosticsApi = {
       { method: "POST" },
     ),
 };
+
+// ---------------------------------------------------------------------------
+// Discovery (plan 35) — autonomous conference finder
+// ---------------------------------------------------------------------------
+export type DiscoveryHitOutcome = {
+  url: string;
+  title: string;
+  crawl_ok: boolean;
+  parse_status: string | null;
+  conference_id: string | null;
+  error: string | null;
+};
+
+export type DiscoveryResult = {
+  prompt: string;
+  provider: string;
+  requested: number;
+  search_hits: number;
+  crawled: number;
+  new_conferences: number;
+  updated_conferences: number;
+  parse_failures: number;
+  outcomes: DiscoveryHitOutcome[];
+  search_error: string | null;
+  started_at: string;
+  finished_at: string;
+};
+
+export const discoveryApi = {
+  runNow: (body: { prompt?: string; max_results?: number } = {}) =>
+    request<DiscoveryResult>(`${BASE}/admin/discovery/run-now`, {
+      method: "POST",
+      body,
+    }),
+  runNowAsync: (body: { prompt?: string; max_results?: number } = {}) =>
+    request<{ queued_job_id: string }>(
+      `${BASE}/admin/discovery/run-now-async`,
+      { method: "POST", body },
+    ),
+};

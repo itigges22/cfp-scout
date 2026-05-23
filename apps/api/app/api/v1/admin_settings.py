@@ -33,7 +33,7 @@ router = APIRouter(prefix="/api/v1/admin/settings", tags=["admin.settings"])
 
 
 SettingKind = Literal["int", "float", "bool", "str", "secret", "list_str"]
-SettingGroup = Literal["llm", "matcher", "sme", "team", "decay", "scraper", "logging"]
+SettingGroup = Literal["llm", "matcher", "sme", "team", "decay", "discovery", "scraper", "logging"]
 
 
 class SettingSpec(BaseModel):
@@ -259,6 +259,62 @@ SPECS: list[SettingSpec] = [
         group="decay",
         label="Decay enabled",
         description="If false, freshness is stuck at 1.0 and the daily decay cron short-circuits.",
+    ),
+    # Discovery (plan 35) -----------------------------------------------
+    SettingSpec(
+        name="discovery_enabled",
+        kind="bool",
+        group="discovery",
+        label="Autonomous discovery enabled",
+        description="Master switch for the discovery feature. When off, the cron short-circuits and POST /admin/discovery/run-now refuses.",
+    ),
+    SettingSpec(
+        name="discovery_search_provider",
+        kind="str",
+        group="discovery",
+        label="Search provider",
+        description="ddg = DuckDuckGo HTML (no API key). brave / tavily require their respective API keys below.",
+        enum_values=["ddg", "brave", "tavily"],
+    ),
+    SettingSpec(
+        name="discovery_brave_api_key",
+        kind="secret",
+        group="discovery",
+        label="Brave Search API key",
+        description="Required if provider=brave. Free tier 2000 queries/month at search.brave.com/app/api.",
+    ),
+    SettingSpec(
+        name="discovery_tavily_api_key",
+        kind="secret",
+        group="discovery",
+        label="Tavily API key",
+        description="Required if provider=tavily. Free tier 1000 queries/month at tavily.com.",
+    ),
+    SettingSpec(
+        name="discovery_template_prompt",
+        kind="str",
+        group="discovery",
+        label="Default search prompt",
+        description="Used by the cron + as the default value on the /discover page. Edit to tune what kinds of conferences Scout finds.",
+    ),
+    SettingSpec(
+        name="discovery_max_results_per_run",
+        kind="int",
+        group="discovery",
+        label="Max results per run",
+        description="Cap on URLs fetched from search per discovery run. Bounds the cost of each cron tick.",
+        min_value=1,
+        max_value=100,
+    ),
+    SettingSpec(
+        name="discovery_cron_hour_utc",
+        kind="int",
+        group="discovery",
+        label="Cron hour (UTC)",
+        description="Hour of day (0-23 UTC) the daily discovery cron fires. Change requires api restart.",
+        min_value=0,
+        max_value=23,
+        restart_required=True,
     ),
     # Scraper -----------------------------------------------------------
     SettingSpec(

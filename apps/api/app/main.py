@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import (
+    admin_discovery,
     admin_embeddings,
     admin_extraction,
     admin_jobs,
@@ -107,6 +108,7 @@ app.include_router(admin_llm.router)
 app.include_router(admin_embeddings.router)
 app.include_router(admin_extraction.router)
 app.include_router(admin_jobs.router)
+app.include_router(admin_discovery.router)
 app.include_router(admin_matcher.router)
 app.include_router(admin_settings.router)
 app.include_router(agent.router)
