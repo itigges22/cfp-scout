@@ -425,6 +425,48 @@ async def get_conference(db: DbSession, conference_id: UUID) -> ConferenceRead:
     return _to_read(row)
 
 
+@router.delete("/{conference_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_conference(
+    db: DbSession,
+    conference_id: UUID,
+    actor_label: str = Query(default="user_delete", max_length=120),
+) -> None:
+    """Hard-delete a conference + all rows that reference it.
+
+    The model FKs are declared ``ondelete='CASCADE'`` (matches, decisions,
+    conference_sources, conference_topics, conference_audiences,
+    conference_pillars, conference_smes, conference_team_recommendations,
+    raw_pages-via-conference_sources). The single DELETE cascades; we
+    invalidate the graph cache + log the deletion afterwards so admins
+    have an audit trail.
+    """
+    row = await db.get(Conference, conference_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No conference {conference_id}",
+        )
+    snapshot = model_to_audit_dict(row)
+    await db.delete(row)
+    await write_audit(
+        db,
+        action="conference.delete",
+        target_type="conference",
+        target_id=conference_id,
+        before=snapshot,
+        after=None,
+        actor_label=actor_label,
+    )
+    await db.commit()
+    invalidate_graph()
+    log.info(
+        "conference.deleted",
+        conference_id=str(conference_id),
+        slug=snapshot.get("slug"),
+        actor_label=actor_label,
+    )
+
+
 @router.get("/{conference_id}/smes")
 async def conference_smes(
     db: DbSession,
