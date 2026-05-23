@@ -113,8 +113,14 @@ services:
     deploy:
       resources:
         limits:
+          # Docling's full pipeline (layout + table structure + OCR) holds
+          # ~1.5–2 GB of model weights resident and can spike well past
+          # 3 GB on large PDFs. 6 GB gives Docling room to breathe while
+          # still bounding the container under a typical 16 GB laptop
+          # allocation. Bump via .env override if you're seeing OOM kills
+          # on >50 MB documents.
           cpus: "2.0"
-          memory: 2G
+          memory: 6G
 
 # ---------------------------------------------------------------------------
 # Named volumes. Survive `compose down`; destroyed by `compose down -v` or

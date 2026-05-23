@@ -72,6 +72,39 @@ podman system prune -af   # reclaims orphaned image layers (often 100+ GB)
 make rebuild               # retry
 ```
 
+### PDF upload OOM-kills the api container
+
+Symptoms: a PDF upload hangs, the api container restarts with no clear
+error, or `/uploads/pdf` returns 500. Common on slide decks > 10 MB or
+docs > 50 pages because Docling's layout + table-structure pipeline holds
+~2 GB resident plus working memory per page.
+
+Three-layer defense already in code (`apps/api/app/services/pdf/parser.py`):
+
+1. **Size-aware tier selection** — `< 4 MB` runs the full pipeline; `4–10 MB`
+   drops OCR; `> 10 MB` runs Docling text-only.
+2. **Cascading fallback** — if the chosen tier raises, it walks DOWN
+   (medium → large → text_only).
+3. **Text-only via pypdfium2** — final fallback uses no model weights at
+   all (~100 MB RSS). One chunk per page, no layout, but guarantees a
+   non-empty result.
+
+If you're STILL seeing OOM kills on macOS Podman, the bottleneck is
+typically the **podman-machine VM size** — it has its own memory cap
+independent of the container's cgroup limit:
+
+```bash
+podman machine list             # shows current VM memory
+podman machine stop
+podman machine set --memory 8192 --cpus 4   # 8 GiB
+podman machine start
+make up
+```
+
+The compose file sets the container cgroup limit to 6 GB (see
+`infra/compose/compose.yaml`), so any VM ≥ 8 GiB gives Docling room to
+work; smaller VMs will silently cap at the VM size.
+
 ---
 
 ## Jobs
