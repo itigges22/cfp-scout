@@ -124,13 +124,26 @@ def lint_calendar_sync_csv(
             isn't parseable as CSV at all — caller should then try the
             Docling fallback.
     """
-    # utf-8-sig strips a BOM if Excel/Numbers added one. Fall back to
-    # replace-decoded errors so a single funny byte in a description
-    # cell doesn't crash the whole import.
-    try:
-        text = content.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        text = content.decode("utf-8", errors="replace")
+    # XLSX shortcut: the upstream spreadsheet's natural format is XLSX,
+    # not CSV. If the upload is an XLSX, convert it to a CSV string in
+    # memory via openpyxl and feed THAT to the same parser — orders of
+    # magnitude faster than routing through Docling + the LLM extractor,
+    # and preserves the strict-column-shape guarantees.
+    if content.startswith(b"PK\x03\x04"):
+        try:
+            text = _xlsx_to_csv_text(content)
+        except Exception as exc:  # noqa: BLE001 — surface as a format error
+            raise LinterFormatError(
+                f"file looks like an XLSX but openpyxl couldn't read it: {exc}"
+            ) from exc
+    else:
+        # utf-8-sig strips a BOM if Excel/Numbers added one. Fall back to
+        # replace-decoded errors so a single funny byte in a description
+        # cell doesn't crash the whole import.
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = content.decode("utf-8", errors="replace")
 
     # Normalize line endings BEFORE handing to csv. Google Sheets exports
     # as \n, but files round-tripped through Excel / Outlook / Word can
@@ -221,6 +234,61 @@ def lint_calendar_sync_csv(
 # ---------------------------------------------------------------------------
 # Helpers shared with the mapper
 # ---------------------------------------------------------------------------
+def _xlsx_to_csv_text(content: bytes) -> str:
+    """Convert XLSX bytes to a CSV string.
+
+    Picks the first sheet that has the required columns; falls back to the
+    active sheet if none match. Cells are stringified, dates are formatted
+    as the upstream spreadsheet's "Month Day" format ("June 14") so the
+    same `parse_date` rules apply (we then tack on the year in the linter).
+
+    Returns the CSV body, ready to hand to csv.DictReader.
+    """
+    from datetime import date as _date, datetime as _dt
+    from io import BytesIO, StringIO
+
+    from openpyxl import load_workbook
+
+    wb = load_workbook(BytesIO(content), data_only=True, read_only=True)
+
+    # Prefer the first sheet whose headers contain our required columns.
+    target = None
+    for ws_candidate in wb.worksheets:
+        # Read the header row only (first non-empty row) for the column check.
+        rows_iter = ws_candidate.iter_rows(values_only=True)
+        header = next(rows_iter, None)
+        if not header:
+            continue
+        header_set = {str(h).strip() for h in header if h is not None}
+        if REQUIRED_COLUMNS.issubset(header_set):
+            target = ws_candidate
+            break
+    if target is None:
+        target = wb.active
+
+    out = StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    for row in target.iter_rows(values_only=True):
+        rendered: list[str] = []
+        for cell in row:
+            if cell is None:
+                rendered.append("")
+            elif isinstance(cell, _dt):
+                # Match the upstream "June 14th" / "June 14" shape so the
+                # existing parse_date branch picks it up. Ordinal suffix
+                # isn't required — strptime tolerates both.
+                rendered.append(cell.strftime("%B %d"))
+            elif isinstance(cell, _date):
+                rendered.append(cell.strftime("%B %d"))
+            elif isinstance(cell, bool):
+                # Excel booleans → upstream TRUE/FALSE strings.
+                rendered.append("TRUE" if cell else "FALSE")
+            else:
+                rendered.append(str(cell))
+        writer.writerow(rendered)
+    return out.getvalue()
+
+
 def split_attendees(raw: str) -> list[str]:
     """Comma-or-semicolon split, trimmed, blanks dropped.
 
