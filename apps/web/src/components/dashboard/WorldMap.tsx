@@ -11,12 +11,14 @@
  */
 
 import { useNavigate } from "@tanstack/react-router";
+import { Minus, Plus, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   ComposableMap,
   Geographies,
   Geography,
   Marker,
+  ZoomableGroup,
 } from "react-simple-maps";
 
 const WORLD_TOPO_URL = "/world-110m.json";
@@ -45,6 +47,14 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
   const navigate = useNavigate();
   const [hoverKey, setHoverKey] = useState<string | null>(null);
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+  // Pan/zoom state driven by ZoomableGroup. Wheel / drag handled by
+  // d3-zoom under the hood; we just hold the latest center + zoom so the
+  // +/-/reset buttons can update them.
+  const [view, setView] = useState<{ center: [number, number]; zoom: number }>(
+    () => ({ center: [0, 20], zoom: 1 }),
+  );
+  const setZoom = (z: number) =>
+    setView((v) => ({ ...v, zoom: Math.max(1, Math.min(8, z)) }));
 
   // Cluster by (city, country) so 7 events in Boston render as one dot
   // sized by count, with a popover listing each event.
@@ -78,66 +88,119 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
     ? clusters.find((c) => c.key === activeKey) ?? null
     : null;
 
+  // Marker radius shrinks as the user zooms in — the SVG would otherwise
+  // scale dots up with the rest of the geography, making them huge.
+  const markerScale = 1 / view.zoom;
+
   return (
-    <div className="relative w-full overflow-hidden rounded-lg border border-border bg-surface-1">
+    <div className="relative flex h-full w-full overflow-hidden rounded-lg border border-border bg-surface-1">
+      {/* Map fills its container — fixed viewBox + h/w 100% means the SVG
+          scales to whatever height the parent gives it. preserveAspectRatio
+          (default "xMidYMid meet") centers without distortion. */}
       <ComposableMap
         projection="geoEqualEarth"
         projectionConfig={{ scale: 170 }}
         width={980}
         height={460}
-        style={{ width: "100%", height: "auto", display: "block" }}
+        style={{ width: "100%", height: "100%", display: "block" }}
         onClick={() => setPinnedKey(null)}
       >
-        <Geographies geography={WORLD_TOPO_URL}>
-          {({ geographies }) =>
-            geographies.map((geo) => (
-              <Geography
-                key={geo.rsmKey}
-                geography={geo}
-                fill="rgba(35, 35, 40, 1)"
-                stroke="rgba(46, 46, 53, 1)"
-                strokeWidth={0.4}
-                style={{
-                  default: { outline: "none" },
-                  hover: { outline: "none" },
-                  pressed: { outline: "none" },
-                }}
-              />
-            ))
+        <ZoomableGroup
+          center={view.center}
+          zoom={view.zoom}
+          minZoom={1}
+          maxZoom={8}
+          onMoveEnd={({ coordinates, zoom }) =>
+            setView({ center: coordinates as [number, number], zoom })
           }
-        </Geographies>
-        {clusters.map((c) => {
-          const count = c.conferences.length;
-          const radius = 3 + Math.sqrt(count / maxCount) * 8;
-          const isActive = c.key === activeKey;
-          return (
-            <Marker
-              key={c.key}
-              coordinates={[c.lng, c.lat]}
-              onMouseEnter={() => setHoverKey(c.key)}
-              onMouseLeave={() => setHoverKey(null)}
-              onClick={(e) => {
-                e.stopPropagation();
-                setPinnedKey(c.key === pinnedKey ? null : c.key);
-              }}
-            >
-              {/* halo */}
-              <circle
-                r={radius * 1.8}
-                fill="rgba(238,0,0,0.15)"
-                pointerEvents="none"
-              />
-              <circle
-                r={radius}
-                fill={isActive ? "rgba(255,80,80,1)" : "rgba(238,0,0,0.85)"}
-                stroke="rgba(255,255,255,0.85)"
-                strokeWidth={isActive ? 1 : 0.6}
-                style={{ cursor: "pointer" }}
-              />
-            </Marker>
-          );
-        })}
+        >
+          <Geographies geography={WORLD_TOPO_URL}>
+            {({ geographies }) =>
+              geographies.map((geo) => (
+                <Geography
+                  key={geo.rsmKey}
+                  geography={geo}
+                  fill="rgba(35, 35, 40, 1)"
+                  stroke="rgba(46, 46, 53, 1)"
+                  strokeWidth={0.4}
+                  style={{
+                    default: { outline: "none" },
+                    hover: { outline: "none" },
+                    pressed: { outline: "none" },
+                  }}
+                />
+              ))
+            }
+          </Geographies>
+          {clusters.map((c) => {
+            const count = c.conferences.length;
+            const radius = (3 + Math.sqrt(count / maxCount) * 8) * markerScale;
+            const strokeW = 0.6 * markerScale;
+            const isActive = c.key === activeKey;
+            return (
+              <Marker
+                key={c.key}
+                coordinates={[c.lng, c.lat]}
+                onMouseEnter={() => setHoverKey(c.key)}
+                onMouseLeave={() => setHoverKey(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPinnedKey(c.key === pinnedKey ? null : c.key);
+                }}
+              >
+                {/* halo */}
+                <circle
+                  r={radius * 1.8}
+                  fill="rgba(238,0,0,0.15)"
+                  pointerEvents="none"
+                />
+                <circle
+                  r={radius}
+                  fill={isActive ? "rgba(255,80,80,1)" : "rgba(238,0,0,0.85)"}
+                  stroke="rgba(255,255,255,0.85)"
+                  strokeWidth={isActive ? strokeW * 1.6 : strokeW}
+                  style={{ cursor: "pointer" }}
+                />
+              </Marker>
+            );
+          })}
+        </ZoomableGroup>
       </ComposableMap>
+
+      {/* Zoom controls — overlay top-right. Wheel + drag work on the
+          map itself; these are the explicit affordance. */}
+      <div className="absolute right-3 top-3 flex flex-col gap-1 rounded-md border border-border-strong bg-surface-2/95 p-1 shadow backdrop-blur">
+        <button
+          type="button"
+          onClick={() => setZoom(view.zoom * 1.5)}
+          disabled={view.zoom >= 8}
+          aria-label="Zoom in"
+          title="Zoom in (or scroll wheel up)"
+          className="rounded p-1 text-fg hover:bg-surface-3 disabled:opacity-40"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setZoom(view.zoom / 1.5)}
+          disabled={view.zoom <= 1}
+          aria-label="Zoom out"
+          title="Zoom out (or scroll wheel down)"
+          className="rounded p-1 text-fg hover:bg-surface-3 disabled:opacity-40"
+        >
+          <Minus className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setView({ center: [0, 20], zoom: 1 })}
+          disabled={view.zoom === 1 && view.center[0] === 0 && view.center[1] === 20}
+          aria-label="Reset view"
+          title="Reset zoom + center"
+          className="rounded p-1 text-fg-muted hover:bg-surface-3 disabled:opacity-40"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      </div>
 
       {activeCluster && (
         <div className="pointer-events-auto absolute left-3 top-3 max-w-xs rounded-md border border-border-strong bg-surface-2/95 p-3 text-xs text-fg shadow-lg backdrop-blur">
@@ -178,7 +241,7 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
         </div>
       )}
       <div className="pointer-events-none absolute bottom-2 right-3 text-[10px] uppercase tracking-wider text-fg-subtle">
-        Click a dot to pin · hover to preview · click a name to open
+        Drag to pan · scroll to zoom · click a dot to pin · click a name to open
       </div>
     </div>
   );
