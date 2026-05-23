@@ -29,7 +29,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import Conference
 from app.services._common import model_to_audit_dict, write_audit
+from app.services.embeddings import embed_owner
 from app.services.extraction.dedup import build_slug, find_duplicate, year_for
+from app.services.extraction.pipeline import _conference_embed_text
 from app.services.graph import invalidate as invalidate_graph
 from app.settings import get_settings
 
@@ -359,4 +361,23 @@ async def _persist_event(
         after=model_to_audit_dict(row),
         actor_label=actor_label,
     )
+
+    # Embed the conference text inline so the matcher's Stage A + B
+    # have something to compare against. Mirrors the extraction
+    # pipeline; without this, every feed-ingested row scores 0 on
+    # messaging and pillar (which we hit on the first ingest pass).
+    # Best-effort: embed failure shouldn't block the row.
+    try:
+        blob = _conference_embed_text(row)
+        if blob:
+            await embed_owner(
+                db,
+                owner_type="conference",
+                owner_id=row.id,
+                text=blob,
+                purpose="embed:feed_conference",
+            )
+    except Exception as exc:
+        log.warning("feed.embed_failed", conference_id=str(row.id), error=str(exc))
+
     return "new"
