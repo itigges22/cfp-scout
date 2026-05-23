@@ -25,18 +25,16 @@ which it isn't by default.
 
 ## Where secrets live (and where they don't)
 
-```
-   .env (host filesystem, chmod 600)
-     │
-     ├── read by `docker compose` / `podman compose`
-     │
-     ▼
-   container env       ───── api process reads via pydantic-settings
-   (LLM_API_KEY=...)         and exposes via Settings.llm_api_key (SecretStr)
-                              ↑
-                              │ never written to logs (redactor active)
-                              │ never echoed in tracebacks (ENV=prod)
-                              │ never serialized to JSON responses
+```mermaid
+flowchart TD
+    Env[".env<br/>host filesystem, chmod 600"] -->|read by docker compose<br/>or podman compose| ContainerEnv["container env<br/>LLM_API_KEY=..."]
+    ContainerEnv -->|pydantic-settings| Settings["Settings.llm_api_key<br/>(SecretStr)"]
+    Settings -.->|never written to logs<br/>(structlog redactor active)| Logs[("logs")]
+    Settings -.->|never echoed in tracebacks<br/>(ENV=prod strips stack)| Errors[("error responses")]
+    Settings -.->|never serialized<br/>to JSON responses| API[("api responses")]
+    style Logs stroke-dasharray: 5 5
+    style Errors stroke-dasharray: 5 5
+    style API stroke-dasharray: 5 5
 ```
 
 Secrets explicitly do NOT live in:

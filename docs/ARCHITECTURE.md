@@ -51,6 +51,62 @@ flowchart LR
 - Talks to LLM API via an OpenAI-compatible client. No direct network calls
   to model inference outside of LLM API.
 
+### Web discovery (`app/services/web_discovery/`)
+
+Scout's two-track event-finding pipeline. See
+[`web-discovery.md`](web-discovery.md) for the full narrative; the
+short version:
+
+- **`feeds.py`** — bulk ingest of the
+  [`developers.events`](https://developers.events/all-events.json) JSON
+  feed (~5,773 events). Structured fields (date, city, country, CFP url
+  + deadline, tags) bypass the LLM extractor entirely. Events are
+  filtered through a multilingual AI keyword list before persistence
+  (see "AI filter" in [`web-discovery.md`](web-discovery.md)). Embedding
+  happens inline so the matcher's Stage A + B have something to score
+  against on the first pass.
+- **`crawler.py`** — Crawl4AI wrapper. Uses the
+  `AsyncHTTPCrawlerStrategy` (no Playwright) for speed and a smaller
+  image. Given a list of seed URLs, fetches each one and follows
+  conference-looking outbound links one level deep (capped via
+  `discovery_max_links_per_seed`).
+- **`search.py`** — pluggable web-search adapters. `ddg` (default; no
+  key, occasionally rate-limited), `brave` (1 req/s, 2000/month free),
+  `tavily` (1000/month free). Provider chosen by the
+  `discovery_search_provider` setting; keys live in `.env`.
+- **`orchestrator.py`** — top-level `run_discovery()`. Wires search →
+  Crawl4AI fetch → `RawPage` row → existing `parse_raw_page` extraction
+  → conferences. Called by the admin endpoint and by the nightly
+  APScheduler cron.
+
+### Geocoding (`app/services/geocoding.py`)
+
+Wraps OpenStreetMap's [Nominatim](https://nominatim.openstreetmap.org/)
+(free, no API key). Honors the 1 req/sec policy with a 1.05-second
+delay and a process-wide `asyncio.Lock` so concurrent callers stay
+serialized. Each successful lookup populates
+`Conference.latitude` / `Conference.longitude` (added in migration
+`20260523_0100_conferences_latlng`).
+
+Backfill via `POST /api/v1/admin/discovery/geocode-backfill`; commits
+every 20 rows so the dashboard map populates incrementally instead of
+only at the end of a ~9-minute run for 500 rows. The dashboard
+`WorldMap` consumes `GET /api/v1/conferences/stats/by-location`.
+
+### Auto-matcher
+
+`GET /api/v1/conferences/{id}/match` and
+`GET /api/v1/conferences/{id}/brief` both inspect for a `Match` row
+with the current `algorithm_version`. If none exists, they call
+`app.services.matcher.run_fit_match` inline, commit, and re-read.
+The browser shows a skeleton during the 5–30 second run. The user
+never needs to know about a separate "run the matcher" step — the
+detail page is self-sufficient.
+
+Manual one-off re-runs are still available at
+`POST /api/v1/admin/matcher/run-now/{id}` for the operator, and the
+nightly cron re-scores any conference whose inputs changed.
+
 ### Frontend (`apps/web` — built into the api image)
 - Vite 6 + React 19 + TypeScript strict.
 - Tailwind v4 (CSS-first config; design tokens in `src/styles/index.css`
@@ -72,16 +128,29 @@ flowchart LR
 
 ## Data flow
 
+```mermaid
+flowchart TD
+    Feed[developers.events feed<br/>~5,773 events] --> Filter{AI keyword<br/>filter<br/>148 keywords,<br/>multilingual}
+    Crawl[Crawl4AI / ICS / wikicfp] --> Raw[raw_pages]
+    Raw --> Extract[trafilatura +<br/>LLM extract]
+    Extract --> Validate[validate + dedup]
+    Filter --> Confs[(conferences<br/>+ topics<br/>+ audiences<br/>+ pillars)]
+    Validate --> Confs
+    Confs --> Embed[embeddings<br/>pgvector]
+    Embed --> Matcher[fit matcher<br/>messaging → pillars → SME]
+    Matcher --> Team[SME team rec<br/>size 1/2/3]
+    Matcher --> Narr[SME fit narrative<br/>top-3]
+    Team --> Match[(matches row<br/>+ decisions queue)]
+    Narr --> Match
+    Match --> UI[dashboard / agent chat /<br/>CFP digest / brief export]
 ```
-Crawl4AI / ICS / wikicfp -> raw_pages -> trafilatura + LLM extract ->
-  validate + dedup -> conferences (+ topics + audiences + pillars)
-                       -> embeddings (pgvector)
-                       -> fit matcher (messaging → pillars → SME)
-                       -> SME team rec (1/2/3)
-                       -> SME fit narrative (top-3)
-                       -> matches row + decisions queue
-                       -> dashboard / agent chat / CFP digest / brief export
-```
+
+The bulk JSON feed (`developers.events`, ~5,773 events) is the workhorse:
+structured fields go straight to `conferences` with `confidence_score=0.9`
+and inline embeddings, skipping the LLM extractor. The Crawl4AI path is
+the fallback for events that don't appear in any feed and for the nightly
+on-demand discovery run. See [`web-discovery.md`](web-discovery.md) for
+the full pipeline narrative.
 
 ## Tech stack
 
@@ -98,7 +167,12 @@ Crawl4AI / ICS / wikicfp -> raw_pages -> trafilatura + LLM extract ->
 | Graph | NetworkX in-memory + Postgres junctions | Obsidian-style derived graph |
 | LLM client | `openai` SDK pointed at LLM API base_url | Provider-agnostic |
 | Scraping | Crawl4AI + `icalendar` + dedicated wikicfp parser | No Playwright |
+| Page fetch (discovery) | Crawl4AI `AsyncHTTPCrawlerStrategy` | HTTP-only mode keeps the api image lean; no headless browser dependency |
+| Web search (discovery) | `ddgs` (default) + Brave + Tavily adapters | `ddgs` replaced the deprecated `duckduckgo_search` package; provider chosen via `discovery_search_provider` setting |
+| Geocoding | Nominatim (OpenStreetMap) | Free, no API key; 1 req/sec policy enforced in-process |
 | PDF parsing + chunking | Docling (`DocumentConverter` + `HybridChunker`) | IBM Research; layout-aware; built-in OCR; replaces pypdf + ocrmypdf + langchain-text-splitters ([ADR-0003](ADR/0003-docling-for-pdf-and-chunking.md)) |
+| World map (web) | `react-simple-maps` + self-hosted TopoJSON | Plots geocoded conferences; TopoJSON ships at `/world-110m.json` to dodge v3's silent CDN fetch failures |
+| Graph viz (web) | `react-force-graph-2d` | Renders the conference ↔ topic ↔ SME graph derived from Postgres junctions |
 | Migrations | Alembic | Standard |
 
 ## Data model
@@ -133,10 +207,12 @@ Provisioning + rotation + leak response in
 - **team** — <vendor> data and AI advocacy team
 - **SME** — subject-matter expert (the your team and external collaborators)
 - **CFP** — call for papers; submission window for a conference
+- **CFP scout** — the digest job + UI surface that nudges the operator when CFP windows are about to close
 - **Pillar** — one of your four strategic pillars
 - **Audience** — <vendor>-defined marketing/sales persona
 - **Series** — year-over-year linkage between editions of the same conference
 - **Match** — the matcher output (scores + recommended SMEs + rationale) for a conference
+- **Discovery** — the two-track event-finding pipeline (bulk JSON feed + on-demand Crawl4AI). See [`web-discovery.md`](web-discovery.md).
 
 ## Architecture Decision Records
 
@@ -148,8 +224,7 @@ See [`ADR/`](ADR/). The most consequential records:
 - [`ADR/0004`](ADR/0004-async-sqlalchemy-and-alembic.md) — Async SQLAlchemy 2.x + Alembic for the data access layer
 - (more added as plans complete)
 
-## Where things are still TBD
+## Build status
 
-These are tracked in [`/PLANS/STATUS.md`](../PLANS/STATUS.md) and the per-plan
-"Open questions" sections. As of the current build state, this file will
-be updated to reflect concrete choices as they land in code.
+Current implementation state and outstanding work live in
+[`/PLANS/STATUS.md`](../PLANS/STATUS.md).

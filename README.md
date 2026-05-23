@@ -33,11 +33,15 @@ Defaults you'll want to change before connecting to LLM API:
 ```bash
 make dev               # one-time: builds SPA + brings up dev stack with bind mounts
 # edit Python in apps/api/app/ → uvicorn auto-reloads in ~1s
-# edit React in apps/web/src/ → run `make spa` (~12s) → container picks it up
+# edit React in apps/web/src/ → run `make spa` → container picks it up
 
 make test-unit         # 55 unit tests, ~2s
 make logs SERVICE=api  # follow the structured JSON logs
 ```
+
+`make spa` runs the SPA build inside a throwaway UBI node-22 container and
+drops the output in `apps/api/static/` (~5s with cached deps). Hard-reload
+the browser to drop the old bundle hash.
 
 `make rebuild` is the cache-aware image rebuild for dep changes; `make
 rebuild-nocache` is the nuclear option.
@@ -54,6 +58,11 @@ Two containers:
 The frontend is a Vite-built React SPA. It's bundled into the api image at
 build time, so production deploy is a single image talking to a single
 database.
+
+**Discovery.** Scout pulls events from the `developers.events` JSON feed
+(~5,773 entries) and filters them with a multilingual AI keyword list
+editable from `/settings/tunables`. Trigger a refresh with **Discover more**
+on `/conferences`, or wait for the scheduled job.
 
 ## Layout
 
@@ -81,23 +90,29 @@ Useful pages:
 
 | Path | What's there |
 |---|---|
-| `/dashboard` | 4 stat cards + top-5 ranked conferences |
-| `/conferences` | Ranked list with status + sort filters |
-| `/conferences/<id>` | Score panel, SME panel (per-dimension + narrative), sources, decision actions |
+| `/dashboard` | 3 stat cards (Upcoming approved, Pending review, CFP closing), top-5 ranked conferences, and a world map with one red dot per city hosting an AI event (click to open that city's conferences) |
+| `/conferences` | Ranked list with status + sort filters; **Discover more** triggers a new pull from the events feed |
+| `/conferences/$id` | Score panel, SME panel (per-dimension + narrative), sources, decision actions. Auto-runs the matcher inline on first open (5–30s; shows a skeleton) |
+| `/conferences/$id/brief` | Print-optimized brief. Also auto-runs the matcher inline on first open |
 | `/agent` | Read-only RAG chat (cites every claim) |
 | `/graph` | Force-directed knowledge graph |
 | `/diagnostics` | LLM spend, jobs, scraper health, freshness histogram, system info |
-| `/smes`, `/audiences`, `/messaging`, `/past-conferences`, `/topics` | Manual data entry |
+| `/smes`, `/audiences`, `/messaging`, `/messaging/new`, `/messaging/$id`, `/past-conferences`, `/topics` | Manual data entry |
+| `/settings`, `/settings/tunables` | App config; runtime-editable knobs (AI keywords, thresholds, etc.) |
+
+The map uses Nominatim for geocoding. To backfill coordinates for existing
+events, hit `POST /api/v1/admin/discovery/geocode-backfill` (rate-limited).
 
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system overview, data flow, glossary
+- [`docs/web-discovery.md`](docs/web-discovery.md) — how the events-feed pull, AI-keyword filter, and geocoding fit together
 - [`docs/ops/runbook.md`](docs/ops/runbook.md) — common ops troubleshooting (start here when something breaks)
 - [`docs/ops/`](docs/ops/) — per-topic runbooks (backups, secrets, migrations, database, data guardrails)
 - [`docs/security/SECURITY_REVIEW.md`](docs/security/SECURITY_REVIEW.md) — threat model + per-control status
 - [`docs/ADR/`](docs/ADR/) — architecture decision records
 - [`PLANS/phase-1/00-INDEX.md`](PLANS/phase-1/00-INDEX.md) — the full Phase 1 plan
-- [`PLANS/STATUS.md`](PLANS/STATUS.md) — current build progress (every plan's status with changelog)
+- [`PLANS/STATUS.md`](PLANS/STATUS.md) — current build progress and recent work (every plan's status with changelog)
 
 ## Reporting a security issue
 
