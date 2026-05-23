@@ -13,8 +13,6 @@ from __future__ import annotations
 from io import BytesIO
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,29 +32,44 @@ from app.services.workbook._cells import (
 )
 from app.services.workbook._schema import SHEET_SPECS, SheetSpec
 
-_HEADER_FILL = PatternFill("solid", fgColor="1F2937")
-_HEADER_FONT = Font(bold=True, color="F9FAFB")
-
 
 async def build_current_state_workbook(db: AsyncSession) -> bytes:
-    """Build an XLSX populated with the current DB state."""
-    wb = Workbook()
-    ref = wb.active
-    ref.title = "Reference"
-    _build_reference_brief(ref)
+    """Build an XLSX populated with the current DB state.
 
-    # Index of audience IDs → names + topic IDs → names so the SMEs sheet can
-    # serialize references as human-readable names rather than UUIDs.
+    Uses the same formatting helpers as the empty template (rich README,
+    cell comments on every column header, dropdown validation for enum
+    columns, header colour by required/optional/system) — only the row
+    contents differ: template ships sample rows + blank Settings values;
+    this writer ships real DB rows + current Settings values.
+    """
+    # Import the shared formatting helpers from template.py so the export
+    # and the template look identical in Sheets — only the data differs.
+    from app.services.workbook.template import (
+        _attach_validation,
+        _build_readme_sheet,
+        _set_column_widths,
+        _write_header,
+    )
+
+    wb = Workbook()
+    readme = wb.active
+    readme.title = "README"
+    _build_readme_sheet(readme)
+
+    # Index of audience IDs → names + topic IDs → names so the SMEs sheet
+    # can serialize references as human-readable names rather than UUIDs.
     audiences_by_id, topics_by_id = await _build_lookups(db)
 
     for spec in SHEET_SPECS:
         ws = wb.create_sheet(spec.name)
-        _write_header(ws, spec)
+        _write_header(ws, spec)  # includes comments + colour-by-role
         rows = await _rows_for_sheet(db, spec, audiences_by_id, topics_by_id)
         for row in rows:
             ordered = [row.get(c.name, "") for c in spec.columns]
             ws.append(ordered)
-        _autosize(ws, spec)
+        _attach_validation(ws, spec)  # dropdowns for enum + bool cols
+        _set_column_widths(ws, spec)
+        ws.sheet_view.showGridLines = True
 
     out = BytesIO()
     wb.save(out)
@@ -259,61 +272,5 @@ async def _build_lookups(db: AsyncSession) -> tuple[dict, dict]:
     return ({a.id: a for a in auds}, {t.id: t for t in tops})
 
 
-def _build_reference_brief(ws) -> None:
-    ws["A1"] = "Scout configuration — current export"
-    ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = "Sheets below contain a snapshot of the DB. Edit + re-import to apply changes."
-    ws["A4"] = "Round-trip rule"
-    ws["A4"].font = Font(bold=True)
-    ws["A5"] = "Importing this file with no edits is a no-op."
-    ws["A6"] = "Rows present in DB but missing from your upload are KEPT (no auto-delete)."
-    ws["A7"] = "Use _action=delete to soft-delete (requires typed-count confirm on apply)."
-    ws.column_dimensions["A"].width = 80
-
-
-def _write_header(ws, spec: SheetSpec) -> None:
-    headers = spec.column_names()
-    ws.append(headers)
-    for idx, _ in enumerate(headers, start=1):
-        cell = ws.cell(row=1, column=idx)
-        cell.font = _HEADER_FONT
-        cell.fill = _HEADER_FILL
-        cell.alignment = Alignment(horizontal="left", vertical="center")
-    ws.freeze_panes = "A2"
-
-
-def _autosize(ws, spec: SheetSpec) -> None:
-    widths = {
-        "_scout_id": 36,
-        "_action": 10,
-        "name": 32,
-        "full_name": 28,
-        "canonical_name": 30,
-        "description": 60,
-        "bio": 80,
-        "primary_pain_points": 50,
-        "key_messages": 50,
-        "expertise_areas": 50,
-        "primary_topics": 36,
-        "audience_focus": 36,
-        "aliases": 40,
-        "typical_topics": 40,
-        "email": 28,
-        "team": 14,
-        "industry": 22,
-        "role_seniority": 14,
-        "location_country": 16,
-        "location_city": 20,
-        "linkedin_url": 36,
-        "github_url": 36,
-        "website_url": 36,
-        "homepage": 36,
-        "slug": 22,
-        "typical_month": 14,
-        "is_active": 10,
-        "pending_review": 16,
-        "display_order": 14,
-        "exclusion_criteria": 36,
-    }
-    for idx, col in enumerate(spec.columns, start=1):
-        ws.column_dimensions[get_column_letter(idx)].width = widths.get(col.name, 22)
+# Header rendering, autosize, and the README sheet builder all live in
+# template.py and are imported at call sites — see build_current_state_workbook.
