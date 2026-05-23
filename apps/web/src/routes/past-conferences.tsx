@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { Pagination } from "@/components/Pagination";
+import { CalendarSyncImportDialog } from "@/components/past-conferences/CalendarSyncImportDialog";
 import { CsvImportDialog } from "@/components/past-conferences/CsvImportDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ function PastConferencesPage() {
   const debouncedSearch = useDebouncedValue(search);
   const [yearFilter, setYearFilter] = useState<string>("");
   const [showImport, setShowImport] = useState(false);
+  const [showCalendarSync, setShowCalendarSync] = useState(false);
 
   const yearAsNum = /^\d{4}$/.test(yearFilter) ? Number(yearFilter) : undefined;
 
@@ -89,7 +91,12 @@ function PastConferencesPage() {
               className="w-24"
               maxLength={4}
             />
-            <Button onClick={() => setShowImport(true)}>Import CSV</Button>
+            <Button variant="outline" onClick={() => setShowImport(true)}>
+              Import CSV
+            </Button>
+            <Button onClick={() => setShowCalendarSync(true)}>
+              Import calendar sync
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -148,6 +155,10 @@ function PastConferencesPage() {
       </Card>
 
       <CsvImportDialog open={showImport} onOpenChange={setShowImport} />
+      <CalendarSyncImportDialog
+        open={showCalendarSync}
+        onOpenChange={setShowCalendarSync}
+      />
     </div>
   );
 }

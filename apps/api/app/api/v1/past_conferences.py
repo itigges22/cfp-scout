@@ -87,3 +87,62 @@ async def import_csv(
         ignore_errors=ignore_errors,
         actor_label=actor_label,
     )
+
+
+@router.post("/import-calendar-sync")
+async def import_calendar_sync(
+    db: DbSession,
+    file: Annotated[
+        UploadFile,
+        File(
+            description=(
+                "CSV exported from the AI BU Developer Marketing 2026 Events "
+                "spreadsheet (Events tab). Same shape teammate/"
+                "google-calendar-events-sync expects. Falls back to "
+                "Docling + LLM extraction if the linter rejects the file."
+            )
+        ),
+    ],
+    apply: bool = Query(
+        default=False,
+        description=(
+            "Preview vs apply. False = compute decisions + return the "
+            "per-row breakdown without writing. True = persist everything."
+        ),
+    ),
+    fallback_year: int = Query(
+        default=2026,
+        ge=2020,
+        le=2030,
+        description="Year to assume when a date cell has no year (e.g. 'June 14th').",
+    ),
+    actor_label: str = Query(default="calendar_sync_import", max_length=120),
+) -> dict[str, object]:
+    """Import the team's calendar-sync events CSV.
+
+    Strict linter first (same column shape as the upstream calendar-sync
+    cron). On format error, falls back to Docling + LLM extraction so a
+    PDF / XLSX / weird CSV can still land. Routes per row:
+
+      - Complete=TRUE → app.past_conferences (attendees resolved against
+        Sme.full_name; unmatched names surfaced as warnings).
+      - Complete=FALSE → app.conferences (status='approved' since the
+        team has committed to attending).
+
+    Preview-then-apply: call with apply=false first to see the
+    decisions, then re-post with apply=true to persist.
+    """
+    from app.services.calendar_sync import import_calendar_sync_csv
+
+    content = await file.read()
+    outcome = await import_calendar_sync_csv(
+        db,
+        content=content,
+        filename=file.filename or "upload.csv",
+        apply=apply,
+        fallback_year=fallback_year,
+        actor_label=actor_label,
+    )
+    if apply:
+        await db.commit()
+    return outcome.to_dict()
