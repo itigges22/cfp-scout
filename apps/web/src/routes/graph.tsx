@@ -399,16 +399,35 @@ function GraphCanvas({
           ctx.strokeStyle = "rgba(15, 23, 42, 0.7)";
           ctx.stroke();
 
+          // Label rendering: at high zoom (>1.3) or on hover. Draw a
+          // semi-opaque background pill BEHIND the text so overlapping
+          // labels remain readable instead of becoming smushed pixels.
+          // Font size has a floor of 11px regardless of zoom.
           if (globalScale > 1.3 || hoverId === n.id) {
-            const fontSize = Math.max(10, 11 / globalScale);
+            const fontSize = Math.max(11, 12 / globalScale);
             ctx.font = `${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+            const label = n.label.length > 36 ? n.label.slice(0, 35) + "…" : n.label;
+            const textWidth = ctx.measureText(label).width;
+            const padX = 4 / globalScale;
+            const padY = 2 / globalScale;
+            const boxX = n.x + radius + 2 / globalScale;
+            const boxY = n.y - fontSize / 2 - padY;
+            const boxH = fontSize + padY * 2;
+            const boxW = textWidth + padX * 2;
+            // Background pill (slate-900 at 80%).
             ctx.fillStyle = dim
-              ? "rgba(226,232,240,0.45)"
-              : "rgba(226,232,240,0.95)";
+              ? "rgba(15,23,42,0.45)"
+              : "rgba(15,23,42,0.82)";
+            ctx.beginPath();
+            ctx.roundRect(boxX, boxY, boxW, boxH, 3 / globalScale);
+            ctx.fill();
+            // Text.
+            ctx.fillStyle = dim
+              ? "rgba(226,232,240,0.55)"
+              : "rgba(248,250,252,0.98)";
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
-            const label = n.label.length > 36 ? n.label.slice(0, 35) + "…" : n.label;
-            ctx.fillText(label, n.x + radius + 3, n.y);
+            ctx.fillText(label, boxX + padX, n.y);
           }
           ctx.globalAlpha = 1.0;
         }}
