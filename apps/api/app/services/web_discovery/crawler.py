@@ -139,17 +139,45 @@ async def crawl_many(urls: list[str]) -> list[CrawlResult]:
 # Markdown link: [text](url) — captures url only.
 _MD_LINK_RE = re.compile(r"\[[^\]]*\]\((https?://[^)\s]+)\)")
 
-# Conference-likely substrings; case-insensitive substring match.
+# Event-likely substrings; case-insensitive substring match. Per the
+# extraction prompt's broadened definition: any AI gathering where
+# someone could submit a CFP, sponsor, or speak — includes meetups,
+# hackathons, fireside chats, panels, summits, demo days, not just
+# academic conferences.
 _CONFERENCE_LIKE_KEYWORDS = (
+    # CFP / submission markers
     "cfp",
     "call-for-papers",
     "call_for_papers",
     "callforpapers",
+    "call-for-speakers",
+    "call-for-proposals",
+    "speakers",
+    "submit",
+    "submissions",
+    "speaker-application",
+    "speaker-form",
+    "sponsor",
+    "sponsorship",
+    # Event-type markers
     "conference",
     "symposium",
     "workshop",
     "summit",
     "convention",
+    "meetup",
+    "hackathon",
+    "ai-event",
+    "ai_event",
+    "/event",
+    "/events/",
+    "/talks/",
+    "fireside",
+    "panel",
+    "demoday",
+    "demo-day",
+    "festival",
+    # Famous AI/ML venues (academic + industry)
     "neurips",
     "icml",
     "iclr",
@@ -163,7 +191,16 @@ _CONFERENCE_LIKE_KEYWORDS = (
     "www",
     "sigir",
     "cikm",
-    "/202",  # year segments — 2026/2027/2028
+    "cvpr",
+    "iccv",
+    "eccv",
+    "mlsys",
+    "aied",
+    "uist",
+    # Year segments — 2026 / 2027 / 2028
+    "/2026",
+    "/2027",
+    "/2028",
 )
 
 

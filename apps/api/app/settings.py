@@ -145,12 +145,15 @@ class Settings(BaseSettings):
     discovery_tavily_api_key: SecretStr | None = None
     discovery_template_prompt: str = Field(
         default=(
-            'AI conference 2026 "call for papers" site:conferences OR '
-            "CFP submissions deadline LLM agentic"
+            'AI event 2026 "call for papers" OR "call for speakers" OR '
+            '"open sponsor" conference summit workshop meetup'
         ),
         description=(
-            "Search prompt for /discover. Short + specific works better; "
-            "DDG returns garbage for long queries. Editable per-run."
+            "Search prompt for /discover. Targets the full event universe "
+            "(conferences, summits, workshops, meetups, hackathons, panels) "
+            "as long as they have an open CFP, speaker call, or sponsorship "
+            "process. Short + specific works better — DDG returns garbage "
+            "for long queries. Editable per-run."
         ),
     )
     discovery_max_results_per_run: int = Field(default=20, ge=1, le=100)
@@ -168,14 +171,24 @@ class Settings(BaseSettings):
     # extend in /settings/tunables.
     discovery_seed_urls: list[str] = Field(
         default_factory=lambda: [
+            # Academic / technical conference deadlines
             "https://aideadlin.es/",  # AI deadline tracker (community-maintained)
-            "https://papercall.io/cfps",  # CFP listings
             "https://www.wikicfp.com/cfp/call?conference=artificial%20intelligence",
-            "https://huggingface.co/blog",  # often announces conference talks
+            "https://www.wikicfp.com/cfp/call?conference=machine%20learning",
+            # CFP marketplaces (academic + industry + meetup)
+            "https://papercall.io/cfps",
+            "https://sessionize.com/events",
+            # Industry conference indexes + meetup hubs
+            "https://www.eventbrite.com/d/online/ai-conference/",
+            "https://lu.ma/discover",  # Luma — heavy AI meetup / panel coverage
+            # Newsletter / blog hubs that surface fresh AI events
+            "https://huggingface.co/blog",
         ],
         description=(
             "URLs always crawled by discovery, regardless of the search "
-            "step. Aggregators / known conference hubs."
+            "step. Aggregators + meetup hubs + CFP marketplaces. Discovery "
+            "follows outbound conference-looking links from each one, so "
+            "a single seed page can produce dozens of candidate events."
         ),
     )
 
