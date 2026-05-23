@@ -16,7 +16,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +36,47 @@ class CfpDeadlineKind(StrEnum):
     OTHER = "other"
 
 
+# Keyword → enum mapping for free-form LLM output. The LLM regularly
+# returns variants like "Submission Start", "Abstract Registration",
+# "Camera-Ready", etc. We try a longest-keyword-first match against
+# lowercased input.
+_KIND_KEYWORDS: tuple[tuple[str, CfpDeadlineKind], ...] = (
+    ("early bird", CfpDeadlineKind.EARLY_BIRD),
+    ("early-bird", CfpDeadlineKind.EARLY_BIRD),
+    ("abstract", CfpDeadlineKind.ABSTRACT),
+    ("submission", CfpDeadlineKind.SUBMISSION),
+    ("paper", CfpDeadlineKind.SUBMISSION),
+    ("rebuttal", CfpDeadlineKind.SUBMISSION),
+    ("camera-ready", CfpDeadlineKind.SUBMISSION),
+    ("camera ready", CfpDeadlineKind.SUBMISSION),
+    ("poster", CfpDeadlineKind.POSTER),
+    ("workshop", CfpDeadlineKind.WORKSHOP),
+    ("tutorial", CfpDeadlineKind.TUTORIAL),
+    ("demo", CfpDeadlineKind.DEMO),
+    ("sponsorship", CfpDeadlineKind.SPONSORSHIP),
+    ("sponsor", CfpDeadlineKind.SPONSORSHIP),
+)
+
+
+def _normalize_kind(raw: object) -> str:
+    """Map a free-form string to a canonical CfpDeadlineKind value.
+
+    Falls back to 'other' if no keyword matches. Bare enum values pass
+    through unchanged so canonical input is cheap.
+    """
+    if not isinstance(raw, str):
+        return raw  # type: ignore[return-value]
+    s = raw.strip().lower()
+    # Already canonical?
+    for k in CfpDeadlineKind:
+        if s == k.value:
+            return s
+    for kw, enum_val in _KIND_KEYWORDS:
+        if kw in s:
+            return enum_val.value
+    return CfpDeadlineKind.OTHER.value
+
+
 # Names get extra trim + cap that matches the conferences.name column (200).
 ExtractedName = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=3, max_length=200)
@@ -50,15 +91,45 @@ Topic = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, ma
 # Nested types
 # ---------------------------------------------------------------------------
 class CfpDeadline(BaseModel):
-    """One entry inside ``conferences.cfp_deadlines``."""
+    """One entry inside ``conferences.cfp_deadlines``.
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    Tolerant of common LLM variants on input — the LLM often returns
+    ``type`` instead of ``kind`` and ``deadline`` instead of
+    ``deadline_date``, and uses free-form strings ("Submission Start")
+    rather than the canonical enum value. The ``before`` validator
+    normalizes those before strict validation runs.
+    """
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
     kind: CfpDeadlineKind
     deadline_date: date
     description: ShortFreeText | None = None
     # "talks" / "workshops" / "all" / None. Free-text per plan 04; no enum here.
     applies_to: ShortFreeText | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_llm_variants(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        # Rename common aliases. Last-write-wins; canonical key wins
+        # when both are present.
+        if "kind" not in data and "type" in data:
+            data["kind"] = data.pop("type")
+        if "deadline_date" not in data:
+            if "deadline" in data:
+                data["deadline_date"] = data.pop("deadline")
+            elif "date" in data:
+                data["deadline_date"] = data.pop("date")
+        # Normalize kind keyword + ISO-datetime → date.
+        if "kind" in data:
+            data["kind"] = _normalize_kind(data["kind"])
+        if isinstance(data.get("deadline_date"), str):
+            raw_d = data["deadline_date"]
+            if "T" in raw_d:
+                data["deadline_date"] = raw_d.split("T", 1)[0]
+        return data
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +144,10 @@ class ExtractedConference(BaseModel):
     structural confidence computed from field-coverage.
     """
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    # LLMs regularly add useful-but-not-modelled fields (abbreviation,
+    # series, hashtag, etc). Don't reject the whole extraction for that —
+    # ignore the extras and keep the validated fields.
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
     name: ExtractedName
 

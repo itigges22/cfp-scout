@@ -50,7 +50,7 @@ class LLMClient:
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
         self._openai = AsyncOpenAI(
-            base_url=self._settings.llm_base_url,
+            base_url=_normalize_openai_base_url(self._settings.llm_base_url),
             api_key=self._settings.llm_api_key.get_secret_value(),
             # Default timeout. Long enough for slow LLM API responses; short
             # enough that hung connections don't tie up workers forever.
@@ -65,7 +65,9 @@ class LLMClient:
         embed_base = getattr(self._settings, "llm_embedding_base_url", "") or ""
         if embed_key is not None:
             self._embed_openai = AsyncOpenAI(
-                base_url=embed_base or self._settings.llm_base_url,
+                base_url=_normalize_openai_base_url(
+                    embed_base or self._settings.llm_base_url
+                ),
                 api_key=(
                     embed_key.get_secret_value()
                     if hasattr(embed_key, "get_secret_value")
@@ -411,13 +413,72 @@ class LLMClient:
 # Singleton getter
 # ---------------------------------------------------------------------------
 _instance: LLMClient | None = None
+_instance_settings_fingerprint: tuple | None = None
+
+# OpenAI client appends its own endpoint suffix (/chat/completions,
+# /embeddings, /models, /completions). Operators occasionally paste a
+# URL that already ends in one of those — produces a doubled path
+# like '.../v1/embeddings/embeddings'. Strip trailing endpoint
+# suffixes so either form works.
+_OPENAI_ENDPOINT_SUFFIXES = (
+    "/chat/completions",
+    "/completions",
+    "/embeddings",
+    "/models",
+)
+
+
+def _normalize_openai_base_url(url: str) -> str:
+    """Strip trailing slashes + known OpenAI endpoint suffixes."""
+    if not url:
+        return url
+    u = url.rstrip("/")
+    for suffix in _OPENAI_ENDPOINT_SUFFIXES:
+        if u.lower().endswith(suffix):
+            u = u[: -len(suffix)]
+            u = u.rstrip("/")
+            break
+    return u
+
+
+def _settings_fingerprint(s: Settings) -> tuple:
+    """Cheap snapshot of the settings the client depends on. If any of
+    these changed since the singleton was built, the singleton is stale.
+    """
+    return (
+        s.llm_base_url,
+        s.llm_api_key.get_secret_value() if s.llm_api_key else "",
+        s.llm_dry_run,
+        getattr(s, "llm_embedding_base_url", "") or "",
+        (
+            s.llm_embedding_api_key.get_secret_value()
+            if getattr(s, "llm_embedding_api_key", None) is not None
+            else ""
+        ),
+    )
 
 
 def get_llm_client() -> LLMClient:
-    """Return the process-wide LLMClient singleton, creating it on first call."""
-    global _instance
-    if _instance is None:
-        _instance = LLMClient()
+    """Return the process-wide LLMClient singleton, creating it on first call.
+
+    Rebuilds the singleton if the relevant settings have changed since
+    the last call — required because ``/admin/settings`` PATCHes can
+    flip ``llm_dry_run``, swap ``llm_api_key``, or add an
+    ``llm_embedding_api_key`` at runtime, and a stale client snapshot
+    would silently keep using the old values.
+    """
+    global _instance, _instance_settings_fingerprint
+    settings = get_settings()
+    fingerprint = _settings_fingerprint(settings)
+    if _instance is None or _instance_settings_fingerprint != fingerprint:
+        log.info(
+            "llm.client.rebuilt",
+            reason="initial" if _instance is None else "settings_changed",
+            dry_run=settings.llm_dry_run,
+            embed_key_set=bool(getattr(settings, "llm_embedding_api_key", None)),
+        )
+        _instance = LLMClient(settings)
+        _instance_settings_fingerprint = fingerprint
     return _instance
 
 
