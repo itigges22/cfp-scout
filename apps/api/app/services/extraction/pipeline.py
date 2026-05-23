@@ -162,10 +162,25 @@ async def parse_raw_page(db: AsyncSession, raw_page_id: UUID) -> ParseResult:
     )
 
     # Edge case: model returned ``{"name": "Unknown"}`` to signal "no
-    # conference here". Quarantine deterministically.
+    # conference here". Don't create a Conference row at all — flag
+    # the raw_page as not_a_conference and bail out so the autonomous
+    # discovery flow doesn't pollute the dashboard with a synthetic
+    # 'unknown-unknown' row that every subsequent junk URL would then
+    # get dedup-merged into.
     if extracted.name == "Unknown":
-        outcome.final_confidence = 0.0
-        outcome.status = "quarantined"
+        row.parse_status = "not_a_conference"
+        bound.info(
+            "extraction.not_a_conference",
+            llm_confidence=extracted.confidence,
+        )
+        return ParseResult(
+            raw_page_id=str(row.id),
+            ok=False,
+            parse_status="not_a_conference",
+            confidence=extracted.confidence,
+            structural_confidence=outcome.structural_confidence,
+            rule_penalty=outcome.rule_penalty,
+        )
 
     # ---- 7. Slug dedupe + persist -------------------------------------
     slug = build_slug(extracted.name, year_for(extracted.start_date))

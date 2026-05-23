@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     llm_narrative_model: str = ""
     llm_agent_model: str = ""
 
+    # Optional separate credentials for the embedding model. your LLM endpoint
+    # (and many providers) issue per-model keys, so the chat key often
+    # can't access the embedding endpoint. When these are set, the LLM
+    # client builds a dedicated AsyncOpenAI for embedding calls; when
+    # blank, embeddings reuse llm_api_key / llm_base_url.
+    llm_embedding_base_url: str = ""
+    llm_embedding_api_key: SecretStr | None = None
+
     llm_dry_run: bool = False
     llm_monthly_budget_usd: float | None = None
 

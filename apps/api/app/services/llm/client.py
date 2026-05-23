@@ -56,6 +56,25 @@ class LLMClient:
             # enough that hung connections don't tie up workers forever.
             timeout=120.0,
         )
+        # Optional dedicated embedding client. your LLM endpoint (and others)
+        # often issue per-model keys, so the chat-model key can't access
+        # the embedding model. When ``llm_embedding_api_key`` is set we
+        # build a separate AsyncOpenAI for embedding calls; otherwise
+        # embeddings reuse the chat client.
+        embed_key = getattr(self._settings, "llm_embedding_api_key", None)
+        embed_base = getattr(self._settings, "llm_embedding_base_url", "") or ""
+        if embed_key is not None:
+            self._embed_openai = AsyncOpenAI(
+                base_url=embed_base or self._settings.llm_base_url,
+                api_key=(
+                    embed_key.get_secret_value()
+                    if hasattr(embed_key, "get_secret_value")
+                    else str(embed_key)
+                ),
+                timeout=120.0,
+            )
+        else:
+            self._embed_openai = self._openai
 
     # ------------------------------------------------------------------
     # Chat
@@ -379,7 +398,9 @@ class LLMClient:
         retry = get_retry()
         async for attempt in retry:
             with attempt:
-                return await self._openai.embeddings.create(
+                # Use the dedicated embedding client when configured.
+                # Per-model LLM keys (<vendor> + others) require this.
+                return await self._embed_openai.embeddings.create(
                     model=model,
                     input=req.texts,
                 )

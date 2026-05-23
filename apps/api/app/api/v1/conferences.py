@@ -314,6 +314,33 @@ async def create_conference(
     await db.commit()
     invalidate_graph()
 
+    # Embed the conference's structural blob synchronously so the matcher's
+    # Stage A has a chunk to compare messaging documents against. Without
+    # this, manually-created conferences always score 0 on messaging /
+    # pillar because the embed-on-extract path that the scraper relies
+    # on never runs for them. Mirrors the same code in
+    # services/extraction/pipeline.py.
+    try:
+        from app.services.embeddings import embed_owner
+        from app.services.extraction.pipeline import _conference_embed_text
+
+        blob = _conference_embed_text(conf)
+        if blob:
+            await embed_owner(
+                db,
+                owner_type="conference",
+                owner_id=conf.id,
+                text=blob,
+                purpose="embed:conference",
+            )
+            await db.commit()
+    except Exception as exc:
+        log.warning(
+            "conference.manual_create.embed_failed",
+            conference_id=str(conf.id),
+            error=str(exc),
+        )
+
     log.info(
         "conference.manual_create",
         conference_id=str(conf.id),
