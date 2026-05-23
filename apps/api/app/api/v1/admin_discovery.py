@@ -139,3 +139,33 @@ async def ingest_feed(
         actor_label="ingest_feed_manual",
     )
     return result.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# Geocoding backfill — populates app.conferences.latitude / longitude using
+# Nominatim. Rate-limited (1 req/sec by Nominatim policy) so this can take a
+# few minutes for the first run on a large DB. Subsequent runs only touch
+# rows that are still NULL.
+# ---------------------------------------------------------------------------
+class GeocodeBackfillRequest(BaseModel):
+    batch_limit: int | None = Field(
+        default=None,
+        ge=1,
+        le=2000,
+        description=(
+            "Stop after geocoding this many rows. Null = walk every row with "
+            "a city and no coordinates yet. The Nominatim policy is 1 req/sec, "
+            "so 500 rows ≈ 9 minutes."
+        ),
+    )
+
+
+@router.post("/geocode-backfill")
+async def geocode_backfill(
+    db: DbSession,
+    body: Annotated[GeocodeBackfillRequest, Body()] = GeocodeBackfillRequest(),
+) -> dict:
+    from app.services.geocoding import backfill_missing
+
+    summary = await backfill_missing(db, batch_limit=body.batch_limit)
+    return summary

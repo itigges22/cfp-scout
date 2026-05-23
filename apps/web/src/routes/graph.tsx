@@ -20,7 +20,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { Suspense, lazy, useCallback, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,11 +76,24 @@ const STATUS_CHOICES = [
 
 const DEFAULT_KINDS: GraphNodeKind[] = ["conference", "topic", "sme"];
 
+// d3-force defaults for ForceGraph2D — used as the sliders' starting values.
+// linkDistance ≈ desired edge length; charge ≈ how strongly nodes repel
+// (negative = repel); collide ≈ minimum node radius to enforce.
+const DEFAULT_LINK_DISTANCE = 60;
+const DEFAULT_CHARGE = -120;
+const DEFAULT_COLLIDE = 12;
+
 function GraphPage() {
   const [kinds, setKinds] = useState<Set<GraphNodeKind>>(new Set(DEFAULT_KINDS));
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [since, setSince] = useState<string>("");
   const [selected, setSelected] = useState<GraphNode | null>(null);
+
+  // Force controls — exposed so the user can spread out / pull in clusters
+  // until the graph looks the way they want. Sane defaults at first paint.
+  const [linkDistance, setLinkDistance] = useState(DEFAULT_LINK_DISTANCE);
+  const [chargeStrength, setChargeStrength] = useState(DEFAULT_CHARGE);
+  const [collideRadius, setCollideRadius] = useState(DEFAULT_COLLIDE);
 
   const queryKey = useMemo(
     () => [
@@ -145,6 +158,20 @@ function GraphPage() {
         }}
       />
 
+      <ForceControls
+        linkDistance={linkDistance}
+        chargeStrength={chargeStrength}
+        collideRadius={collideRadius}
+        onLinkDistance={setLinkDistance}
+        onCharge={setChargeStrength}
+        onCollide={setCollideRadius}
+        onReset={() => {
+          setLinkDistance(DEFAULT_LINK_DISTANCE);
+          setChargeStrength(DEFAULT_CHARGE);
+          setCollideRadius(DEFAULT_COLLIDE);
+        }}
+      />
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
         <Card className="overflow-hidden">
           <CardContent className="relative h-[640px] p-0">
@@ -176,6 +203,9 @@ function GraphPage() {
                   nodes={data.nodes}
                   links={data.links}
                   onNodeClick={setSelected}
+                  linkDistance={linkDistance}
+                  chargeStrength={chargeStrength}
+                  collideRadius={collideRadius}
                 />
               </Suspense>
             )}
@@ -305,10 +335,16 @@ function GraphCanvas({
   nodes,
   links,
   onNodeClick,
+  linkDistance,
+  chargeStrength,
+  collideRadius,
 }: {
   nodes: GraphNode[];
   links: GraphLink[];
   onNodeClick: (n: GraphNode) => void;
+  linkDistance: number;
+  chargeStrength: number;
+  collideRadius: number;
 }) {
   // Clone — the library mutates positions onto these objects.
   const graphData = useMemo(
@@ -320,7 +356,32 @@ function GraphCanvas({
   );
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const fgRef = useRef<any>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
+
+  // Re-apply d3 forces whenever a slider moves. The library exposes the
+  // underlying d3-force simulation via `d3Force(name)`; we mutate the
+  // relevant force and bump the simulation alpha so it actually settles
+  // into the new layout instead of staying frozen.
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg || typeof fg.d3Force !== "function") return;
+    const linkF = fg.d3Force("link");
+    if (linkF && typeof linkF.distance === "function") {
+      linkF.distance(linkDistance);
+    }
+    const chargeF = fg.d3Force("charge");
+    if (chargeF && typeof chargeF.strength === "function") {
+      chargeF.strength(chargeStrength);
+    }
+    const collideF = fg.d3Force("collide");
+    if (collideF && typeof collideF.radius === "function") {
+      collideF.radius(collideRadius);
+    }
+    if (typeof fg.d3ReheatSimulation === "function") {
+      fg.d3ReheatSimulation();
+    }
+  }, [linkDistance, chargeStrength, collideRadius, graphData]);
 
   const adjacency = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -364,6 +425,7 @@ function GraphCanvas({
   return (
     <div ref={containerRef} className="h-full w-full">
       <ForceGraph2D
+        ref={fgRef}
         graphData={graphData}
         nodeId="id"
         // The library reads label for default tooltips; we render our own
@@ -399,11 +461,19 @@ function GraphCanvas({
           ctx.strokeStyle = "rgba(15, 23, 42, 0.7)";
           ctx.stroke();
 
-          // Label rendering: at high zoom (>1.3) or on hover. Draw a
-          // semi-opaque background pill BEHIND the text so overlapping
-          // labels remain readable instead of becoming smushed pixels.
-          // Font size has a floor of 11px regardless of zoom.
-          if (globalScale > 1.3 || hoverId === n.id) {
+          // Label-rendering policy — keep the viz readable when there
+          // are hundreds of conference nodes:
+          //   - ALWAYS label the structural anchors: pillar, audience, sme.
+          //   - Label a CONFERENCE only when it's hovered or the user
+          //     has zoomed very far in (>2.0).
+          //   - Everything else: no label.
+          // The background pill keeps labels readable when they overlap.
+          const isAnchor =
+            n.kind === "pillar" || n.kind === "audience" || n.kind === "sme";
+          const isHovered = hoverId === n.id;
+          const farZoom = globalScale > 2.0;
+          const shouldLabel = isAnchor || isHovered || farZoom;
+          if (shouldLabel) {
             const fontSize = Math.max(11, 12 / globalScale);
             ctx.font = `${fontSize}px ui-sans-serif, system-ui, sans-serif`;
             const label = n.label.length > 36 ? n.label.slice(0, 35) + "…" : n.label;
@@ -414,17 +484,18 @@ function GraphCanvas({
             const boxY = n.y - fontSize / 2 - padY;
             const boxH = fontSize + padY * 2;
             const boxW = textWidth + padX * 2;
-            // Background pill (slate-900 at 80%).
             ctx.fillStyle = dim
               ? "rgba(15,23,42,0.45)"
-              : "rgba(15,23,42,0.82)";
+              : "rgba(15,23,42,0.88)";
             ctx.beginPath();
             ctx.roundRect(boxX, boxY, boxW, boxH, 3 / globalScale);
             ctx.fill();
-            // Text.
+            // Anchor nodes get bolder labels.
             ctx.fillStyle = dim
               ? "rgba(226,232,240,0.55)"
-              : "rgba(248,250,252,0.98)";
+              : isAnchor
+                ? "rgba(255,255,255,1)"
+                : "rgba(248,250,252,0.95)";
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
             ctx.fillText(label, boxX + padX, n.y);
@@ -546,6 +617,100 @@ function KindMetadata({ node }: { node: GraphNode }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Force controls — three sliders that mutate d3-force live so the user can
+// spread out / pull in the layout until it reads well at their screen size.
+// ---------------------------------------------------------------------------
+function ForceControls({
+  linkDistance,
+  chargeStrength,
+  collideRadius,
+  onLinkDistance,
+  onCharge,
+  onCollide,
+  onReset,
+}: {
+  linkDistance: number;
+  chargeStrength: number;
+  collideRadius: number;
+  onLinkDistance: (v: number) => void;
+  onCharge: (v: number) => void;
+  onCollide: (v: number) => void;
+  onReset: () => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="grid grid-cols-1 gap-4 py-4 md:grid-cols-[1fr_1fr_1fr_auto]">
+        <Slider
+          label="Link distance"
+          hint="Shorter pulls connected nodes together; longer pushes them apart."
+          min={10}
+          max={300}
+          value={linkDistance}
+          onChange={onLinkDistance}
+        />
+        <Slider
+          label="Repulsion (charge)"
+          hint="More negative pushes every node away from every other — spreads clusters."
+          min={-800}
+          max={0}
+          value={chargeStrength}
+          onChange={onCharge}
+        />
+        <Slider
+          label="Collision radius"
+          hint="Minimum spacing between nodes. Bigger = fewer overlaps."
+          min={0}
+          max={40}
+          value={collideRadius}
+          onChange={onCollide}
+        />
+        <div className="flex items-end justify-end">
+          <Button variant="ghost" size="sm" onClick={onReset}>
+            Reset
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Slider({
+  label,
+  hint,
+  min,
+  max,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  min: number;
+  max: number;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-baseline justify-between">
+        <Label className="text-xs uppercase tracking-wider text-fg-subtle">
+          {label}
+        </Label>
+        <span className="text-xs tabular-nums text-fg-muted">{value}</span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Number(e.currentTarget.value))}
+        className="w-full accent-accent"
+      />
+      <p className="text-[10px] leading-snug text-fg-subtle">{hint}</p>
+    </div>
   );
 }
 

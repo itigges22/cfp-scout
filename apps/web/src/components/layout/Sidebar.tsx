@@ -33,9 +33,10 @@ const SECTIONS: { title: string; entries: NavEntry[] }[] = [
   // Everything the operator manually feeds Scout: who you have on the
   // bench (SMEs), who you're trying to reach (Audiences), how you talk
   // about the products (Messaging), and where you've been already
-  // (Past conferences).
+  // (Past conferences). Section labelled "Info" — these aren't team
+  // members, they're the team's reference data.
   {
-    title: "Team",
+    title: "Info",
     entries: [
       { to: "/smes", label: "SMEs", Icon: Users },
       { to: "/audiences", label: "Audiences", Icon: ClipboardList },

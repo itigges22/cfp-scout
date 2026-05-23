@@ -348,6 +348,13 @@ SPECS: list[SettingSpec] = [
         description="Aggregator / known-conference URLs that discovery always crawls in addition to search hits. Gives a reliable signal floor when DDG/Brave/Tavily return nothing.",
     ),
     SettingSpec(
+        name="discovery_ai_keywords",
+        kind="list_str",
+        group="discovery",
+        label="AI keyword filter (multilingual)",
+        description="Events whose name + tags + description don't contain any of these (case-insensitive substring match) are dropped from the developers.events feed. Default ships EN + ES + PT + JA + ZH + KO variants so LATAM and Asia events get through. Widen to catch more, tighten to reduce noise.",
+    ),
+    SettingSpec(
         name="discovery_url_blocklist",
         kind="list_str",
         group="discovery",

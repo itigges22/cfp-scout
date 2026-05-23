@@ -52,6 +52,8 @@ class ConferenceRead(BaseModel):
     end_date: str | None = None
     location_city: str | None = None
     location_country: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     is_virtual: bool
     website: str | None = None
     cfp_url: str | None = None
@@ -158,6 +160,52 @@ class DashboardStats(BaseModel):
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+@router.get("/stats/by-location")
+async def stats_by_location(db: DbSession) -> dict:
+    """Geocoded conferences for the dashboard map.
+
+    Returns one item per conference with non-null lat/lng. The UI clusters
+    by (lat, lng) to draw a single dot per city; clicking it shows the
+    list of conferences at that point.
+
+    Excludes virtual events (they have no physical location) and
+    quarantined / rejected conferences (clutter, not actionable).
+    """
+    rows = (
+        await db.execute(
+            select(
+                Conference.id,
+                Conference.name,
+                Conference.location_city,
+                Conference.location_country,
+                Conference.latitude,
+                Conference.longitude,
+                Conference.status,
+                Conference.start_date,
+            )
+            .where(Conference.latitude.is_not(None))
+            .where(Conference.longitude.is_not(None))
+            .where(Conference.is_virtual.is_(False))
+            .where(Conference.status.not_in(["quarantined", "rejected"]))
+        )
+    ).all()
+    return {
+        "items": [
+            {
+                "id": str(r.id),
+                "name": r.name,
+                "city": r.location_city,
+                "country": r.location_country,
+                "lat": float(r.latitude),
+                "lng": float(r.longitude),
+                "status": r.status,
+                "start_date": r.start_date.isoformat() if r.start_date else None,
+            }
+            for r in rows
+        ]
+    }
+
+
 @router.get("/stats/dashboard", response_model=DashboardStats)
 async def dashboard_stats(db: DbSession) -> DashboardStats:
     """Aggregates the four headline numbers + top-N conferences for the
@@ -564,7 +612,13 @@ async def conference_smes(
 
 @router.get("/{conference_id}/match")
 async def conference_match(db: DbSession, conference_id: UUID) -> dict:
-    """Latest match row for this conference (current algorithm_version)."""
+    """Latest match row for this conference (current algorithm_version).
+
+    Auto-runs the matcher inline if no match exists yet for this version.
+    The detail page should be self-sufficient — the user shouldn't have
+    to know about a separate "run matcher" step. UI shows a skeleton
+    while this endpoint runs, so paying the matcher cost here is fine.
+    """
     if await db.get(Conference, conference_id) is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -577,6 +631,26 @@ async def conference_match(db: DbSession, conference_id: UUID) -> dict:
             .where(Match.algorithm_version == ALGORITHM_VERSION)
         )
     ).scalar_one_or_none()
+    if match is None:
+        try:
+            from app.services.matcher import run_fit_match
+
+            log.info("conference.match.auto_run", conference_id=str(conference_id))
+            await run_fit_match(db, conference_id)
+            await db.commit()
+            match = (
+                await db.execute(
+                    select(Match)
+                    .where(Match.conference_id == conference_id)
+                    .where(Match.algorithm_version == ALGORITHM_VERSION)
+                )
+            ).scalar_one_or_none()
+        except Exception as exc:  # noqa: BLE001 — surface to UI, don't 500
+            log.warning(
+                "conference.match.auto_run_failed",
+                conference_id=str(conference_id),
+                error=str(exc)[:200],
+            )
     if match is None:
         return {
             "conference_id": str(conference_id),

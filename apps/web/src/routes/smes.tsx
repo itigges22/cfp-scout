@@ -37,6 +37,8 @@ function SmesPage() {
   const debouncedSearch = useDebouncedValue(search);
   const [teamFilter, setTeamFilter] = useState<TeamFilter>("all");
   const [showCreate, setShowCreate] = useState(false);
+  // null = nothing being edited; SmeRead = open the edit dialog
+  const [editing, setEditing] = useState<import("@/lib/api-types").SmeRead | null>(null);
 
   const queryClient = useQueryClient();
   const teamParam = teamFilter === "daam" ? "team" : undefined;
@@ -121,7 +123,19 @@ function SmesPage() {
               </TableHeader>
               <TableBody>
                 {query.data.items.map((s) => (
-                  <TableRow key={s.id}>
+                  <TableRow
+                    key={s.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setEditing(s)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setEditing(s);
+                      }
+                    }}
+                    className="cursor-pointer hover:bg-surface-2"
+                  >
                     <TableCell className="font-medium">{s.full_name}</TableCell>
                     <TableCell>
                       <Badge variant={s.team === "team" ? "accent" : "muted"}>{s.team}</Badge>
@@ -146,7 +160,10 @@ function SmesPage() {
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={() => deactivate.mutate(s.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deactivate.mutate(s.id);
+                          }}
                           disabled={deactivate.isPending}
                           aria-label={`deactivate ${s.full_name}`}
                         >
@@ -171,6 +188,13 @@ function SmesPage() {
       </Card>
 
       <SmeFormDialog open={showCreate} onOpenChange={setShowCreate} />
+      <SmeFormDialog
+        open={editing !== null}
+        initial={editing}
+        onOpenChange={(o) => {
+          if (!o) setEditing(null);
+        }}
+      />
     </div>
   );
 }

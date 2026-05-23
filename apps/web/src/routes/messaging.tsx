@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 
@@ -30,6 +30,7 @@ export const Route = createFileRoute("/messaging")({
 const PER_PAGE = 20;
 
 function MessagingPage() {
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
@@ -105,7 +106,19 @@ function MessagingPage() {
               </TableHeader>
               <TableBody>
                 {query.data.items.map((m) => (
-                  <TableRow key={m.id}>
+                  <TableRow
+                    key={m.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate({ to: "/messaging/$id", params: { id: m.id } })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        navigate({ to: "/messaging/$id", params: { id: m.id } });
+                      }
+                    }}
+                    className="cursor-pointer hover:bg-surface-2"
+                  >
                     <TableCell className="font-medium">{m.title}</TableCell>
                     <TableCell>
                       <Badge variant={m.source_type === "pdf" ? "accent" : "muted"}>
@@ -131,7 +144,10 @@ function MessagingPage() {
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={() => deactivate.mutate(m.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deactivate.mutate(m.id);
+                          }}
                           disabled={deactivate.isPending}
                           aria-label={`deactivate ${m.title}`}
                         >

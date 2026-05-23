@@ -196,6 +196,76 @@ class Settings(BaseSettings):
     # LLM extractor can't make a conference row out of a generic Wikipedia
     # article, OpenReview group page, or social-media post — and burning
     # tokens trying wastes budget. Match is case-insensitive substring.
+    # AI keyword filter used by the JSON-feed ingestor (developers.events).
+    # Events whose name + tags + description don't contain any of these are
+    # dropped. Editable from /settings/tunables so the operator can broaden
+    # (catch more events) or tighten (reduce noise) without redeploying.
+    # Defaults include EN + ES + PT + JA + ZH + KO variants so the LATAM /
+    # Asia conference scene isn't silently filtered out.
+    discovery_ai_keywords: list[str] = Field(
+        default_factory=lambda: [
+            # English — core
+            "ai", "ml", "machine learning", "machinelearning",
+            "deep learning", "deeplearning", "neural", "neural network",
+            "data", "datascience", "data science", "data engineering",
+            "big data", "data ops", "dataops",
+            # English — LLM / GenAI ecosystem
+            "llm", "llms", "gpt", "genai", "generative ai", "generative",
+            "agent", "agents", "agentic", "rag", "retrieval-augmented",
+            "embedding", "embeddings", "vector", "vector db", "vector search",
+            "fine-tune", "fine-tuning", "finetune", "finetuning",
+            "transformer", "transformers", "diffusion", "synthetic data",
+            "prompt", "prompting", "prompt engineering", "context engineering",
+            "tokenizer", "tokenization",
+            # English — modalities
+            "nlp", "natural language", "computer vision", "vision", "speech",
+            "asr", "tts", "audio", "video", "multimodal",
+            "robotics", "reinforcement", "rl",
+            # English — platforms / tooling
+            "mlops", "ml ops", "llmops", "ml platform", "model serving",
+            "inference", "training", "evaluation", "evals", "benchmark",
+            "huggingface", "hugging face", "pytorch", "tensorflow", "jax",
+            "openai", "anthropic", "claude", "gemini", "llama", "mistral",
+            # English — adjacent
+            "ai safety", "alignment", "interpretability", "trust",
+            "responsible ai", "ethics", "fairness", "bias",
+            "kubeflow", "kserve", "ray", "vllm", "ollama",
+            "mlflow", "wandb", "weights & biases",
+            "ai-platform", "ai-platform", "redhat ai", "<vendor> ai",
+            # English — generic event-type signal
+            "developer", "devops", "platform", "engineering", "cloud",
+            "kubernetes", "k8s", "containers",
+            # Spanish (LATAM + ES)
+            "inteligencia artificial", "aprendizaje automático",
+            "aprendizaje automatico", "aprendizaje profundo",
+            "ciencia de datos", "datos", "desarrolladores",
+            # Portuguese (BR + PT)
+            "inteligência artificial", "inteligencia artificial",
+            "aprendizagem de máquina", "aprendizado de máquina",
+            "aprendizado profundo", "ciência de dados", "ciencia de dados",
+            "desenvolvedores",
+            # French
+            "intelligence artificielle", "apprentissage automatique",
+            "apprentissage profond", "science des données",
+            "développeurs",
+            # German
+            "künstliche intelligenz", "kunstliche intelligenz",
+            "maschinelles lernen", "datenwissenschaft", "entwickler",
+            # Japanese
+            "人工知能", "機械学習", "深層学習", "ディープラーニング",
+            "データサイエンス", "エーアイ",
+            # Chinese (simplified)
+            "人工智能", "机器学习", "深度学习", "数据科学", "大模型",
+            # Korean
+            "인공지능", "머신러닝", "기계학습", "딥러닝", "데이터사이언스",
+        ],
+        description=(
+            "Keywords used to filter the developers.events feed to AI/ML/data "
+            "events. Multilingual by default so LATAM and Asia events aren't "
+            "silently dropped. Substring match, case-insensitive."
+        ),
+    )
+
     discovery_url_blocklist: list[str] = Field(
         default_factory=lambda: [
             "wikipedia.org",

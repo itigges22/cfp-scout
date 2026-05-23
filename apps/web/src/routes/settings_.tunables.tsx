@@ -298,6 +298,27 @@ function SettingRow({
         className="font-mono"
       />
     );
+  } else if (kind === "list_str") {
+    // One item per line — much friendlier than a single comma-separated
+    // text input when the list has 100+ entries (e.g. the multilingual
+    // AI keyword filter).
+    const asArray = Array.isArray(live) ? (live as string[]) : [];
+    control = (
+      <textarea
+        value={asArray.join("\n")}
+        onChange={(e) =>
+          onChange(
+            e.currentTarget.value
+              .split(/\n+/)
+              .map((s) => s.trim())
+              .filter(Boolean),
+          )
+        }
+        rows={Math.min(16, Math.max(4, asArray.length))}
+        className="min-h-[6rem] resize-y rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs"
+        placeholder="One item per line"
+      />
+    );
   } else {
     control = (
       <Input

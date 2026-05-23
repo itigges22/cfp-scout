@@ -70,27 +70,48 @@ class FeedFilters:
     )
 
 
-# AI / ML / data-relevant tag keywords + name keywords. Both the feed's
+# AI / ML / data-relevant tag and name keywords. Both the feed's
 # `tags` array AND the event name get checked, since the maintainers'
-# tagging is inconsistent.
+# tagging is wildly inconsistent.
+#
+# Tuned aggressively wide on purpose — the user wants Scout to surface
+# meetups, hackathons, panels, workshops, summits, and conferences. The
+# matcher's scoring stage will rank low-fit events to the bottom, but
+# we want them in the universe first. False positives are cheap; missed
+# AI events are expensive.
 _AI_KEYWORDS = {
-    "ai",
-    "ml",
-    "machine learning",
-    "machinelearning",
-    "data",
-    "datascience",
-    "llm",
-    "gpt",
-    "genai",
-    "agentic",
-    "rag",
-    "nlp",
-    "computer vision",
-    "robotics",
-    "deep learning",
-    "deeplearning",
-    "neural",
+    # Core
+    "ai", "ml", "machine learning", "machinelearning",
+    "deep learning", "deeplearning", "neural", "neural network",
+    "data", "datascience", "data science", "data engineering",
+    "big data", "data ops", "dataops",
+    # LLM / GenAI ecosystem
+    "llm", "llms", "gpt", "genai", "generative ai", "generative",
+    "agent", "agents", "agentic", "rag", "retrieval-augmented",
+    "embedding", "embeddings", "vector", "vector db", "vector search",
+    "fine-tune", "fine-tuning", "finetune", "finetuning",
+    "transformer", "transformers", "diffusion", "synthetic data",
+    "prompt", "prompting", "prompt engineering", "context engineering",
+    "tokenizer", "tokenization",
+    # Modalities
+    "nlp", "natural language", "computer vision", "vision", "speech",
+    "asr", "tts", "audio", "video", "multimodal",
+    "robotics", "reinforcement", "rl",
+    # Platforms / tooling
+    "mlops", "ml ops", "llmops", "ml platform", "model serving",
+    "inference", "training", "evaluation", "evals", "benchmark",
+    "huggingface", "hugging face", "pytorch", "tensorflow", "jax",
+    "openai", "anthropic", "claude", "gemini", "llama", "mistral",
+    # Adjacent
+    "ai safety", "alignment", "interpretability", "trust", "responsible ai",
+    "ethics", "fairness", "bias",
+    "kubeflow", "kserve", "ray", "vllm", "ollama",
+    "mlflow", "wandb", "weights & biases",
+    "ai-platform", "ai-platform", "redhat ai", "<vendor> ai",
+    # Event-type signals (so a generic "data summit" tagged only "summit"
+    # still sneaks in if the name contains the topic):
+    "developer", "devops", "platform", "engineering", "cloud",
+    "kubernetes", "k8s", "containers",
 }
 
 
@@ -236,9 +257,26 @@ def _normalize_entry(entry: dict) -> dict | None:
         "website": (entry.get("hyperlink") or None) and entry["hyperlink"][:2000],
         "cfp_url": cfp_url and cfp_url[:2000],
         "cfp_close_at": cfp_close_at,
-        "topics": [str(t) for t in (entry.get("tags") or [])][:30],
+        # developers.events emits tags as either strings or
+        # {key, value} dicts. Normalize to plain strings so they
+        # don't render as Python reprs in the UI.
+        "topics": _normalize_tags(entry.get("tags") or [])[:30],
         "raw_status": entry.get("status"),
     }
+
+
+def _normalize_tags(raw_tags: list) -> list[str]:
+    out: list[str] = []
+    for t in raw_tags:
+        if isinstance(t, str):
+            v = t.strip()
+        elif isinstance(t, dict):
+            v = str(t.get("value") or t.get("key") or "").strip()
+        else:
+            v = str(t).strip()
+        if v:
+            out.append(v)
+    return out
 
 
 def _epoch_ms_to_date(value: Any) -> date | None:
@@ -281,10 +319,28 @@ def _country_to_iso2(raw: str) -> str | None:
 
 
 def _looks_ai_related(entry: dict, normalized: dict) -> bool:
+    """Pass an event through the AI filter.
+
+    Checks name + normalized topic strings + raw description if the feed
+    provides one. Many AI events tag themselves generically (just "tech"
+    or "developer") and put the topic signal in the description — those
+    used to be silently dropped.
+
+    Keywords come from `Settings.discovery_ai_keywords` so the operator
+    can edit them at runtime from /settings/tunables. Falls back to the
+    hardcoded `_AI_KEYWORDS` if the setting is empty (e.g. fresh DB).
+    """
     name_lower = (normalized["name"] or "").lower()
-    tags_lower = [str(t).lower() for t in (entry.get("tags") or [])]
-    blob = " ".join([name_lower, *tags_lower])
-    return any(kw in blob for kw in _AI_KEYWORDS)
+    topic_lower = " ".join(normalized.get("topics", [])).lower()
+    desc_lower = (
+        str(entry.get("description") or entry.get("summary") or entry.get("about") or "")
+        .lower()
+    )
+    blob = " ".join([name_lower, topic_lower, desc_lower])
+    settings = get_settings()
+    configured = [kw.lower() for kw in (settings.discovery_ai_keywords or []) if kw.strip()]
+    keywords = configured if configured else list(_AI_KEYWORDS)
+    return any(kw in blob for kw in keywords)
 
 
 # ---------------------------------------------------------------------------

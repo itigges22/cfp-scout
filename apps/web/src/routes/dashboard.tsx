@@ -1,23 +1,22 @@
 /**
- * /dashboard — at-a-glance view of the top conferences.
+ * /dashboard — top events + global map + lightweight agent prompt.
  *
- * Replaces the prior generic-stat-cards page. Now shows one rich card
- * per top-scoring conference with the operator-facing facts:
- *   - what     : conference name, status, score
- *   - when     : start/end dates + CFP close date
- *   - where    : city + country (or 'virtual')
- *   - why      : rationale from the matcher
- *   - who      : top recommended SMEs from the SME ranker
- *   - apply    : direct link to the CFP URL
- *
- * The four old roll-up stat cards stay at the top for quick scanning.
+ * Sections:
+ *   - 3 roll-up stat cards (upcoming approved · pending review · CFP closing)
+ *   - Dark world map: one dot per country, sized by event count
+ *   - Top picks: 6 per page, with prev/next pagination so the LLM only
+ *     scores 6 cards' worth of detail per page load instead of 50+ at once
+ *   - Ask Scout: small prompt-and-answer panel (one-shot, no session)
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 
 import { StatusPill } from "@/components/conferences/StatusPill";
+import { WorldMap } from "@/components/dashboard/WorldMap";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -27,36 +26,51 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { conferencesApi } from "@/lib/api";
+import { agentApi, conferencesApi } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard")({
   component: DashboardPage,
 });
+
+const PAGE_SIZE = 6;
 
 function DashboardPage() {
   const statsQ = useQuery({
     queryKey: ["dashboard", "stats"],
     queryFn: () => conferencesApi.dashboardStats(),
   });
-  // Pull the top 6 conferences by score with their full ListItem shape
-  // (name, location, dates, cfp_url, cfp_close_at, score, status, topics).
-  const topQ = useQuery({
+  // Pull a much larger pool so we can paginate locally — far cheaper
+  // than re-issuing the list endpoint per page, and the per-card LLM
+  // queries (rationale + SMEs) only fire for the currently-visible
+  // 6 cards.
+  const allQ = useQuery({
     queryKey: ["dashboard", "top-conferences"],
-    queryFn: () => conferencesApi.list({ per_page: 6, sort: "score" }),
+    queryFn: () => conferencesApi.list({ per_page: 100, sort: "score" }),
   });
+  const [page, setPage] = useState(0);
 
   const stats = statsQ.data;
-  const topItems = topQ.data?.items ?? [];
+  const allItems = useMemo(() => allQ.data?.items ?? [], [allQ.data]);
+  const totalPages = Math.max(1, Math.ceil(allItems.length / PAGE_SIZE));
+  const pageItems = allItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  // Geocoded conferences — one item per non-virtual conference whose
+  // location resolved to lat/lng. The map clusters them by city.
+  const mapQ = useQuery({
+    queryKey: ["dashboard", "by-location"],
+    queryFn: () => conferencesApi.statsByLocation(),
+  });
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Dashboard"
-        description="Where to go next: top-ranked AI events with CFP dates, locations, and recommended SMEs."
+        description="Where to go next: top-ranked AI events, global distribution, recommended SMEs."
       />
 
-      {/* Top-line numbers */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Three roll-up stats (low-coverage SMEs card removed; that's a
+          /smes-page concern, not a dashboard one) */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           title="Upcoming approved"
           hint="next 90 days"
@@ -78,47 +92,58 @@ function DashboardPage() {
           loading={statsQ.isLoading}
           error={!!statsQ.error}
         />
-        <StatCard
-          title="Low-coverage SMEs"
-          hint="missing topics or audiences"
-          value={stats?.cards.low_coverage_smes}
-          loading={statsQ.isLoading}
-          error={!!statsQ.error}
-        />
       </div>
 
+      {/* World map — city-level dots, clickable for the underlying events */}
+      <WorldMap items={mapQ.data?.items ?? []} />
+
+      {/* Top conferences — paginated */}
       <div className="flex items-baseline justify-between">
         <h2 className="text-lg font-semibold">Top picks</h2>
-        <Link to="/conferences" className="text-xs text-accent hover:underline">
-          See all conferences →
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/conferences"
+            className="text-xs text-accent hover:underline"
+          >
+            See all →
+          </Link>
+        </div>
       </div>
 
-      {topQ.isLoading ? (
+      {allQ.isLoading ? (
         <CardSkeletonGrid />
-      ) : topItems.length === 0 ? (
+      ) : allItems.length === 0 ? (
         <EmptyState message="No conferences yet. Click 'Discover more' on /conferences to fetch a fresh batch." />
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {topItems.map((c) => (
-            <ConferenceFactCard key={c.id} c={c} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {pageItems.map((c) => (
+              <ConferenceFactCard key={c.id} c={c} />
+            ))}
+          </div>
+          <Pagination
+            page={page}
+            total={allItems.length}
+            pageSize={PAGE_SIZE}
+            onPage={setPage}
+          />
+        </>
       )}
+
+      {/* Agent quick-ask panel */}
+      <AskScout />
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// The headline component: one conference, all the facts an operator needs
-// before deciding "should we go?".
+// One conference card — the WHO / WHAT / WHEN / WHERE / WHY layout.
 // ---------------------------------------------------------------------------
 function ConferenceFactCard({
   c,
 }: {
   c: import("@/lib/api-types").ConferenceListItem;
 }) {
-  // Per-card extras: match (rationale) + smes (recommended team).
   const matchQ = useQuery({
     queryKey: ["conferences", c.id, "match"],
     queryFn: () => conferencesApi.match(c.id),
@@ -132,10 +157,9 @@ function ConferenceFactCard({
 
   const overall = c.overall_score ?? null;
   const overallPct = overall === null ? "—" : Math.round(overall * 100);
-  const where =
-    c.is_virtual
-      ? "Virtual"
-      : [c.location_city, c.location_country].filter(Boolean).join(", ");
+  const where = c.is_virtual
+    ? "Virtual"
+    : [c.location_city, c.location_country].filter(Boolean).join(", ");
   const rationale = matchQ.data?.match?.rationale_text ?? "";
   const topSmes = smesQ.data?.above_gate ?? smesQ.data?.near_misses ?? [];
 
@@ -172,8 +196,6 @@ function ConferenceFactCard({
 
       <CardContent className="flex flex-1 flex-col gap-3 pt-0 text-sm">
         <FactGrid c={c} where={where} />
-
-        {/* Why */}
         <Section title="Why">
           {matchQ.isLoading ? (
             <Skeleton className="h-12 w-full" />
@@ -185,8 +207,6 @@ function ConferenceFactCard({
             </p>
           )}
         </Section>
-
-        {/* Who */}
         <Section title="Who">
           {smesQ.isLoading ? (
             <Skeleton className="h-8 w-2/3" />
@@ -210,8 +230,6 @@ function ConferenceFactCard({
             </ul>
           )}
         </Section>
-
-        {/* Apply call-to-action */}
         {c.cfp_url ? (
           <a
             href={c.cfp_url}
@@ -290,6 +308,125 @@ function Section({
       <p className="text-xs uppercase tracking-wider text-fg-muted">{title}</p>
       <div className="mt-1">{children}</div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pagination strip
+// ---------------------------------------------------------------------------
+function Pagination({
+  page,
+  total,
+  pageSize,
+  onPage,
+}: {
+  page: number;
+  total: number;
+  pageSize: number;
+  onPage: (p: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = page * pageSize + 1;
+  const to = Math.min(total, (page + 1) * pageSize);
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-fg-muted">
+        Showing {from}–{to} of {total}
+      </span>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPage(Math.max(0, page - 1))}
+          disabled={page === 0}
+        >
+          ← Previous
+        </Button>
+        <span className="px-2 text-xs text-fg-muted tabular-nums">
+          Page {page + 1} / {totalPages}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPage(Math.min(totalPages - 1, page + 1))}
+          disabled={page >= totalPages - 1}
+        >
+          Next →
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Embedded one-shot agent prompt — for the user who just wants to ask
+// a quick question without leaving the dashboard.
+// ---------------------------------------------------------------------------
+function AskScout() {
+  const [q, setQ] = useState("");
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  const mut = useMutation({
+    mutationFn: async (prompt: string) => {
+      // Lazily create / reuse a single dashboard session.
+      let sid = sessionId;
+      if (!sid) {
+        const created = await agentApi.createSession("Dashboard quick ask");
+        sid = created.id;
+        setSessionId(sid);
+      }
+      const reply = await agentApi.ask(sid, prompt);
+      return reply.content;
+    },
+    onSuccess: (content) => setAnswer(content),
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Ask Scout</CardTitle>
+        <CardDescription>
+          Quick question about your conferences, SMEs, or messaging. Threaded
+          conversations live in{" "}
+          <Link to="/settings" className="text-accent hover:underline">
+            Settings → Agent chat
+          </Link>
+          .
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!q.trim() || mut.isPending) return;
+            mut.mutate(q.trim());
+          }}
+        >
+          <input
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.currentTarget.value)}
+            placeholder="e.g. 'What AI conferences in Europe close their CFP this month?'"
+            className="flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm"
+          />
+          <Button type="submit" disabled={mut.isPending || !q.trim()}>
+            {mut.isPending ? "Thinking…" : "Ask"}
+          </Button>
+        </form>
+        {mut.isError && (
+          <div className="rounded border border-danger/40 bg-danger/10 p-2 text-xs text-danger">
+            {String((mut.error as Error)?.message)}
+          </div>
+        )}
+        {answer && (
+          <div className="rounded-md border border-border-subtle bg-surface-2 p-3 text-sm text-fg whitespace-pre-wrap">
+            {answer}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

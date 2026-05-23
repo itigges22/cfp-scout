@@ -142,6 +142,34 @@ async def _build(
         )
     ).scalar_one_or_none()
 
+    # Auto-run the matcher inline if no match exists yet for this algorithm
+    # version. The brief endpoint should be self-sufficient — the user
+    # shouldn't have to know about a separate "run matcher" step. The UI
+    # already shows a loading spinner while this endpoint runs, so paying
+    # the matcher cost here gives the user a single "open brief →
+    # populated brief" interaction instead of an empty brief + manual
+    # admin command.
+    if match is None:
+        try:
+            from app.services.matcher import run_fit_match
+
+            log.info("brief.auto_match", conference_id=str(conference.id))
+            await run_fit_match(db, conference.id)
+            await db.commit()
+            match = (
+                await db.execute(
+                    select(Match)
+                    .where(Match.conference_id == conference.id)
+                    .where(Match.algorithm_version == ALGORITHM_VERSION)
+                )
+            ).scalar_one_or_none()
+        except Exception as exc:  # noqa: BLE001 — surface to brief, don't 500
+            log.warning(
+                "brief.auto_match_failed",
+                conference_id=str(conference.id),
+                error=str(exc)[:200],
+            )
+
     series = None
     if conference.series_id is not None:
         series = await db.get(ConferenceSeries, conference.series_id)

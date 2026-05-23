@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,12 +17,14 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, audiencesApi, smesApi, topicsApi } from "@/lib/api";
-import type { SmeCreate } from "@/lib/api-types";
+import type { SmeCreate, SmeRead } from "@/lib/api-types";
 import { ErrorBox, Field, ListField } from "@/routes/audiences";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Existing SME → renders as "edit" form. Omitted → create form. */
+  initial?: SmeRead | null;
 }
 
 const EMPTY_FORM: SmeCreate = {
@@ -40,10 +42,38 @@ const EMPTY_FORM: SmeCreate = {
   is_active: true,
 };
 
-export function SmeFormDialog({ open, onOpenChange }: Props) {
+export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
   const queryClient = useQueryClient();
+  const isEdit = initial !== null;
   const [form, setForm] = useState<SmeCreate>(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  // Reseed when the dialog opens with a different SME (or toggles create↔edit).
+  useEffect(() => {
+    if (!open) return;
+    if (initial) {
+      setForm({
+        full_name: initial.full_name,
+        email: initial.email,
+        team: initial.team,
+        expertise_areas:
+          initial.expertise_areas.length >= 2
+            ? initial.expertise_areas
+            : [...initial.expertise_areas, ...Array(2 - initial.expertise_areas.length).fill("")],
+        primary_topics: initial.primary_topics,
+        audience_focus: initial.audience_focus,
+        location_country: initial.location_country,
+        location_city: initial.location_city,
+        bio: initial.bio,
+        languages: initial.languages,
+        external_links: initial.external_links,
+        is_active: initial.is_active,
+      });
+    } else {
+      setForm(EMPTY_FORM);
+    }
+    setFieldErrors({});
+  }, [open, initial]);
 
   // Fetch the lookups needed for the multi-selects. Both stay open while
   // the dialog is up; cached by React Query.
@@ -59,13 +89,17 @@ export function SmeFormDialog({ open, onOpenChange }: Props) {
   });
 
   const mutate = useMutation({
-    mutationFn: (body: SmeCreate) =>
-      smesApi.create({
+    mutationFn: (body: SmeCreate) => {
+      const cleaned = {
         ...body,
         expertise_areas: body.expertise_areas.filter((s) => s.trim().length > 0),
         email: body.email?.trim() ? body.email : null,
         location_city: body.location_city?.trim() ? body.location_city : null,
-      }),
+      };
+      return isEdit && initial
+        ? smesApi.update(initial.id, cleaned)
+        : smesApi.create(cleaned);
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["smes"] });
       setForm(EMPTY_FORM);
@@ -84,7 +118,7 @@ export function SmeFormDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent widthClass="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>New SME</DialogTitle>
+          <DialogTitle>{isEdit ? `Edit ${initial?.full_name}` : "New SME"}</DialogTitle>
           <DialogDescription>
             Profile quality drives matcher quality. The 200-character bio minimum is intentional —
             empty or terse bios produce poor embeddings and bad recommendations.
@@ -287,7 +321,7 @@ export function SmeFormDialog({ open, onOpenChange }: Props) {
             disabled={mutate.isPending || !bioOk || form.expertise_areas.filter((s) => s.trim()).length < 2}
           >
             {mutate.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            Create SME
+            {isEdit ? "Save changes" : "Create SME"}
           </Button>
         </DialogFooter>
       </DialogContent>

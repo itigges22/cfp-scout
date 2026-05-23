@@ -20,7 +20,7 @@ import type { ConferenceBrief } from "@/lib/api-types";
 
 type SearchSchema = { team_size?: 1 | 2 | 3 };
 
-export const Route = createFileRoute("/conferences/$id/brief")({
+export const Route = createFileRoute("/conferences_/$id/brief")({
   validateSearch: (search): SearchSchema => {
     const raw = Number((search as Record<string, unknown>).team_size);
     const team_size = raw === 2 || raw === 3 ? raw : 1;
@@ -35,10 +35,14 @@ function ConferenceBriefPage() {
   const briefQ = useQuery({
     queryKey: ["conferences", id, "brief", team_size],
     queryFn: () => conferencesApi.brief(id, team_size),
+    // The brief endpoint auto-runs the matcher when one is missing — that
+    // can take 20+ seconds on first open. Keep the query patient.
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
   });
 
   if (briefQ.isLoading) {
-    return <div className="p-12 text-slate-500">Loading brief…</div>;
+    return <BriefLoadingSkeleton />;
   }
   if (briefQ.isError || !briefQ.data) {
     return (
@@ -130,7 +134,10 @@ function WhyGoing({ brief }: { brief: ConferenceBrief }) {
       {w.rationale_text ? (
         <p className="text-sm leading-relaxed text-slate-700">{w.rationale_text}</p>
       ) : (
-        <Empty>No rationale generated yet — run the matcher first.</Empty>
+        <Empty>
+          Rationale couldn't be generated — usually means there are no
+          messaging documents to compare against. Add one on /messaging.
+        </Empty>
       )}
       {w.matched_pillar && (
         <p className="mt-2 text-xs text-slate-500">
@@ -171,22 +178,17 @@ function Attendees({
     >
       {a.members.length === 0 ? (
         <Empty>
-          No SME recommendations yet.{" "}
-          <Link
-            to="/conferences/$id"
-            params={{ id: conferenceId }}
-            className="text-blue-700 underline"
-          >
-            Open conference detail
-          </Link>{" "}
-          and run the matcher.
+          No SME recommendations available. The matcher ran but found no
+          SMEs above the relevance gate — either the topic coverage is
+          thin or no active SMEs match this conference. Add or edit SMEs
+          from /smes, then reopen this brief.
         </Empty>
       ) : (
         <>
           {a.team_size > 1 && a.source === "individual_fallback" && (
             <Empty>
-              Team-of-{a.team_size} rec not computed yet — showing top
-              individuals as a stand-in. Run the team recommender.
+              Team-of-{a.team_size} recommendation not yet computed —
+              showing top individuals as a stand-in.
             </Empty>
           )}
           <ul className="space-y-3">
@@ -634,6 +636,57 @@ function escapeHtml(s: string): string {
 // ---------------------------------------------------------------------------
 // Print stylesheet
 // ---------------------------------------------------------------------------
+// First-time brief loads can take 20+ seconds because the endpoint
+// auto-runs the matcher (and embedding pipeline) when no Match exists
+// yet for this conference. A skeleton + a "what's happening" hint beats
+// a flat "Loading brief…" string by a lot.
+function BriefLoadingSkeleton() {
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto my-8 max-w-3xl bg-white p-10 shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-red-500" />
+          <p className="text-sm text-slate-600">
+            Running matcher + composing brief…
+          </p>
+        </div>
+        <p className="mt-2 text-xs text-slate-400">
+          First open scores the conference against every active SME and
+          messaging document. Usually 5–30 seconds; subsequent opens are
+          cached.
+        </p>
+        <div className="mt-8 space-y-6">
+          {/* fake header */}
+          <div>
+            <div className="h-8 w-2/3 animate-pulse rounded bg-slate-200" />
+            <div className="mt-2 h-4 w-1/3 animate-pulse rounded bg-slate-100" />
+          </div>
+          {/* at-a-glance grid */}
+          <div className="grid grid-cols-3 gap-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-16 animate-pulse rounded bg-slate-100" />
+            ))}
+          </div>
+          {/* rationale block */}
+          <div className="space-y-2">
+            <div className="h-3 w-1/4 animate-pulse rounded bg-slate-200" />
+            <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
+            <div className="h-3 w-5/6 animate-pulse rounded bg-slate-100" />
+            <div className="h-3 w-3/4 animate-pulse rounded bg-slate-100" />
+          </div>
+          {/* attendee rows */}
+          {[0, 1].map((i) => (
+            <div key={i} className="rounded border border-slate-100 p-3">
+              <div className="h-4 w-1/3 animate-pulse rounded bg-slate-200" />
+              <div className="mt-2 h-3 w-2/3 animate-pulse rounded bg-slate-100" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PrintStyles() {
   return (
     <style>{`

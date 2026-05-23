@@ -28,7 +28,7 @@ import type {
   SmeBreakdown,
 } from "@/lib/api-types";
 
-export const Route = createFileRoute("/conferences/$id")({
+export const Route = createFileRoute("/conferences_/$id")({
   component: ConferenceDetailPage,
 });
 
@@ -218,9 +218,9 @@ function ScorePanel({
           <CardTitle>Match score</CardTitle>
         </CardHeader>
         <CardContent className="py-4 text-sm text-fg-muted">
-          No match row yet. Run the matcher from{" "}
-          <code className="rounded bg-surface-2 px-1">/admin/matcher/run-now/&lt;id&gt;</code>
-          .
+          Matcher couldn't produce a score — usually means there are no
+          active messaging documents or SMEs to compare against. Add one
+          on /messaging or /smes and reopen this page.
         </CardContent>
       </Card>
     );

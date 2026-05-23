@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2, Plus, Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +28,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { ApiError, audiencesApi } from "@/lib/api";
-import type { AudienceProfileCreate, RoleSeniority } from "@/lib/api-types";
+import type {
+  AudienceProfileCreate,
+  AudienceProfileRead,
+  RoleSeniority,
+} from "@/lib/api-types";
 import { TeamGuidance } from "@/components/team/TeamGuidance";
 import { PageHeader } from "@/routes/dashboard";
 
@@ -50,6 +54,8 @@ function AudiencesPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
   const [showCreate, setShowCreate] = useState(false);
+  // null = dialog closed; AudienceProfileRead = edit that one
+  const [editing, setEditing] = useState<AudienceProfileRead | null>(null);
 
   const query = useQuery({
     queryKey: ["audiences", { page, q: debouncedSearch }],
@@ -125,7 +131,19 @@ function AudiencesPage() {
               </TableHeader>
               <TableBody>
                 {query.data.items.map((a) => (
-                  <TableRow key={a.id}>
+                  <TableRow
+                    key={a.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setEditing(a)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setEditing(a);
+                      }
+                    }}
+                    className="cursor-pointer hover:bg-surface-2"
+                  >
                     <TableCell className="font-medium">{a.name}</TableCell>
                     <TableCell className="text-fg-muted">{a.industry}</TableCell>
                     <TableCell>
@@ -147,7 +165,10 @@ function AudiencesPage() {
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={() => deactivate.mutate(a.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deactivate.mutate(a.id);
+                          }}
                           disabled={deactivate.isPending}
                           aria-label={`deactivate ${a.name}`}
                         >
@@ -171,43 +192,88 @@ function AudiencesPage() {
         </CardContent>
       </Card>
 
-      <CreateAudienceDialog open={showCreate} onOpenChange={setShowCreate} />
+      <AudienceDialog
+        open={showCreate}
+        initial={null}
+        onOpenChange={setShowCreate}
+      />
+      <AudienceDialog
+        open={editing !== null}
+        initial={editing}
+        onOpenChange={(o) => {
+          if (!o) setEditing(null);
+        }}
+      />
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Create form — inline overlay. A proper shadcn Dialog primitive lands when
-// the messaging wizard does (next pass); for now this is fine.
+// Audience form — works for both create AND edit. Pass `initial` to edit an
+// existing row, or null to create a new one. Same dialog component is mounted
+// twice from AudiencesPage; React unmounts the unused one cleanly.
 // ---------------------------------------------------------------------------
-function CreateAudienceDialog({
+const EMPTY_AUDIENCE: AudienceProfileCreate = {
+  name: "",
+  description: "",
+  industry: "",
+  role_seniority: "ic",
+  primary_pain_points: ["", ""],
+  key_messages: ["", ""],
+  exclusion_criteria: [],
+  is_active: true,
+};
+
+function AudienceDialog({
   open,
+  initial,
   onOpenChange,
 }: {
   open: boolean;
+  initial: AudienceProfileRead | null;
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<AudienceProfileCreate>({
-    name: "",
-    description: "",
-    industry: "",
-    role_seniority: "ic",
-    primary_pain_points: ["", ""],
-    key_messages: ["", ""],
-    exclusion_criteria: [],
-    is_active: true,
-  });
+  const isEdit = initial !== null;
+  const [form, setForm] = useState<AudienceProfileCreate>(EMPTY_AUDIENCE);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  // Re-seed the form when the dialog opens with a different row (or
+  // transitions create ↔ edit). Pads list fields to at least two slots so
+  // the ListField always shows somewhere to type a new item.
+  useEffect(() => {
+    if (!open) return;
+    if (initial) {
+      const pad = (xs: string[]) =>
+        xs.length >= 2 ? xs : [...xs, ...Array(2 - xs.length).fill("")];
+      setForm({
+        name: initial.name,
+        description: initial.description,
+        industry: initial.industry,
+        role_seniority: initial.role_seniority,
+        primary_pain_points: pad(initial.primary_pain_points),
+        key_messages: pad(initial.key_messages),
+        exclusion_criteria: initial.exclusion_criteria,
+        is_active: initial.is_active,
+      });
+    } else {
+      setForm(EMPTY_AUDIENCE);
+    }
+    setFieldErrors({});
+  }, [open, initial]);
+
   const mutate = useMutation({
-    mutationFn: (body: AudienceProfileCreate) =>
-      audiencesApi.create({
+    mutationFn: (body: AudienceProfileCreate) => {
+      const cleaned = {
         ...body,
         primary_pain_points: body.primary_pain_points.filter((s) => s.trim().length > 0),
         key_messages: body.key_messages.filter((s) => s.trim().length > 0),
         exclusion_criteria: body.exclusion_criteria.filter((s) => s.trim().length > 0),
-      }),
+      };
+      return isEdit && initial
+        ? audiencesApi.update(initial.id, cleaned)
+        : audiencesApi.create(cleaned);
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["audiences"] });
       onOpenChange(false);
@@ -233,7 +299,7 @@ function CreateAudienceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New audience profile</DialogTitle>
+          <DialogTitle>{isEdit ? `Edit "${initial?.name}"` : "New audience profile"}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4 p-6">
           <Field label="Name" error={fieldErrors.name}>
@@ -309,7 +375,7 @@ function CreateAudienceDialog({
           </Button>
           <Button onClick={() => mutate.mutate(form)} disabled={mutate.isPending}>
             {mutate.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            Create audience
+            {isEdit ? "Save changes" : "Create audience"}
           </Button>
         </DialogFooter>
       </DialogContent>

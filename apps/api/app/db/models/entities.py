@@ -314,6 +314,13 @@ class Conference(TimestampedMixin, Base):
     location_city: Mapped[str | None] = mapped_column(String(120))
     location_country: Mapped[str | None] = mapped_column(String(2))
 
+    # Best-effort geocoded coordinates for the dashboard map. NULL until
+    # the geocoding pass has run (Nominatim, rate-limited). Stored as
+    # plain floats — no PostGIS dependency; the dashboard only needs an
+    # approximate dot at city-level resolution.
+    latitude: Mapped[float | None] = mapped_column()
+    longitude: Mapped[float | None] = mapped_column()
+
     is_virtual: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     venue: Mapped[str | None] = mapped_column(String(200))
     website: Mapped[str | None] = mapped_column(Text)

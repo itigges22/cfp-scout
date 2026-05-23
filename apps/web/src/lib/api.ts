@@ -327,6 +327,19 @@ export const conferencesApi = {
       body,
     }),
   dashboardStats: () => request<DashboardStats>(`${BASE}/conferences/stats/dashboard`),
+  statsByLocation: () =>
+    request<{
+      items: Array<{
+        id: string;
+        name: string;
+        city: string | null;
+        country: string | null;
+        lat: number;
+        lng: number;
+        status: string;
+        start_date: string | null;
+      }>;
+    }>(`${BASE}/conferences/stats/by-location`),
   brief: (id: string, team_size = 1, force = false) =>
     request<ConferenceBrief>(`${BASE}/conferences/${id}/brief`, {
       query: { team_size, force },
