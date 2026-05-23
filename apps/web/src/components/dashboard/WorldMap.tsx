@@ -47,14 +47,23 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
   const navigate = useNavigate();
   const [hoverKey, setHoverKey] = useState<string | null>(null);
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+  // Default to a moderate zoom centered on the dense AI-event clusters
+  // (Europe + US). zoom=1 fits the whole globe but leaves Europe so
+  // cramped that the dots overlap. zoom=1.8 shows individual cities
+  // without scrolling. Reset button goes back here.
+  const DEFAULT_VIEW = { center: [0, 30] as [number, number], zoom: 1.8 };
   // Pan/zoom state driven by ZoomableGroup. Wheel / drag handled by
   // d3-zoom under the hood; we just hold the latest center + zoom so the
   // +/-/reset buttons can update them.
   const [view, setView] = useState<{ center: [number, number]; zoom: number }>(
-    () => ({ center: [0, 20], zoom: 1 }),
+    () => ({ ...DEFAULT_VIEW }),
   );
   const setZoom = (z: number) =>
     setView((v) => ({ ...v, zoom: Math.max(1, Math.min(8, z)) }));
+  const isAtDefault =
+    view.zoom === DEFAULT_VIEW.zoom &&
+    view.center[0] === DEFAULT_VIEW.center[0] &&
+    view.center[1] === DEFAULT_VIEW.center[1];
 
   // Cluster by (city, country) so 7 events in Boston render as one dot
   // sized by count, with a popover listing each event.
@@ -192,8 +201,8 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
         </button>
         <button
           type="button"
-          onClick={() => setView({ center: [0, 20], zoom: 1 })}
-          disabled={view.zoom === 1 && view.center[0] === 0 && view.center[1] === 20}
+          onClick={() => setView({ ...DEFAULT_VIEW })}
+          disabled={isAtDefault}
           aria-label="Reset view"
           title="Reset zoom + center"
           className="rounded p-1 text-fg-muted hover:bg-surface-3 disabled:opacity-40"
