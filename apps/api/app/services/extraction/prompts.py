@@ -24,7 +24,8 @@ from __future__ import annotations
 import json
 from typing import Final
 
-PROMPT_VERSION: Final[str] = "extract.conference.v1"
+PROMPT_VERSION: Final[str] = "extract.conference.v2"
+# v2 (2026-05-23): adds cfp_url to the schema + tolerant CfpDeadline aliases.
 
 
 SYSTEM_PROMPT: Final[str] = """\

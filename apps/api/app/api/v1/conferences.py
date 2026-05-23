@@ -54,6 +54,7 @@ class ConferenceRead(BaseModel):
     location_country: str | None = None
     is_virtual: bool
     website: str | None = None
+    cfp_url: str | None = None
     topics: list[str] = []
     cfp_topics_of_interest: list[str] = []
     cfp_close_at: str | None = None
@@ -92,6 +93,7 @@ class ConferenceCreate(BaseModel):
     is_virtual: bool = False
     venue: str | None = Field(default=None, max_length=200)
     website: str | None = Field(default=None, max_length=2000)
+    cfp_url: str | None = Field(default=None, max_length=2000)
     cfp_open_at: date | None = None
     cfp_close_at: date | None = None
     cfp_topics_of_interest: list[str] = Field(default_factory=list, max_length=30)
@@ -289,6 +291,7 @@ async def create_conference(
         is_virtual=payload.is_virtual,
         venue=payload.venue,
         website=payload.website,
+        cfp_url=payload.cfp_url,
         cfp_open_at=payload.cfp_open_at,
         cfp_close_at=payload.cfp_close_at,
         cfp_topics_of_interest=list(payload.cfp_topics_of_interest),
@@ -769,6 +772,7 @@ def _to_read(row: Conference) -> ConferenceRead:
         location_country=row.location_country,
         is_virtual=row.is_virtual,
         website=row.website,
+        cfp_url=row.cfp_url,
         topics=list(row.topics or []),
         cfp_topics_of_interest=list(row.cfp_topics_of_interest or []),
         cfp_close_at=row.cfp_close_at.isoformat() if row.cfp_close_at else None,

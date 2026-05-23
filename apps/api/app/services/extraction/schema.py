@@ -194,6 +194,10 @@ class ExtractedConference(BaseModel):
     is_virtual: bool = False
     venue: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] | None = None
     website: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
+    # Where the CFP / submission instructions live. Often a sub-page of
+    # `website` like /call-for-papers, /cfp, /submissions. Captured
+    # separately so the brief can link straight to "Apply here".
+    cfp_url: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
 
     cfp_open_at: date | None = None
     cfp_close_at: date | None = None

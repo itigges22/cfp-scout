@@ -15,7 +15,9 @@ Scout's normal raw_pages → extraction → matcher path.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass
+from urllib.parse import urldefrag, urljoin, urlparse
 
 import structlog
 
@@ -127,3 +129,97 @@ async def crawl_many(urls: list[str]) -> list[CrawlResult]:
 
     log.info("discovery.crawl.done", successes=len(out), attempted=len(urls))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Link extraction — used to expand aggregator pages into individual
+# conference candidates.
+# ---------------------------------------------------------------------------
+
+# Markdown link: [text](url) — captures url only.
+_MD_LINK_RE = re.compile(r"\[[^\]]*\]\((https?://[^)\s]+)\)")
+
+# Conference-likely substrings; case-insensitive substring match.
+_CONFERENCE_LIKE_KEYWORDS = (
+    "cfp",
+    "call-for-papers",
+    "call_for_papers",
+    "callforpapers",
+    "conference",
+    "symposium",
+    "workshop",
+    "summit",
+    "convention",
+    "neurips",
+    "icml",
+    "iclr",
+    "aaai",
+    "ijcai",
+    "kdd",
+    "acl",
+    "emnlp",
+    "naacl",
+    "wsdm",
+    "www",
+    "sigir",
+    "cikm",
+    "/202",  # year segments — 2026/2027/2028
+)
+
+
+def extract_conference_links(
+    markdown: str,
+    *,
+    source_url: str,
+    blocklist_substrings: list[str] | None = None,
+    max_links: int = 50,
+) -> list[str]:
+    """Pull URLs from ``markdown`` that look like individual conference
+    pages — used to expand an aggregator (aideadlin.es / papercall.io)
+    into individual crawl candidates.
+
+    Filter pipeline (in order):
+      1. Must be absolute http(s) URL.
+      2. Drop fragment + trailing slash for dedup.
+      3. Skip same as source_url.
+      4. Skip if host substring matches any blocklist entry.
+      5. Must match at least one conference-like keyword.
+      6. Cap to ``max_links`` (newest-first; aggregator listings tend
+         to put fresh stuff up top).
+    """
+    blocklist = [b.lower() for b in (blocklist_substrings or []) if b]
+    candidates: list[str] = []
+    seen: set[str] = set()
+    src_norm = _normalize(source_url)
+
+    for raw_url in _MD_LINK_RE.findall(markdown or ""):
+        url = urljoin(source_url, raw_url)
+        url, _ = urldefrag(url)
+        url = url.rstrip("/")
+        if not url or url == src_norm or url in seen:
+            continue
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            continue
+        if any(b in url.lower() for b in blocklist):
+            continue
+        u_lower = url.lower()
+        if not any(kw in u_lower for kw in _CONFERENCE_LIKE_KEYWORDS):
+            continue
+        seen.add(url)
+        candidates.append(url)
+        if len(candidates) >= max_links:
+            break
+
+    log.info(
+        "discovery.crawl.link_extract",
+        source_url=source_url,
+        markdown_chars=len(markdown or ""),
+        candidates=len(candidates),
+    )
+    return candidates
+
+
+def _normalize(url: str) -> str:
+    url, _ = urldefrag(url)
+    return url.rstrip("/")

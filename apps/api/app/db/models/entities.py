@@ -317,6 +317,12 @@ class Conference(TimestampedMixin, Base):
     is_virtual: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     venue: Mapped[str | None] = mapped_column(String(200))
     website: Mapped[str | None] = mapped_column(Text)
+    # Where to submit / view the full CFP. Usually a sub-page of website
+    # (e.g. https://kdd2026.org/call-for-papers/) — kept separate so the
+    # brief + dashboard can link straight to "Apply here" without first
+    # bouncing through the homepage. Manually-entered conferences leave
+    # this blank.
+    cfp_url: Mapped[str | None] = mapped_column(Text)
 
     # Denormalized "primary" CFP close. cfp_deadlines is the authoritative
     # source (plan 14 / 24); cfp_close_at is the earliest non-workshop

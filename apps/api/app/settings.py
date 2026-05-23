@@ -155,6 +155,12 @@ class Settings(BaseSettings):
     )
     discovery_max_results_per_run: int = Field(default=20, ge=1, le=100)
     discovery_cron_hour_utc: int = Field(default=6, ge=0, le=23)
+    # When discovery crawls a seed URL (an aggregator like aideadlin.es),
+    # we follow the outbound conference-looking links one level deep.
+    # This cap bounds how many follow-up URLs ANY one seed page can
+    # contribute to a single discovery run — keeps the worst case
+    # crawl + LLM token bill bounded.
+    discovery_max_links_per_seed: int = Field(default=30, ge=0, le=200)
 
     # Curated seed URLs the orchestrator ALWAYS crawls in addition to
     # whatever the search step returns. Gives Scout a reliable conference

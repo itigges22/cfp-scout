@@ -354,6 +354,15 @@ SPECS: list[SettingSpec] = [
         label="URL blocklist (case-insensitive substrings)",
         description="Discovery skips any URL containing one of these strings. Default cuts known-junk results (wikipedia, openreview, twitter, github, …) before paying for a Crawl4AI fetch + LLM extraction.",
     ),
+    SettingSpec(
+        name="discovery_max_links_per_seed",
+        kind="int",
+        group="discovery",
+        label="Max followed links per seed page",
+        description="When discovery crawls an aggregator (aideadlin.es, papercall.io, …) it follows outbound conference-looking links one level deep. This cap is per-seed — bounds the worst-case crawl + LLM cost of a single discovery run.",
+        min_value=0,
+        max_value=200,
+    ),
     # Scraper -----------------------------------------------------------
     SettingSpec(
         name="scraper_default_politeness_seconds",

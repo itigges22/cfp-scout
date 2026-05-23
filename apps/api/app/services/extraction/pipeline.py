@@ -206,6 +206,7 @@ async def parse_raw_page(db: AsyncSession, raw_page_id: UUID) -> ParseResult:
             is_virtual=extracted.is_virtual,
             venue=extracted.venue,
             website=extracted.website,
+            cfp_url=extracted.cfp_url,
             cfp_open_at=extracted.cfp_open_at,
             cfp_close_at=extracted.cfp_close_at,
             cfp_deadlines=[d.model_dump(mode="json") for d in extracted.cfp_deadlines],

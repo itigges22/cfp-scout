@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.entities import RawPage, Source
 from app.services.extraction.pipeline import parse_raw_page
 from app.services.scraper.storage import save_raw_body
-from app.services.web_discovery.crawler import crawl_many
+from app.services.web_discovery.crawler import crawl_many, extract_conference_links
 from app.services.web_discovery.search import (
     SearchError,
     SearchHit,
@@ -187,8 +187,53 @@ async def run_discovery(
 
     # ---- 2. Crawl --------------------------------------------------------
     crawled = await crawl_many([h.url for h in hits])
-    result.crawled = len(crawled)
     by_url: dict[str, SearchHit] = {h.url: h for h in hits}
+
+    # ---- 2b. Follow conference-looking links from seed pages -----------
+    # Aggregators (aideadlin.es / papercall.io / wikicfp) are *lists*
+    # of conferences — the page itself is not_a_conference, but each
+    # link points at one. Extract those, dedup against URLs we already
+    # have, blocklist-filter, and crawl them depth=1. Caps how many
+    # links any one page can contribute so a giant aggregator can't
+    # dominate a single discovery run.
+    seed_url_set = {u for u in seed_urls}
+    discovered_links: list[str] = []
+    already_seen_links: set[str] = {c.url for c in crawled}
+    for c in crawled:
+        if c.url not in seed_url_set:
+            continue
+        for link in extract_conference_links(
+            c.markdown,
+            source_url=c.url,
+            blocklist_substrings=blocklist,
+            max_links=int(
+                getattr(settings, "discovery_max_links_per_seed", 30)
+            ),
+        ):
+            if link in already_seen_links:
+                continue
+            already_seen_links.add(link)
+            discovered_links.append(link)
+
+    if discovered_links:
+        log.info(
+            "discovery.followed_links",
+            count=len(discovered_links),
+            from_seed_count=len(seed_url_set),
+        )
+        followup_crawled = await crawl_many(discovered_links)
+        crawled.extend(followup_crawled)
+        for link, hit in zip(
+            discovered_links,
+            [
+                SearchHit(url=u, title="(followed)", snippet="From seed-URL page")
+                for u in discovered_links
+            ],
+            strict=False,
+        ):
+            by_url.setdefault(link, hit)
+
+    result.crawled = len(crawled)
 
     # ---- 3. Persist + extract -------------------------------------------
     src_id = await _get_or_create_discovery_source(db)
