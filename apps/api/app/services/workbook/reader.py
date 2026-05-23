@@ -108,12 +108,35 @@ def _parse_sheet(spec: SheetSpec, ws) -> ParsedSheet:
         if name in {c.name for c in spec.columns}:
             col_index[name] = idx
 
+    # Which column carries the "primary name" for sample-row detection.
+    # The template seeds every sheet's sample row with a name starting
+    # with "Sample —" so the user can keep it as inline guidance and
+    # not worry about deleting it before upload.
+    _PRIMARY_NAME_COL = {
+        "Pillars": "name",
+        "Industries": "name",
+        "Audiences": "name",
+        "SMEs": "full_name",
+        "Topics": "name",
+        "Series": "canonical_name",
+    }
+    primary_name_col = _PRIMARY_NAME_COL.get(spec.name)
+    primary_name_idx = col_index.get(primary_name_col) if primary_name_col else None
+
     for row_num, raw_row in enumerate(rows_iter, start=2):  # data starts at row 2
         # openpyxl yields a tuple of Cell objects in read_only mode.
         cells = list(raw_row)
         # Skip fully-empty rows (Google Sheets exports often have trailing blanks).
         if all(_cell_is_empty(c) for c in cells):
             continue
+
+        # Skip template-shipped sample rows so the user doesn't have to
+        # manually delete them before each import. Cheap inline detection
+        # via the "Sample —" prefix that the template seeds.
+        if primary_name_idx is not None and primary_name_idx < len(cells):
+            primary_val = cells[primary_name_idx].value
+            if isinstance(primary_val, str) and primary_val.strip().startswith("Sample —"):
+                continue
 
         row_data, row_errors = _parse_row(spec, cells, col_index, row_num)
         ps.rows.append(row_data)
