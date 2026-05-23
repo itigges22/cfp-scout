@@ -66,7 +66,22 @@ class PastConferenceUpdate(PastConferenceBase):
 
 
 class PastConferenceRead(PastConferenceBase):
+    """Past-conference row as returned by the API.
+
+    Relaxes the ``attended_sme_ids`` min-length constraint that
+    ``PastConferenceBase`` enforces on write — bulk imports (calendar-
+    sync, XLSX workbook) can produce rows where the attendee names in
+    the source spreadsheet don't match any active SME yet (raw names get
+    preserved in ``notes`` for later linking). The read endpoint has to
+    be able to serialize those rows.
+
+    Strict validation still applies on ``PastConferenceCreate`` /
+    ``PastConferenceUpdate`` so manual entry still requires ≥1 attendee.
+    """
+
     model_config = READ_CONFIG
+
+    attended_sme_ids: list[UUID] = []
 
     id: UUID
     created_at: datetime

@@ -133,6 +133,7 @@ async def map_events(
                 db,
                 ev,
                 resolved_attendees=resolved,
+                unresolved_attendees=unknown,
                 warnings=warnings,
                 apply=apply,
                 actor_label=actor_label,
@@ -166,6 +167,7 @@ async def _map_past_conference(
     ev: LintedEvent,
     *,
     resolved_attendees: list[UUID],
+    unresolved_attendees: list[str],
     warnings: list[str],
     apply: bool,
     actor_label: str,
@@ -182,6 +184,12 @@ async def _map_past_conference(
     ).scalar_one_or_none()
 
     summary = f"{ev.name} ({year}) · {ev.city}, {ev.country} · {len(resolved_attendees)} attendees"
+    # Surface the 0-match case so the operator knows to add SMEs + edit later.
+    if not resolved_attendees and unresolved_attendees:
+        warnings.append(
+            "0 SMEs matched — row kept with attendee names preserved in notes "
+            "so nothing is lost. Add the SMEs on /smes, then edit this row."
+        )
 
     if existing is None:
         if apply:
@@ -191,7 +199,7 @@ async def _map_past_conference(
                 attended_sme_ids=resolved_attendees,
                 role=PAST_ROLE_DEFAULT,
                 session_type=PAST_SESSION_TYPE,
-                notes=_build_notes(ev),
+                notes=_build_notes(ev, unresolved_attendees=unresolved_attendees),
                 imported_from=actor_label,
             )
             db.add(row)
@@ -207,7 +215,7 @@ async def _map_past_conference(
     # Existing past_conference — update attendee list + notes if changed.
     if apply:
         existing.attended_sme_ids = resolved_attendees or existing.attended_sme_ids
-        new_notes = _build_notes(ev)
+        new_notes = _build_notes(ev, unresolved_attendees=unresolved_attendees)
         if new_notes and new_notes != existing.notes:
             existing.notes = new_notes
         existing.imported_from = actor_label
@@ -291,7 +299,15 @@ async def _map_conference(
     )
 
 
-def _build_notes(ev: LintedEvent) -> str:
+def _build_notes(ev: LintedEvent, *, unresolved_attendees: list[str] | None = None) -> str:
+    """Compose the notes string for a past_conferences row.
+
+    Includes any unresolved attendee names from the source spreadsheet so
+    nothing is lost — even when the matcher's SME-name lookup fails (the
+    typical case being a person who attended the event but isn't an
+    active SME in Scout yet). Operator can later add the SME on /smes
+    and edit the row to link them up.
+    """
     parts: list[str] = []
     if ev.type:
         parts.append(f"Type: {ev.type}")
@@ -299,6 +315,11 @@ def _build_notes(ev: LintedEvent) -> str:
         parts.append(ev.description)
     if ev.activities:
         parts.append(f"Activities: {ev.activities}")
+    if unresolved_attendees:
+        parts.append(
+            "Unmatched attendees from source spreadsheet "
+            f"(add as SMEs then link here): {', '.join(unresolved_attendees)}"
+        )
     return "\n\n".join(parts)
 
 
