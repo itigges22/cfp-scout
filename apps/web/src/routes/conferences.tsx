@@ -152,52 +152,58 @@ function ConferenceRow({ c }: { c: import("@/lib/api-types").ConferenceListItem 
   };
 
   return (
-    <div className="group relative flex items-start gap-4 rounded-lg border border-border bg-surface-1 p-4 transition-colors hover:border-border-strong hover:bg-surface-2">
+    <div className="group relative">
       <Link
         to="/conferences/$id"
         params={{ id: c.id }}
-        className="min-w-0 flex-1"
+        className="flex items-start gap-4 rounded-lg border border-border bg-surface-1 p-4 pr-12 transition-colors hover:border-border-strong hover:bg-surface-2"
       >
-        <div className="flex items-center gap-2 truncate">
-          <h2 className="truncate text-base font-medium text-fg">{c.name}</h2>
-          <StatusPill status={c.status} />
-          {c.is_virtual ? <Badge variant="muted">Virtual</Badge> : null}
-        </div>
-        <p className="mt-1 text-xs text-fg-muted">
-          {c.start_date ?? "TBD"}
-          {c.location_city || c.location_country
-            ? ` · ${[c.location_city, c.location_country].filter(Boolean).join(", ")}`
-            : ""}
-        </p>
-        {c.topics && c.topics.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {c.topics.slice(0, 6).map((t) => (
-              <Badge key={t} variant="muted">
-                {t}
-              </Badge>
-            ))}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 truncate">
+            <h2 className="truncate text-base font-medium text-fg">{c.name}</h2>
+            <StatusPill status={c.status} />
+            {c.is_virtual ? <Badge variant="muted">Virtual</Badge> : null}
           </div>
-        ) : null}
-      </Link>
-      <div className="flex w-44 flex-col items-end gap-2">
-        <div className="flex items-baseline gap-1 tabular-nums">
-          <span className="text-2xl font-semibold">
-            {overall !== null ? Math.round(overall * 100) : "—"}
-          </span>
-          <span className="text-xs text-fg-muted">/ 100</span>
+          <p className="mt-1 text-xs text-fg-muted">
+            {c.start_date ?? "TBD"}
+            {c.location_city || c.location_country
+              ? ` · ${[c.location_city, c.location_country].filter(Boolean).join(", ")}`
+              : ""}
+          </p>
+          {c.topics && c.topics.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {c.topics.slice(0, 6).map((t) => (
+                <Badge key={t} variant="muted">
+                  {t}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
         </div>
-        {overall !== null ? <Progress value={overall} className="w-full" /> : null}
-        <p className="text-xs font-medium uppercase tracking-wider text-fg-muted">
-          overall fit
-        </p>
-      </div>
+        <div className="flex w-40 flex-col items-end gap-2">
+          <div className="flex items-baseline gap-1 tabular-nums">
+            <span className="text-2xl font-semibold">
+              {overall !== null ? Math.round(overall * 100) : "—"}
+            </span>
+            <span className="text-xs text-fg-muted">/ 100</span>
+          </div>
+          {overall !== null ? <Progress value={overall} className="w-full" /> : null}
+          <p className="text-xs font-medium uppercase tracking-wider text-fg-muted">
+            overall fit
+          </p>
+        </div>
+      </Link>
       <button
         type="button"
-        onClick={onDelete}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onDelete();
+        }}
         disabled={deleteMut.isPending}
         title={deleteMut.isPending ? "Deleting…" : "Delete conference"}
         aria-label={`Delete ${c.name}`}
-        className="absolute right-2 top-2 rounded p-1.5 text-fg-muted opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger group-hover:opacity-100 focus:opacity-100"
+        className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded p-1.5 text-fg-muted opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger group-hover:opacity-100 focus:opacity-100"
       >
         <Trash2 className="h-4 w-4" />
       </button>

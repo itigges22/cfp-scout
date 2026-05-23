@@ -136,23 +136,56 @@ function ConferenceHeader({ conference }: { conference: ConferenceRead }) {
               .join(", ")}`
           : ""}
       </p>
-      {conference.website ? (
-        <a
-          href={conference.website}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="text-sm text-accent underline-offset-2 hover:underline"
-        >
-          {conference.website}
-        </a>
+      {/* External-link row: homepage + apply-here button + CFP close */}
+      <div className="flex flex-wrap items-center gap-3">
+        {conference.website ? (
+          <a
+            href={conference.website}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="text-sm text-accent underline-offset-2 hover:underline"
+          >
+            {conference.website}
+          </a>
+        ) : null}
+        {conference.cfp_url ? (
+          <a
+            href={conference.cfp_url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-1 rounded bg-accent px-3 py-1 text-sm font-medium text-accent-fg hover:bg-accent-hover"
+          >
+            Apply / view CFP ↗
+          </a>
+        ) : null}
+        {conference.cfp_close_at ? (
+          <span className="text-xs text-fg-muted">
+            CFP closes <strong className="text-fg">{conference.cfp_close_at}</strong>
+          </span>
+        ) : null}
+      </div>
+      {conference.cfp_topics_of_interest && conference.cfp_topics_of_interest.length > 0 ? (
+        <div className="mt-1">
+          <p className="text-xs uppercase tracking-wider text-fg-muted">CFP topics of interest</p>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {conference.cfp_topics_of_interest.map((t) => (
+              <Badge key={t} variant="muted">
+                {t}
+              </Badge>
+            ))}
+          </div>
+        </div>
       ) : null}
       {conference.topics && conference.topics.length > 0 ? (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {conference.topics.map((t) => (
-            <Badge key={t} variant="muted">
-              {t}
-            </Badge>
-          ))}
+        <div className="mt-1">
+          <p className="text-xs uppercase tracking-wider text-fg-muted">Topics</p>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {conference.topics.map((t) => (
+              <Badge key={t} variant="muted">
+                {t}
+              </Badge>
+            ))}
+          </div>
         </div>
       ) : null}
     </div>

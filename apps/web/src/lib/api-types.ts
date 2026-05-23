@@ -207,6 +207,7 @@ export interface ConferenceRead {
   location_country: string | null;
   is_virtual: boolean;
   website: string | null;
+  cfp_url: string | null;
   topics: string[];
   cfp_topics_of_interest: string[];
   cfp_close_at: string | null;
