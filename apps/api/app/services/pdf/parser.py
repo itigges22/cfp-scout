@@ -156,7 +156,11 @@ def _parse_with_tier_subprocess(path: Path, tier: PipelineTier) -> ParsedPdf:
     log.info("docling.subprocess.begin", path=str(path), tier=tier, timeout=timeout)
 
     try:
-        result = subprocess.run(
+        # subprocess.run is fed a hardcoded path + a Literal-typed tier;
+        # the only operator-supplied input is `path`, which has already
+        # passed the upload-route's MIME/size/SSRF checks before reaching
+        # the parser. No shell, no shell=True.
+        result = subprocess.run(  # noqa: S603 — args are list[str]; path validated upstream
             [sys.executable, _WORKER_PATH, str(path), tier],
             capture_output=True,
             timeout=timeout,
@@ -169,9 +173,7 @@ def _parse_with_tier_subprocess(path: Path, tier: PipelineTier) -> ParsedPdf:
     if result.returncode != 0:
         # Common returncodes: 137 = OOM kill, 139 = SIGSEGV, 1 = python exc.
         stderr_tail = (result.stderr or b"").decode("utf-8", errors="replace")[-400:]
-        raise RuntimeError(
-            f"tier={tier} worker exited {result.returncode}: {stderr_tail}"
-        )
+        raise RuntimeError(f"tier={tier} worker exited {result.returncode}: {stderr_tail}")
 
     try:
         payload = json.loads(result.stdout.decode("utf-8"))
@@ -261,5 +263,3 @@ def _parse_text_only(path: Path) -> ParsedPdf:
         page_count=page_count,
         tier_used="text_only",
     )
-
-

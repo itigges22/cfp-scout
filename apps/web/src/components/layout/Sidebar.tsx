@@ -4,6 +4,7 @@ import {
   ClipboardList,
   CalendarClock,
   CircleAlert,
+  Compass,
   GitFork,
   LayoutDashboard,
   Megaphone,
@@ -26,6 +27,7 @@ const SECTIONS: { title: string; entries: NavEntry[] }[] = [
     entries: [
       { to: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
       { to: "/conferences", label: "Conferences", Icon: CalendarClock },
+      { to: "/discover", label: "Discover", Icon: Compass },
       { to: "/graph", label: "Graph", Icon: GitFork },
     ],
   },

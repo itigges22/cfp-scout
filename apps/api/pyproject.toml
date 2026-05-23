@@ -39,13 +39,21 @@ dependencies = [
     # rest of the app rides asyncpg, but APScheduler 3.x is sync-only.
     "apscheduler[sqlalchemy]>=3.10",
     "psycopg[binary]>=3.2",
-    # Scraper (plan 14): no Playwright. We do HTTP-only fetching via httpx
-    # (already in deps), feed parsing via feedparser, HTML parsing via
-    # selectolax (very fast lexbor-based parser, much smaller than lxml).
-    # Crawl4AI was considered but its dep tree + Playwright optional path are
-    # both heavier than we need for static-only crawling.
+    # Scraper (plan 14): HTTP-only fetching via httpx for curated sources.
+    # Feed parsing via feedparser, HTML parsing via selectolax (fast
+    # lexbor-based, much smaller than lxml).
     "feedparser>=6.0",
     "selectolax>=0.3",
+    # Discovery (plan 35, PRD §4): Crawl4AI is the spec'd autonomous
+    # crawler. We use its HTTP-mode default (no Playwright) — already
+    # ~5× more thorough than raw httpx + selectolax at boilerplate
+    # stripping and markdown conversion. JS-heavy sites can be added
+    # in a future pass by enabling the Playwright backend.
+    "crawl4ai>=0.4",
+    # DuckDuckGo search adapter — no API key, free; the default search
+    # backend for the discovery orchestrator. Operators can flip to
+    # Brave/Tavily via settings (no extra deps; both are simple HTTP APIs).
+    "duckduckgo-search>=6.2",
     # PyYAML is used by the plan-23 series seed migration (db/seeds/
     # conference_series.yaml). Tiny dep, widely-used + battle-tested.
     "pyyaml>=6.0",

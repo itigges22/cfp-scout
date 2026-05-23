@@ -267,6 +267,22 @@ def register_jobs(scheduler: AsyncIOScheduler) -> None:
         id="decay_pass",
         replace_existing=True,
     )
+    # Plan 35: daily autonomous discovery (default 06:00 UTC). Searches
+    # the web via the configured provider, fetches with Crawl4AI, and
+    # runs every successful crawl through the extraction pipeline. No-op
+    # when DISCOVERY_ENABLED=false.
+    from app.settings import get_settings
+    from app.tasks.run_discovery import run_discovery_task
+
+    discovery_hour = int(getattr(get_settings(), "discovery_cron_hour_utc", 6))
+    scheduler.add_job(
+        run_discovery_task,
+        trigger="cron",
+        hour=discovery_hour,
+        minute=0,
+        id="discovery",
+        replace_existing=True,
+    )
     log.info("scheduler.jobs_registered", count=len(scheduler.get_jobs()))
 
 
