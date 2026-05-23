@@ -28,7 +28,7 @@ function SettingsPage() {
         <SettingsLink
           to="/settings/tunables"
           title="Tunables & API keys"
-          description="LLM API key + budget, matcher gates and weights, SME and team scoring weights, decay, scraper politeness, logging. Most changes apply immediately; a few require an api restart."
+          description="LLM API key + budget, matcher gates and weights, SME and team scoring weights, decay, discovery, scraper politeness, logging."
         />
         <SettingsLink
           to="/topics"
@@ -36,9 +36,14 @@ function SettingsPage() {
           description="LLM-discovered topics pending admin approval. Approve to add to the active vocabulary; reject to deactivate."
         />
         <SettingsLink
-          to="/past-conferences"
-          title="Past conferences"
-          description="History of who attended what. Powers the past-attendance signal in the SME matcher."
+          to="/diagnostics"
+          title="Diagnostics"
+          description="Operational health: jobs, scraper runs, LLM cost / errors, freshness histogram. The page admins check first when something feels off."
+        />
+        <SettingsLink
+          to="/agent"
+          title="Agent chat"
+          description="Free-form Q&A over your seeded data. Not the main entry point — most questions are easier to answer by clicking the relevant conference or SME."
         />
       </div>
 

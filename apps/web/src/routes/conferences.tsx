@@ -7,8 +7,8 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Trash2 } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Check, Sparkles, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { NewConferenceDialog } from "@/components/conferences/NewConferenceDialog";
@@ -39,8 +39,38 @@ function ConferencesPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [sort, setSort] = useState<SortOpt>("score");
   const [showNewDialog, setShowNewDialog] = useState(false);
+  const [discoverResult, setDiscoverResult] = useState<{
+    new_conferences: number;
+    updated_conferences: number;
+    total_in_feed: number;
+    matched_filter: number;
+  } | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+
+  const discoverMut = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(
+        "/api/v1/admin/discovery/ingest-feed",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ only_ai: true, future_only: true }),
+        },
+      );
+      if (!res.ok) throw new Error(`Discovery failed: HTTP ${res.status}`);
+      return (await res.json()) as {
+        new_conferences: number;
+        updated_conferences: number;
+        total_in_feed: number;
+        matched_filter: number;
+      };
+    },
+    onSuccess: (data) => {
+      setDiscoverResult(data);
+      queryClient.invalidateQueries({ queryKey: ["conferences"] });
+    },
+  });
 
   const queryKey = useMemo(
     () => ["conferences", { status, sort }] as const,
@@ -65,6 +95,14 @@ function ConferencesPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => setShowNewDialog(true)}>+ New conference</Button>
+        <Button
+          variant="outline"
+          onClick={() => discoverMut.mutate()}
+          disabled={discoverMut.isPending}
+        >
+          <Sparkles className="mr-1.5 h-4 w-4" />
+          {discoverMut.isPending ? "Discovering…" : "Discover more"}
+        </Button>
         <span className="mx-2 hidden h-5 w-px bg-border md:inline-block" />
         {STATUS_FILTERS.map((s) => (
           <Button
@@ -90,6 +128,35 @@ function ConferencesPage() {
           ))}
         </div>
       </div>
+
+      {discoverResult ? (
+        <Card className="border-success/40 bg-success/5">
+          <CardContent className="flex items-center justify-between gap-3 py-3">
+            <p className="text-sm text-fg">
+              Discovery pulled from <strong>{discoverResult.total_in_feed}</strong>{" "}
+              upstream events; <strong>{discoverResult.matched_filter}</strong> matched
+              AI/future filters; <strong>{discoverResult.new_conferences}</strong>{" "}
+              new + {discoverResult.updated_conferences} updated. Matcher will run
+              automatically; refresh in a minute to see scores settle.
+            </p>
+            <button
+              type="button"
+              onClick={() => setDiscoverResult(null)}
+              className="rounded p-1 text-fg-muted hover:bg-surface-2"
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </CardContent>
+        </Card>
+      ) : null}
+      {discoverMut.isError ? (
+        <Card className="border-danger/40 bg-danger/5">
+          <CardContent className="py-3 text-sm text-danger">
+            Discovery failed: {String((discoverMut.error as Error)?.message)}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {isLoading ? (
         <ListSkeleton />
@@ -132,8 +199,21 @@ function ConferencesPage() {
 function ConferenceRow({ c }: { c: import("@/lib/api-types").ConferenceListItem }) {
   const overall = c.overall_score ?? null;
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
   const deleteMut = useMutation({
     mutationFn: () => conferencesApi.delete(c.id, "user_delete"),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["conferences"] }),
+  });
+
+  const decideMut = useMutation({
+    mutationFn: (decision: "approved" | "rejected") =>
+      conferencesApi.createDecision(c.id, {
+        decision,
+        reason: null,
+        decided_by_label: "user_inline",
+      }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["conferences"] }),
   });
@@ -151,13 +231,30 @@ function ConferenceRow({ c }: { c: import("@/lib/api-types").ConferenceListItem 
     deleteMut.mutate();
   };
 
+  const stop = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const decidedApproved = c.status === "approved";
+  const decidedRejected = c.status === "rejected";
+
   return (
-    <div className="group relative">
-      <Link
-        to="/conferences/$id"
-        params={{ id: c.id }}
-        className="flex items-start gap-4 rounded-lg border border-border bg-surface-1 p-4 pr-12 transition-colors hover:border-border-strong hover:bg-surface-2"
-      >
+    <div
+      className="group relative cursor-pointer rounded-lg border border-border bg-surface-1 p-4 transition-colors hover:border-border-strong hover:bg-surface-2"
+      onClick={() =>
+        navigate({ to: "/conferences/$id", params: { id: c.id } })
+      }
+      role="link"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          navigate({ to: "/conferences/$id", params: { id: c.id } });
+        }
+      }}
+    >
+      <div className="flex items-start gap-4 pr-24">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 truncate">
             <h2 className="truncate text-base font-medium text-fg">{c.name}</h2>
@@ -180,7 +277,7 @@ function ConferenceRow({ c }: { c: import("@/lib/api-types").ConferenceListItem 
             </div>
           ) : null}
         </div>
-        <div className="flex w-40 flex-col items-end gap-2">
+        <div className="flex w-32 flex-col items-end gap-1">
           <div className="flex items-baseline gap-1 tabular-nums">
             <span className="text-2xl font-semibold">
               {overall !== null ? Math.round(overall * 100) : "—"}
@@ -192,21 +289,51 @@ function ConferenceRow({ c }: { c: import("@/lib/api-types").ConferenceListItem 
             overall fit
           </p>
         </div>
-      </Link>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onDelete();
-        }}
-        disabled={deleteMut.isPending}
-        title={deleteMut.isPending ? "Deleting…" : "Delete conference"}
-        aria-label={`Delete ${c.name}`}
-        className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded p-1.5 text-fg-muted opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger group-hover:opacity-100 focus:opacity-100"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+      </div>
+      {/* Action stack — top-right corner, vertical, away from score */}
+      <div className="absolute right-2 top-2 z-10 flex flex-col gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <button
+          type="button"
+          onClick={(e) => {
+            stop(e);
+            if (decidedApproved || decideMut.isPending) return;
+            decideMut.mutate("approved");
+          }}
+          disabled={decideMut.isPending || decidedApproved}
+          title={decidedApproved ? "Already approved" : "Approve"}
+          aria-label={`Approve ${c.name}`}
+          className="rounded p-1.5 text-fg-muted hover:bg-success/10 hover:text-success disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Check className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            stop(e);
+            if (decidedRejected || decideMut.isPending) return;
+            decideMut.mutate("rejected");
+          }}
+          disabled={decideMut.isPending || decidedRejected}
+          title={decidedRejected ? "Already rejected" : "Reject"}
+          aria-label={`Reject ${c.name}`}
+          className="rounded p-1.5 text-fg-muted hover:bg-danger/10 hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            stop(e);
+            onDelete();
+          }}
+          disabled={deleteMut.isPending}
+          title={deleteMut.isPending ? "Deleting…" : "Delete"}
+          aria-label={`Delete ${c.name}`}
+          className="rounded p-1.5 text-fg-muted hover:bg-danger/10 hover:text-danger"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }

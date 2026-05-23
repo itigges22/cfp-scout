@@ -1,10 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import {
-  Bot,
   ClipboardList,
   CalendarClock,
-  CircleAlert,
-  Compass,
   GitFork,
   LayoutDashboard,
   Megaphone,
@@ -22,28 +19,35 @@ type NavEntry = {
 };
 
 const SECTIONS: { title: string; entries: NavEntry[] }[] = [
+  // One Discover hub: dashboard + the conferences table (which now
+  // includes the "Discover more" trigger + approve actions). No
+  // standalone /discover entry, no orphan /diagnostics.
   {
     title: "Discover",
     entries: [
       { to: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
       { to: "/conferences", label: "Conferences", Icon: CalendarClock },
-      { to: "/discover", label: "Discover", Icon: Compass },
       { to: "/graph", label: "Graph", Icon: GitFork },
     ],
   },
+  // Everything the operator manually feeds Scout: who you have on the
+  // bench (SMEs), who you're trying to reach (Audiences), how you talk
+  // about the products (Messaging), and where you've been already
+  // (Past conferences).
   {
     title: "Team",
     entries: [
       { to: "/smes", label: "SMEs", Icon: Users },
       { to: "/audiences", label: "Audiences", Icon: ClipboardList },
       { to: "/messaging", label: "Messaging", Icon: Megaphone },
+      { to: "/past-conferences", label: "Past events", Icon: CalendarClock },
     ],
   },
+  // Settings is the catch-all — Diagnostics + Agent live as sub-links
+  // here, not as their own sidebar entries.
   {
-    title: "Tools",
+    title: "",
     entries: [
-      { to: "/agent", label: "Agent", Icon: Bot },
-      { to: "/diagnostics", label: "Diagnostics", Icon: CircleAlert },
       { to: "/settings", label: "Settings", Icon: Settings },
     ],
   },
@@ -62,11 +66,13 @@ export function Sidebar() {
       </Link>
 
       <nav className="flex flex-1 flex-col gap-6 overflow-y-auto">
-        {SECTIONS.map((section) => (
-          <div key={section.title} className="flex flex-col gap-1">
-            <h2 className="px-3 text-xs font-medium uppercase tracking-wider text-fg-subtle">
-              {section.title}
-            </h2>
+        {SECTIONS.map((section, idx) => (
+          <div key={section.title || `__unlabeled-${idx}`} className="flex flex-col gap-1">
+            {section.title ? (
+              <h2 className="px-3 text-xs font-medium uppercase tracking-wider text-fg-subtle">
+                {section.title}
+              </h2>
+            ) : null}
             {section.entries.map(({ to, label, Icon }) => (
               <Link
                 key={to}
