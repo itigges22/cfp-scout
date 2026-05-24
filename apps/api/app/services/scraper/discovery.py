@@ -40,6 +40,14 @@ async def discover_urls(
     The fetch policy for the discovery request itself is the same as for
     target URLs — robots + rate-limit applied by the caller, never here.
     """
+    # Skip pseudo-sources that exist only as bookkeeping markers (the web
+    # discovery orchestrator inserts a "internal://web-discovery" Source
+    # row so its raw_pages have something to FK to). httpx errors out on
+    # non-http(s) schemes; we'd just be filling /diagnostics with junk.
+    if not (url.startswith("http://") or url.startswith("https://")):
+        log.info("scraper.discovery.skip_non_http", url=url, kind=kind)
+        return []
+
     if kind == "rss":
         return await _discover_rss(url, client)
     if kind == "page":

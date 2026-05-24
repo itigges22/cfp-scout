@@ -119,6 +119,15 @@ SPECS: list[SettingSpec] = [
         min_value=0,
         max_value=10_000,
     ),
+    SettingSpec(
+        name="llm_max_concurrent_calls",
+        kind="int",
+        group="llm",
+        label="Max concurrent LLM calls",
+        description="Process-wide cap on in-flight LLM API calls (chat + embedding). Default 3 is safe under typical LLM quotas. If you see 429 rate-limit errors in /diagnostics during a bulk rescore or matcher fan-out, lower this; if you have headroom and want faster rescores, raise it.",
+        min_value=1,
+        max_value=20,
+    ),
     # Matcher gates -----------------------------------------------------
     SettingSpec(
         name="match_m_gate",

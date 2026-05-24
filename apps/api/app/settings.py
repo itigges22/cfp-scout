@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     llm_dry_run: bool = False
     llm_monthly_budget_usd: float | None = None
 
+    # Maximum concurrent in-flight LLM API calls (chat + embedding combined).
+    # A bulk rescore enqueues one task per conference; without a cap,
+    # APScheduler runs them all in parallel and the burst trips LLM API's
+    # rate limit (429 Too Many Requests), causing every retry to also
+    # 429 (thundering herd). Default 3 is safe under typical LLM RPM
+    # quotas; raise via /settings/tunables if you have headroom.
+    llm_max_concurrent_calls: int = Field(default=3, ge=1, le=20)
+
     # ------------------------------------------------------------------
     # Optional safety classifier (Llama-Guard-3-1B; plan 29)
     # ------------------------------------------------------------------

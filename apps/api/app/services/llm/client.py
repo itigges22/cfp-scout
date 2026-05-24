@@ -18,6 +18,7 @@ plan 22 (agent chat) is the only caller that uses it.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -42,6 +43,31 @@ from app.services.llm.retries import get_retry
 from app.settings import Settings, get_settings
 
 log = structlog.get_logger("scout.llm.client")
+
+
+# Process-wide concurrency cap on outbound LLM API calls. Without this, a
+# bulk rescore (recompute_all_matches → 500+ tasks) or the in-process
+# scheduler firing multiple jobs at once fans out to dozens of parallel
+# LLM requests and trips the LLM rate limit (429), causing every job
+# to back off + retry simultaneously (thundering herd).
+#
+# Bound is set lazily from Settings.llm_max_concurrent_calls the first
+# time _gate() is called. Default 3 — safe under the typical LLM RPM
+# budget; operators can bump it via /settings/tunables if they have a
+# higher quota.
+_llm_call_sem: asyncio.Semaphore | None = None
+_llm_call_sem_size: int | None = None
+
+
+def _gate() -> asyncio.Semaphore:
+    """Lazy + settings-aware semaphore. Rebuilds when the cap setting
+    changes (e.g. operator bumped from 3 → 8 in /settings/tunables)."""
+    global _llm_call_sem, _llm_call_sem_size
+    desired = max(1, get_settings().llm_max_concurrent_calls)
+    if _llm_call_sem is None or _llm_call_sem_size != desired:
+        _llm_call_sem = asyncio.Semaphore(desired)
+        _llm_call_sem_size = desired
+    return _llm_call_sem
 
 
 class LLMClient:
@@ -380,32 +406,38 @@ class LLMClient:
         return self._settings.llm_chat_model
 
     async def _call_chat(self, model: str, req: ChatRequest) -> Any:
-        """Make the actual LLM API call with retries."""
+        """Make the actual LLM API call with retries.
+
+        Gated by the process-wide semaphore so a bulk rescore can't fan
+        out to dozens of parallel LLM API calls and trip the rate limit.
+        """
         retry = get_retry()
-        async for attempt in retry:
-            with attempt:
-                kwargs: dict[str, Any] = {
-                    "model": model,
-                    "messages": [m.model_dump() for m in req.messages],
-                    "temperature": req.temperature,
-                }
-                if req.max_tokens is not None:
-                    kwargs["max_tokens"] = req.max_tokens
-                if req.response_format is not None:
-                    kwargs["response_format"] = req.response_format
-                return await self._openai.chat.completions.create(**kwargs)
+        async with _gate():
+            async for attempt in retry:
+                with attempt:
+                    kwargs: dict[str, Any] = {
+                        "model": model,
+                        "messages": [m.model_dump() for m in req.messages],
+                        "temperature": req.temperature,
+                    }
+                    if req.max_tokens is not None:
+                        kwargs["max_tokens"] = req.max_tokens
+                    if req.response_format is not None:
+                        kwargs["response_format"] = req.response_format
+                    return await self._openai.chat.completions.create(**kwargs)
         raise RuntimeError("unreachable")  # tenacity reraise prevents this
 
     async def _call_embed(self, model: str, req: EmbeddingRequest) -> Any:
         retry = get_retry()
-        async for attempt in retry:
-            with attempt:
-                # Use the dedicated embedding client when configured.
-                # Per-model LLM keys (<vendor> + others) require this.
-                return await self._embed_openai.embeddings.create(
-                    model=model,
-                    input=req.texts,
-                )
+        async with _gate():
+            async for attempt in retry:
+                with attempt:
+                    # Use the dedicated embedding client when configured.
+                    # Per-model LLM keys (<vendor> + others) require this.
+                    return await self._embed_openai.embeddings.create(
+                        model=model,
+                        input=req.texts,
+                    )
         raise RuntimeError("unreachable")
 
 
