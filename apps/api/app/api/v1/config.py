@@ -145,10 +145,36 @@ async def import_workbook(
     result = await apply_diff(db, diff, actor_label=full_label)
     await db.commit()
     log.info("config.import.applied", **result.to_dict(), actor=full_label)
+
+    # New SMEs / audiences / messaging change matcher inputs — kick off a
+    # full rescore so the dashboard + brief pages reflect the new data
+    # without the operator having to click anything else.
+    recompute_job = _enqueue_rescore_after_import(trigger="workbook_import")
+
     return {
         "applied": result.to_dict(),
         "summary": diff.summary,
+        "rescore_queued_job_id": recompute_job,
     }
+
+
+def _enqueue_rescore_after_import(*, trigger: str) -> str | None:
+    """Fire-and-forget recompute. Returns the job id so the caller can
+    surface it in the response, or None if the scheduler isn't available
+    in this process (test fixtures)."""
+    try:
+        from app.scheduler import enqueue_now
+        from app.tasks.run_fit_match import recompute_all_matches
+
+        job_id = enqueue_now(
+            recompute_all_matches,
+            job_id=f"matcher_recompute_after_{trigger}",
+        )
+        log.info("rescore.queued_after_import", trigger=trigger, job_id=job_id)
+        return job_id
+    except Exception as exc:  # noqa: BLE001
+        log.warning("rescore.enqueue_failed", trigger=trigger, error=str(exc)[:200])
+        return None
 
 
 # ---------------------------------------------------------------------------

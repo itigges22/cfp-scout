@@ -4,9 +4,14 @@
  * (plan 20) to show messaging / pillar / SME score breakdowns.
  *
  * Three visual buckets keyed off the value:
- *   value >= 0.70 — strong (accent-strong)
- *   value >= 0.45 — okay   (warning)
- *   else          — weak   (danger-muted)
+ *   value >= 0.70 — strong (green / success)
+ *   value >= 0.45 — okay   (amber / warning)
+ *   else          — weak   (red / danger)
+ *
+ * Previously referenced bg-accent-strong / bg-danger-muted, which
+ * aren't defined in our theme — Tailwind silently dropped them so the
+ * bars rendered as bare gray tracks. Now uses the standard success /
+ * warning / danger tokens that actually exist in styles/index.css.
  *
  * Accessible via aria-valuenow / aria-valuemin / aria-valuemax.
  */
@@ -23,9 +28,9 @@ export interface ProgressProps extends Omit<HTMLAttributes<HTMLDivElement>, "val
 }
 
 function bucketClass(value: number): string {
-  if (value >= 0.7) return "bg-accent-strong";
+  if (value >= 0.7) return "bg-success";
   if (value >= 0.45) return "bg-warning";
-  return "bg-danger-muted";
+  return "bg-danger";
 }
 
 export function Progress({ value, size = "md", className, ...rest }: ProgressProps) {

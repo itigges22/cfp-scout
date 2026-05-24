@@ -48,7 +48,99 @@ function SettingsPage() {
       </div>
 
       <WorkbookCard />
+      <MaintenanceCard />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Maintenance — buttons for one-shot operator actions that don't have a
+// natural home elsewhere (rescore, backfill, etc).
+// ---------------------------------------------------------------------------
+function MaintenanceCard() {
+  const [result, setResult] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+
+  const rescoreMut = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/v1/admin/matcher/recompute-all", { method: "POST" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return (await res.json()) as { queued_job_id?: string; algorithm_version?: string };
+    },
+    onSuccess: (data) =>
+      setResult({
+        kind: "success",
+        text: `Rescore queued (job ${data.queued_job_id}). Runs in the background — check /diagnostics for progress, then refresh /dashboard once it settles.`,
+      }),
+    onError: (err) =>
+      setResult({ kind: "error", text: `Rescore failed: ${(err as Error).message}` }),
+  });
+
+  const geocodeMut = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/v1/admin/discovery/geocode-backfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return (await res.json()) as { attempted: number; resolved: number; skipped: number };
+    },
+    onSuccess: (data) =>
+      setResult({
+        kind: "success",
+        text: `Geocoded ${data.resolved}/${data.attempted} conferences (${data.skipped} skipped). Map should refresh on next dashboard load.`,
+      }),
+    onError: (err) =>
+      setResult({ kind: "error", text: `Geocode failed: ${(err as Error).message}` }),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Maintenance</CardTitle>
+        <CardDescription>
+          One-shot operator actions. Imports auto-trigger a rescore — you only
+          need the button below when scoring drifts (model swap, weight tweak,
+          or a hand-edit that bypassed the import path).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={() => rescoreMut.mutate()} disabled={rescoreMut.isPending}>
+            {rescoreMut.isPending ? "Queuing…" : "Rescore everything"}
+          </Button>
+          <span className="text-xs text-fg-muted">
+            Fires <code>recompute_all_matches</code> — one matcher run per
+            non-quarantined conference. Async; ~1-2 min for a few hundred rows.
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={() => geocodeMut.mutate()}
+            disabled={geocodeMut.isPending}
+          >
+            {geocodeMut.isPending ? "Geocoding…" : "Backfill missing coordinates"}
+          </Button>
+          <span className="text-xs text-fg-muted">
+            Resolves city → lat/lng for any conference without coordinates.
+            Rate-limited by Nominatim's 1 req/sec policy, so ~1 min per 60 rows.
+          </span>
+        </div>
+        {result && (
+          <div
+            className={[
+              "rounded border p-2 text-xs",
+              result.kind === "success"
+                ? "border-success/40 bg-success/10 text-success"
+                : "border-danger/40 bg-danger/10 text-danger",
+            ].join(" ")}
+          >
+            {result.text}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

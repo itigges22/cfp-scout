@@ -157,6 +157,22 @@ async def import_calendar_sync(
         fallback_year=fallback_year,
         actor_label=actor_label,
     )
+    payload = outcome.to_dict()
     if apply:
         await db.commit()
-    return outcome.to_dict()
+        # Past-conference inserts/updates change the SME past-attendance
+        # bonus; new approved conferences need matcher runs. Kick off a
+        # full rescore so the dashboard reflects the new state without
+        # the operator having to click "Rescore everything" by hand.
+        try:
+            from app.scheduler import enqueue_now
+            from app.tasks.run_fit_match import recompute_all_matches
+
+            job_id = enqueue_now(
+                recompute_all_matches,
+                job_id="matcher_recompute_after_calendar_sync",
+            )
+            payload["rescore_queued_job_id"] = job_id
+        except Exception:  # noqa: BLE001 — best-effort
+            payload["rescore_queued_job_id"] = None
+    return payload
