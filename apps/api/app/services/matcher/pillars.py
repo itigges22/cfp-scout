@@ -26,7 +26,7 @@ from app.db.models.entities import StrategicPillar
 from app.db.models.junctions import MessagingPillar
 from app.db.models.vectors import DocumentChunk
 from app.services.llm import EmbeddingRequest, get_llm_client
-from app.services.matcher._scoring import clamp01, topk_max, topk_mean
+from app.services.matcher._scoring import clamp01, rescale_score, topk_max, topk_mean
 
 log = structlog.get_logger("scout.matcher.pillars")
 
@@ -135,8 +135,13 @@ async def stage_b_pillar_alignment(db: AsyncSession, conference_id: UUID) -> Pil
                 continue
             for ev in evidence_vecs:
                 sims.append(_cosine(cc.embedding, ev))
-        # Top-K mean per pillar.
-        score = clamp01(topk_mean(sims, k=TOPK_PILLAR))
+        # Top-K mean of RAW cosines, then rescale so the score uses the
+        # full [0, 1] range instead of saturating in the embedder's noise
+        # band. Without this, almost every conference scored 1.0 on the
+        # winning pillar because raw cosines between any two AI texts
+        # cluster in [0.65, 0.95].
+        raw_topk_mean = topk_mean(sims, k=TOPK_PILLAR)
+        score = rescale_score(raw_topk_mean)
         per_pillar.append(PillarHit(pillar_id=str(p.id), pillar_name=p.name, score=score))
 
     # Overall = max across pillars; record which one won.

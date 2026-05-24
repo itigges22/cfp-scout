@@ -24,6 +24,7 @@ from app.services.matcher._scoring import (
     apply_chunk_decay,
     clamp01,
     cosine_from_distance,
+    rescale_score,
     topk_mean,
 )
 
@@ -103,11 +104,14 @@ async def stage_a_messaging_fit(db: AsyncSession, conference_id: UUID) -> Messag
             sim = apply_chunk_decay(sim, mc)
             all_pairs.append((sim, mc))
 
-    # Top-K mean is the headline score. Use the top-K snippets (by similarity)
-    # as evidence for the rationale stage.
+    # Top-K mean of RAW cosines, then rescale against the empirical
+    # floor/ceiling so the score actually spreads out across the
+    # [0, 1] range instead of saturating at ~0.9996 for every event.
+    # See rescale_score docstring for the math.
     all_pairs.sort(key=lambda p: p[0], reverse=True)
     top = all_pairs[:TOPK_MESSAGING]
-    score = clamp01(topk_mean([p[0] for p in top], k=TOPK_MESSAGING))
+    raw_topk_mean = topk_mean([p[0] for p in top], k=TOPK_MESSAGING)
+    score = rescale_score(raw_topk_mean)
 
     snippets = [
         MessagingSnippet(

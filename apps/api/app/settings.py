@@ -78,6 +78,28 @@ class Settings(BaseSettings):
     llm_max_concurrent_calls: int = Field(default=3, ge=1, le=20)
 
     # ------------------------------------------------------------------
+    # Matcher score rescaler
+    # ------------------------------------------------------------------
+    # Normalized text embeddings (nomic-embed-text-v1-5 and similar)
+    # produce unit vectors that cluster in a narrow band of the sphere —
+    # for ANY two AI-related texts, cosine sits in roughly [0.65, 0.92].
+    # Without rescaling, the matcher's "top-K mean cosine" gives every
+    # conference a near-1.0 score because it cherry-picks the K best
+    # pairs from a saturated range.
+    #
+    # rescale_score() maps [floor, ceiling] → [0, 1], so:
+    #   raw 0.65 (baseline noise) → 0.0
+    #   raw 0.78 (decent match)   → ~0.48
+    #   raw 0.92 (strong match)   → 1.0
+    #
+    # If you swap embedding models (e.g. to OpenAI's text-embedding-3),
+    # recalibrate these by running the matcher against known-good and
+    # known-irrelevant conference pairs and reading the actual cosines
+    # from /diagnostics or a one-shot SQL query against vectors.
+    matcher_baseline_cosine: float = Field(default=0.65, ge=0.0, le=1.0)
+    matcher_ceiling_cosine: float = Field(default=0.92, ge=0.0, le=1.0)
+
+    # ------------------------------------------------------------------
     # Optional safety classifier (Llama-Guard-3-1B; plan 29)
     # ------------------------------------------------------------------
     safety_classifier_enabled: bool = False

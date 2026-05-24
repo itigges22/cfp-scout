@@ -128,6 +128,25 @@ SPECS: list[SettingSpec] = [
         min_value=1,
         max_value=20,
     ),
+    # Matcher score rescaler -------------------------------------------
+    SettingSpec(
+        name="matcher_baseline_cosine",
+        kind="float",
+        group="matcher",
+        label="Baseline cosine (rescaler floor)",
+        description="Cosine similarity below this scores 0/100. Default 0.65 — the empirical noise floor for nomic-embed-text-v1-5 on AI-domain text (any two AI texts hit ~0.65 even when unrelated). Lower it if you see legit-looking matches scoring 0; raise it if everything still looks too high.",
+        min_value=0.0,
+        max_value=1.0,
+    ),
+    SettingSpec(
+        name="matcher_ceiling_cosine",
+        kind="float",
+        group="matcher",
+        label="Ceiling cosine (rescaler top)",
+        description="Cosine similarity at or above this scores 100/100. Default 0.92 — a strong match for nomic-embed-text-v1-5. Lower if even your best matches are scoring ~80; raise if too many things hit 100.",
+        min_value=0.0,
+        max_value=1.0,
+    ),
     # Matcher gates -----------------------------------------------------
     SettingSpec(
         name="match_m_gate",
