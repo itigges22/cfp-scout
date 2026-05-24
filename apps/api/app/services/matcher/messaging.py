@@ -137,16 +137,36 @@ async def stage_a_messaging_fit(db: AsyncSession, conference_id: UUID) -> Messag
 def _cosine_sim(a, b) -> float:
     """Cosine similarity over pgvector-backed lists.
 
-    pgvector returns Python lists when read into ORM; both vectors are
-    normalized (nomic-embed-text-v1-5 emits unit vectors), so a dot product
-    equals the cosine. We compute it manually to avoid pulling numpy.
+    Old docstring claimed "nomic-embed-text-v1-5 emits unit vectors so
+    dot product = cosine" — that was wrong. Direct measurement (SELECT
+    sqrt(-1 * (embedding <#> embedding)) FROM vectors.document_chunks)
+    shows magnitudes of 13-18, not 1.0. The bare-dot-product version
+    of this function was returning values like 250+ for every pair,
+    clamp01 squashed them all to 1.0, and every conference scored
+    100% on messaging fit regardless of relevance.
+
+    pgvector's <=> operator (cosine distance) properly normalizes,
+    which is why the matcher's SQL queries got real numbers while the
+    in-memory Python loop didn't. Fixed by computing the magnitudes
+    + dividing — same math pgvector does internally.
     """
     if a is None or b is None:
         return 0.0
-    s = 0.0
+    from math import sqrt
+
+    dot = 0.0
+    mag_a = 0.0
+    mag_b = 0.0
     for x, y in zip(a, b, strict=False):
-        s += float(x) * float(y)
-    return clamp01(s)
+        fx, fy = float(x), float(y)
+        dot += fx * fy
+        mag_a += fx * fx
+        mag_b += fy * fy
+    if mag_a <= 0 or mag_b <= 0:
+        return 0.0
+    cos = dot / (sqrt(mag_a) * sqrt(mag_b))
+    # cos is in [-1, 1]; clamp to [0, 1] (negative cosines = irrelevant).
+    return clamp01(cos)
 
 
 # Re-export so the pipeline doesn't have to import from a private module.

@@ -80,24 +80,30 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Matcher score rescaler
     # ------------------------------------------------------------------
-    # Normalized text embeddings (nomic-embed-text-v1-5 and similar)
-    # produce unit vectors that cluster in a narrow band of the sphere —
-    # for ANY two AI-related texts, cosine sits in roughly [0.65, 0.92].
-    # Without rescaling, the matcher's "top-K mean cosine" gives every
-    # conference a near-1.0 score because it cherry-picks the K best
-    # pairs from a saturated range.
+    # rescale_score() maps a raw (properly-normalized) cosine in
+    # [floor, ceiling] → [0, 1]. Defaults calibrated from the actual
+    # distribution observed on this DB (nomic-embed-text-v1-5, ~10K
+    # conference-vs-messaging pairs):
     #
-    # rescale_score() maps [floor, ceiling] → [0, 1], so:
-    #   raw 0.65 (baseline noise) → 0.0
-    #   raw 0.78 (decent match)   → ~0.48
-    #   raw 0.92 (strong match)   → 1.0
+    #   p50 = 0.00    (median pair — totally unrelated)
+    #   p90 = 0.14
+    #   p95 = 0.22
+    #   p99 = 0.37    (strong match)
+    #   max = 0.59    (very strong match)
+    #
+    # Floor 0.10 zeros out the noise floor; ceiling 0.45 saturates at
+    # very-strong-match (top 1% of pairs). Mid-range pairs (0.20-0.25)
+    # land around 30-40% — a sensible "this is plausible" score.
     #
     # If you swap embedding models (e.g. to OpenAI's text-embedding-3),
-    # recalibrate these by running the matcher against known-good and
-    # known-irrelevant conference pairs and reading the actual cosines
-    # from /diagnostics or a one-shot SQL query against vectors.
-    matcher_baseline_cosine: float = Field(default=0.65, ge=0.0, le=1.0)
-    matcher_ceiling_cosine: float = Field(default=0.92, ge=0.0, le=1.0)
+    # recalibrate by running:
+    #   SELECT percentile_cont(0.5/0.95) WITHIN GROUP (ORDER BY 1 -
+    #          (a.embedding <=> b.embedding)) FROM vectors.document_chunks a,
+    #          vectors.document_chunks b WHERE a.owner_type='conference'
+    #          AND b.owner_type='messaging';
+    # and set the floor to the p50 + ceiling to ~the max you've seen.
+    matcher_baseline_cosine: float = Field(default=0.10, ge=0.0, le=1.0)
+    matcher_ceiling_cosine: float = Field(default=0.45, ge=0.0, le=1.0)
 
     # ------------------------------------------------------------------
     # Optional safety classifier (Llama-Guard-3-1B; plan 29)

@@ -167,9 +167,22 @@ async def stage_b_pillar_alignment(db: AsyncSession, conference_id: UUID) -> Pil
 
 
 def _cosine(a, b) -> float:
+    """Cosine similarity with proper normalization. See the matching
+    function in matcher/messaging.py for the bug history — the previous
+    bare-dot-product version was returning ~250 for every pair, clamp01
+    squashed to 1.0, every pillar saturated."""
     if a is None or b is None:
         return 0.0
-    s = 0.0
+    from math import sqrt
+
+    dot = 0.0
+    mag_a = 0.0
+    mag_b = 0.0
     for x, y in zip(a, b, strict=False):
-        s += float(x) * float(y)
-    return clamp01(s)
+        fx, fy = float(x), float(y)
+        dot += fx * fy
+        mag_a += fx * fx
+        mag_b += fy * fy
+    if mag_a <= 0 or mag_b <= 0:
+        return 0.0
+    return clamp01(dot / (sqrt(mag_a) * sqrt(mag_b)))
