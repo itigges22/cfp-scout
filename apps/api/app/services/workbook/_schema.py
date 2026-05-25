@@ -85,7 +85,7 @@ _ACTION_COL = ColumnSpec(
 PILLARS = SheetSpec(
     name="Pillars",
     entity="strategic_pillar",
-    description="the four-pillar strategy. Edit order via display_order.",
+    description="Your AI strategy's pillars. Edit order via display_order.",
     columns=(
         _ID_COL,
         _ACTION_COL,
@@ -145,7 +145,7 @@ SMES = SheetSpec(
         _ACTION_COL,
         ColumnSpec("full_name", "text", required=True, max_len=100),
         ColumnSpec("email", "text", max_len=200),
-        ColumnSpec("team", "text", required=True, max_len=60, note="e.g. team, Platform, Edge."),
+        ColumnSpec("team", "text", required=True, max_len=60, note="e.g. Marketing, Platform, Edge."),
         ColumnSpec(
             "expertise_areas", "list_text", required=True, note="Semicolon-separated; 1-12 items."
         ),

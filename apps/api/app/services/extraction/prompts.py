@@ -10,7 +10,7 @@ Two key concerns drive the shape here:
      extra fields or natural-language commentary, Pydantic rejects it.
 
   2. **Deterministic JSON output**. We don't rely on the provider's
-     ``response_format`` flag (some LLM API-hosted models support it, some
+     ``response_format`` flag (some hosted models support it, some
      don't). Instead we put the JSON schema inline and instruct the model
      to return ONLY JSON, no markdown fences, no commentary. The pipeline
      then strips any stray markdown and parses.

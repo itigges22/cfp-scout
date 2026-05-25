@@ -1,8 +1,8 @@
 """Per-model price table and cost calculation.
 
-Prices below match the your LLM endpoint catalog as of 2026-05 (the screenshot
-the user provided when locking in the chat + embedding models). Overridable
-via the ``LLM_PRICES_JSON`` env var if LLM API adjusts pricing.
+Prices below are example defaults captured from one LLM provider's catalog
+as of 2026-05; they're a starting point only and likely don't match your
+provider. Override the whole table via the ``LLM_PRICES_JSON`` env var.
 
 Cost is always USD per *million* tokens; computed cost is in USD.
 """
@@ -26,12 +26,12 @@ class Price:
     output_per_million: float
 
 
-# Hard-coded defaults from the LLM provider catalog. Keep this list narrow — only
-# models we actually configure via env.
+# Hard-coded example defaults. Keep this list narrow — only models we
+# actually configure via env. Override with LLM_PRICES_JSON for your
+# provider's real prices.
 _DEFAULT_PRICES: dict[str, Price] = {
-    # Chat
-    "llama-scout-17b": Price(0.50, 0.50),
-    "chat-model-4-0-h-tiny": Price(0.05, 0.05),
+    # Chat — a sampling of common open-source / open-weight models with
+    # example prices. Override via LLM_PRICES_JSON for your provider.
     "deepseek-r1-distill-qwen-14b": Price(0.80, 0.80),
     "openai/deepseek-r1-distill-qwen-14b": Price(0.80, 0.80),
     "qwen3-14b": Price(0.80, 0.80),

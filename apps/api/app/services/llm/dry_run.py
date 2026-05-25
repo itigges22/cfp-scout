@@ -2,7 +2,7 @@
 
 Used by:
   * Tests — the whole match pipeline runs offline.
-  * Demos / local dev without a real LLM key.
+  * Demos / local dev without a real LLM API key.
   * CI smoke tests.
 
 Determinism: each call returns the same response for the same input. Chat
@@ -34,7 +34,7 @@ def fake_chat(req: ChatRequest) -> ChatResponse:
 
     Plan 15 extraction needs valid JSON output even in dry-run, so the
     ``extract:conference`` purpose dispatches to a canned JSON envelope
-    derived from the page text fingerprint. Real LLM API calls require
+    derived from the page text fingerprint. Real LLM calls require
     LLM_DRY_RUN=false.
     """
     fingerprint = _hash_messages(req.messages)
@@ -50,7 +50,7 @@ def fake_chat(req: ChatRequest) -> ChatResponse:
         content = (
             f"[dry-run] chat response for purpose={req.purpose!r}, "
             f"fingerprint={fingerprint[:10]}. "
-            "Real LLM API calls require LLM_DRY_RUN=false and a valid LLM_API_KEY."
+            "Real LLM calls require LLM_DRY_RUN=false and a valid LLM_API_KEY."
         )
     prompt_tokens = sum(_estimate_tokens(m.content) for m in req.messages)
     completion_tokens = _estimate_tokens(content)

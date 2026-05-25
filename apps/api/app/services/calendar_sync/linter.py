@@ -1,10 +1,10 @@
-"""CSV linter for the AI BU Developer Marketing events spreadsheet.
+"""CSV linter for the team's events spreadsheet.
 
-Mirrors the parsing logic in a teammate's calendar-sync utility's
-``main.py`` (the ``clean_event_data`` + ``parse_date`` functions) so a CSV
-that runs cleanly through the calendar-sync cron also runs cleanly through
-Scout's importer. Any change to that upstream parser should be mirrored
-here.
+Mirrors the parsing logic in a separate Google-Calendar events sync
+script's ``main.py`` (the ``clean_event_data`` + ``parse_date`` functions)
+so a CSV that runs cleanly through the calendar-sync cron also runs
+cleanly through Scout's importer. Any change to that upstream parser
+should be mirrored here.
 
 Output is structured `LintedEvent` dicts; the caller (mapper.py) translates
 those into Scout's `past_conferences` and `conferences` rows.

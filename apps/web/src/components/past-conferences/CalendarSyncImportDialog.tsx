@@ -2,11 +2,10 @@
  * Calendar-sync import dialog.
  *
  * Uploads to /api/v1/past-conferences/import-calendar-sync in
- * preview-then-apply mode. Mirrors the shape of the upstream
- * google-calendar-events-sync repo's CSV (Event Name / Complete /
- * Start Date / End Date / City / Country / AI BU On-Site Staff /
- * Description / Activities / Type). Falls back to Docling + LLM
- * extraction if the strict linter rejects the file.
+ * preview-then-apply mode. Expects a CSV with the columns
+ * Event Name / Complete / Start Date / End Date / City / Country /
+ * On-Site Staff / Description / Activities / Type. Falls back to
+ * Docling + LLM extraction if the strict linter rejects the file.
  *
  * UX: drop a file → see the decisions (per-row breakdown grouped by
  * target: past_conference vs conference vs skipped) → Apply or Cancel.
@@ -143,19 +142,12 @@ export function CalendarSyncImportDialog({ open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle>Import calendar-sync events</DialogTitle>
           <DialogDescription>
-            Upload the CSV exported from the AI BU Developer Marketing 2026
-            Events spreadsheet (Events tab). Uses the same column shape as{" "}
-            <a
-              href="https://github.com/a teammate's calendar-sync utility"
-              target="_blank"
-              rel="noreferrer noopener"
-              className="text-accent underline"
-            >
-              google-calendar-events-sync
-            </a>
-            . Falls back to Docling + LLM extraction if the strict linter rejects
-            the file. <strong>Complete=TRUE</strong> rows land in past
-            conferences; <strong>Complete=FALSE</strong> become approved upcoming
+            Upload the CSV exported from your team's events spreadsheet
+            (Events tab). Uses the column shape produced by a typical
+            calendar-sync utility. Falls back to Docling + LLM extraction
+            if the strict linter rejects the file.{" "}
+            <strong>Complete=TRUE</strong> rows land in past conferences;{" "}
+            <strong>Complete=FALSE</strong> become approved upcoming
             conferences.
           </DialogDescription>
         </DialogHeader>

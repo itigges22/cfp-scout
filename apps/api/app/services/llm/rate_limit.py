@@ -7,7 +7,8 @@ Two buckets:
   * requests/sec  — caps concurrent calls
   * tokens/min    — caps total tokens consumed across all calls (input+output estimate)
 
-For Phase 1 we use generous defaults; LLM API's own rate limits are the real backstop.
+For Phase 1 we use generous defaults; the LLM provider's own rate limits
+are the real backstop.
 """
 
 from __future__ import annotations
@@ -50,8 +51,8 @@ class TokenBucket:
         self._last_refill = now
 
 
-# Module-level singletons. Tuned for typical LLM API limits.
-# Adjust via env in a future pass if LLM rate limiting bites.
+# Module-level singletons. Tuned for typical LLM-provider limits.
+# Adjust via env in a future pass if rate limiting bites.
 _REQUESTS_BUCKET = TokenBucket(capacity=20, refill_per_second=10)  # 10 rps sustained, 20 burst
 _TOKENS_BUCKET = TokenBucket(capacity=100_000, refill_per_second=2000)  # ~120k tokens/min
 

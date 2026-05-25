@@ -1,4 +1,4 @@
-"""One-off helper: parse the two remaining rh-docs PDFs via Docling.
+"""One-off helper: parse a couple of PDFs via Docling.
 
 Run inside the api container::
 
@@ -24,8 +24,8 @@ conv = DocumentConverter(
 )
 
 TARGETS = [
-    ("/tmp/Writing for <vendor> Notes.pdf", "/tmp/writing.md"),
-    ("/tmp/the AI platform _ Customer Deck.pdf", "/tmp/deck.md"),
+    ("/tmp/writing_notes.pdf", "/tmp/writing.md"),
+    ("/tmp/customer_deck.pdf", "/tmp/deck.md"),
 ]
 
 for src, out in TARGETS:

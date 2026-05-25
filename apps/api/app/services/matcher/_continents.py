@@ -6,10 +6,11 @@ Used by :mod:`.sme_ranker` to score location proximity:
   * Different continent / unknown → 0.3
   * Virtual conferences        → 1.0 (computed in the ranker, not here)
 
-Inline map covers the high-likelihood conference + SME locations for the
-your team. Unknown codes default to "different continent" so unmapped
-countries are explicit and easy to spot. Extend as the team's footprint
-grows. Continent codes follow the convention: AF, AN, AS, EU, NA, OC, SA.
+Inline map covers the high-likelihood conference + SME locations for a
+typical global team. Unknown codes default to "different continent" so
+unmapped countries are explicit and easy to spot. Extend as the team's
+footprint grows. Continent codes follow the convention: AF, AN, AS, EU,
+NA, OC, SA.
 """
 
 from __future__ import annotations

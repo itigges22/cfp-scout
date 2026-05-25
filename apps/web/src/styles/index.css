@@ -7,7 +7,7 @@
  * Tokens declared here become utility classes (bg-canvas, text-fg, ...) and
  * CSS variables (--color-canvas, ...).
  *
- * Palette: dark-first, near-black canvas with a <vendor> red accent. Light
+ * Palette: dark-first, near-black canvas with a red accent. Light
  * mode supported via the `:not(.dark)` selector if we ever add a toggle.
  */
 
@@ -27,7 +27,7 @@
   --color-fg-muted: #a1a1aa;      /* secondary text */
   --color-fg-subtle: #71717a;     /* tertiary / placeholders */
 
-  /* Accent — <vendor> red */
+  /* Accent — red */
   --color-accent: #ee0000;        /* primary action */
   --color-accent-hover: #ff2424;
   --color-accent-fg: #ffffff;     /* text on accent backgrounds */

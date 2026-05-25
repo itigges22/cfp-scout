@@ -32,7 +32,7 @@ def upgrade() -> None:
     op.execute(
         """
         INSERT INTO vectors.embedding_models (name, provider, dimension, is_active)
-        VALUES ('nomic-embed-text-v1-5', 'maas', 768, true)
+        VALUES ('nomic-embed-text-v1-5', 'llm-endpoint', 768, true)
         ON CONFLICT (name) DO NOTHING;
         """
     )

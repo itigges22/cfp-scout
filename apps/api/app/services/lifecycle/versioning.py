@@ -25,7 +25,7 @@ client-side patch interpreter:
     {
       "fields": {
         "bio":   {"from": "Old bio…", "to": "New bio…"},
-        "team":  {"from": "team",     "to": "Platform"}
+        "team":  {"from": "Marketing", "to": "Platform"}
       },
       "version_number": 7
     }

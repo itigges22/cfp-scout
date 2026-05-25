@@ -46,11 +46,11 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
 
     # ------------------------------------------------------------------
-    # LLM API — OpenAI-compatible endpoint (see ADR-0001 + plan 10)
+    # LLM — OpenAI-compatible endpoint (see ADR-0001 + plan 10)
     # ------------------------------------------------------------------
     llm_base_url: str = Field(..., description="LLM endpoint base URL.")
     llm_api_key: SecretStr = Field(..., description="LLM API key.")
-    llm_chat_model: str = "llama-scout-17b"
+    llm_chat_model: str = "your-chat-model"
     llm_embedding_model: str = "nomic-embed-text-v1-5"
 
     # Per-purpose overrides; empty string -> fall back to llm_chat_model.
@@ -58,22 +58,22 @@ class Settings(BaseSettings):
     llm_narrative_model: str = ""
     llm_agent_model: str = ""
 
-    # Optional separate credentials for the embedding model. your LLM endpoint
-    # (and many providers) issue per-model keys, so the chat key often
-    # can't access the embedding endpoint. When these are set, the LLM
-    # client builds a dedicated AsyncOpenAI for embedding calls; when
-    # blank, embeddings reuse llm_api_key / llm_base_url.
+    # Optional separate credentials for the embedding model. Many LLM
+    # providers issue per-model keys, so the chat key often can't access
+    # the embedding endpoint. When these are set, the LLM client builds
+    # a dedicated AsyncOpenAI for embedding calls; when blank, embeddings
+    # reuse llm_api_key / llm_base_url.
     llm_embedding_base_url: str = ""
     llm_embedding_api_key: SecretStr | None = None
 
     llm_dry_run: bool = False
     llm_monthly_budget_usd: float | None = None
 
-    # Maximum concurrent in-flight LLM API calls (chat + embedding combined).
+    # Maximum concurrent in-flight LLM calls (chat + embedding combined).
     # A bulk rescore enqueues one task per conference; without a cap,
-    # APScheduler runs them all in parallel and the burst trips LLM API's
-    # rate limit (429 Too Many Requests), causing every retry to also
-    # 429 (thundering herd). Default 3 is safe under typical LLM RPM
+    # APScheduler runs them all in parallel and the burst trips the LLM
+    # provider's rate limit (429 Too Many Requests), causing every retry
+    # to also 429 (thundering herd). Default 3 is safe under typical RPM
     # quotas; raise via /settings/tunables if you have headroom.
     llm_max_concurrent_calls: int = Field(default=3, ge=1, le=20)
 
@@ -267,7 +267,6 @@ class Settings(BaseSettings):
             "responsible ai", "ethics", "fairness", "bias",
             "kubeflow", "kserve", "ray", "vllm", "ollama",
             "mlflow", "wandb", "weights & biases",
-            "ai-platform", "ai-platform", "redhat ai", "<vendor> ai",
             # English — generic event-type signal
             "developer", "devops", "platform", "engineering", "cloud",
             "kubernetes", "k8s", "containers",
@@ -351,7 +350,7 @@ class Settings(BaseSettings):
         if value.get_secret_value() == "changeme":
             raise ValueError(
                 "LLM_API_KEY is still set to the placeholder 'changeme' in .env. "
-                "Provision a real key from your LLM provider dashboard."
+                "Provision a real API key from your LLM provider."
             )
         return value
 

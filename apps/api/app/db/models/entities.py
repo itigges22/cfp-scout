@@ -1,4 +1,4 @@
-"""Main entity tables — the things the team and the scraper care about.
+"""Main entity tables — the things your team and the scraper care about.
 
 All in the ``app`` schema. See ``docs/data-model.md`` for per-column rationale;
 this file is the implementation.
@@ -69,7 +69,7 @@ class MessagingDocument(TimestampedMixin, Base):
 
 
 class AudienceProfile(TimestampedMixin, Base):
-    """<vendor> marketing personas."""
+    """Marketing audience personas."""
 
     __tablename__ = "audience_profiles"
     __table_args__ = {"schema": "app"}
@@ -91,7 +91,7 @@ class AudienceProfile(TimestampedMixin, Base):
 
 
 class StrategicPillar(TimestampedMixin, Base):
-    """the four-pillar strategy. Seeded; rarely changes."""
+    """Your AI strategy's pillars. Seeded; rarely changes."""
 
     __tablename__ = "strategic_pillars"
     __table_args__ = {"schema": "app"}
@@ -104,7 +104,7 @@ class StrategicPillar(TimestampedMixin, Base):
 
 
 class Sme(TimestampedMixin, Base):
-    """Subject-matter experts (team + non-team)."""
+    """Subject-matter experts (your team + outside your team)."""
 
     __tablename__ = "smes"
     __table_args__ = {"schema": "app"}

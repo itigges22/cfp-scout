@@ -24,7 +24,7 @@ Three orthogonal questions:
 2. **How are coordinates stored?** Plain floats vs PostGIS geometry types.
 3. **When does geocoding happen?** Inline on ingest vs explicit backfill.
 
-The constraints: locally-installed app, single-user LLM budget already
+The constraints: locally-installed app, single-user LLM API budget already
 lean, no spatial-query needs beyond rendering markers, and ingest paths
 that need to stay fast (the user clicks "Discover more" and waits on the
 result).
@@ -85,7 +85,7 @@ that identifies the app and a contact email.
 ## Alternatives considered
 
 - **Paid geocoder (Google Maps, Mapbox)** — Lost because: introduces a
-  billable third-party for a non-core feature; the user's LLM budget is
+  billable third-party for a non-core feature; the user's LLM API budget is
   already lean; Nominatim's rate limit is not painful for our backfill
   cadence.
 - **Static city centroid lookup table embedded in the SPA** — Lost

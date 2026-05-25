@@ -181,20 +181,6 @@ series:
     typical_topics: [systems for ML, distributed training, inference]
     homepage: https://mlsys.org
 
-  # ---- <vendor> / vendor adjacency ----
-  - canonical_name: Vendor Summit
-    aliases: [RHSummit]
-    description: your flagship annual event.
-    typical_month: 5
-    typical_topics: [enterprise open source, OpenShift, RHEL, hybrid cloud, AI infrastructure]
-    homepage: https://redhat.com/summit
-  - canonical_name: AnsibleFest
-    aliases: []
-    description: Ansible community + automation.
-    typical_month: 9
-    typical_topics: [automation, ansible, infrastructure as code]
-    homepage: https://redhat.com/summit/ansiblefest
-
   # ---- General industry ----
   - canonical_name: GTC
     aliases: [NVIDIA GTC, GPU Technology Conference]

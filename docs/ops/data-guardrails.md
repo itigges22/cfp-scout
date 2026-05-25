@@ -58,7 +58,7 @@ Rejection examples:
 |-------|------|
 | `full_name` | 3-100 chars |
 | `email` | optional; RFC5322 |
-| `team` | 2-60 chars (free-form for now; `team` or a sibling team name) |
+| `team` | 2-60 chars (free-form for now; your team or a known sibling team) |
 | `expertise_areas` | 2-10 items |
 | `primary_topics` | 2-15 UUIDs — must exist in `topics` (FK check by service layer) |
 | `audience_focus` | 1-8 UUIDs — must exist in `audience_profiles` |
@@ -90,7 +90,7 @@ Canonical columns:
 
 ```
 name,year,attended_by_names,role,session_type,notes
-"NeurIPS 2024",2024,"Ian Tigges; Sarah Chen",attendee,,"led 1:1s with research labs"
+"NeurIPS 2024",2024,"Alice Example; Sarah Chen",attendee,,"led 1:1s with research labs"
 ```
 
 `attended_by_names` is semicolon-separated. The full string is 600 chars max

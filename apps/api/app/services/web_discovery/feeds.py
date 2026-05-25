@@ -107,7 +107,6 @@ _AI_KEYWORDS = {
     "ethics", "fairness", "bias",
     "kubeflow", "kserve", "ray", "vllm", "ollama",
     "mlflow", "wandb", "weights & biases",
-    "ai-platform", "ai-platform", "redhat ai", "<vendor> ai",
     # Event-type signals (so a generic "data summit" tagged only "summit"
     # still sneaks in if the name contains the topic):
     "developer", "devops", "platform", "engineering", "cloud",

@@ -75,7 +75,7 @@ class SmeBreakdown:
     team: str
     location_country: str | None
     location_city: str | None
-    is_external: bool  # True when team != 'team' (UI labeling hint)
+    is_external: bool  # True when team != the primary team (UI labeling hint)
     dimensions: DimensionScores
     composite: float
     above_gate: bool

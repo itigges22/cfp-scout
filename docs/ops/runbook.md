@@ -37,7 +37,7 @@ Check the logs: `make logs SERVICE=api`. The most common boot failures:
 - **`db.unreachable`** — Postgres isn't ready yet. Healthcheck retries
   for 30s; if it's still failing after that, check `make logs SERVICE=postgres`.
 - **`LLM_API_KEY is still set to the placeholder 'changeme'`** —
-  provision a LLM key OR set `LLM_DRY_RUN=true` for offline work.
+  provision an LLM API key OR set `LLM_DRY_RUN=true` for offline work.
 - **uvicorn import error** — usually means a Python dep change wasn't
   picked up. `make rebuild` (cache-aware, ~30-60s) reinstalls deps via uv.
 
@@ -163,7 +163,7 @@ matcher run logs `llm_call_failed`.
 1. Check the error string. Common causes:
    - **401 / invalid key** — `.env` has a stale `LLM_API_KEY`. Rotate
      per `docs/ops/secrets.md`.
-   - **429 / rate limited** — LLM quota exceeded. The client backs off
+   - **429 / rate limited** — LLM provider quota exceeded. The client backs off
      automatically (tenacity, jittered exponential, 4 attempts) but
      bursty extraction passes can outrun it. Reduce concurrency by
      setting `LLM_DRY_RUN=true` temporarily.
@@ -175,19 +175,19 @@ matcher run logs `llm_call_failed`.
 2. Verify a single call: `POST /api/v1/admin/llm/test-chat` with body
    `{"prompt":"ping","purpose":"smoke"}`.
 
-### Rotate the LLM key
+### Rotate the LLM API key
 
 See `docs/ops/secrets.md`. Short version:
 
 ```bash
-# 1. Provision a new key from the LLM provider dashboard
+# 1. Provision a new key from your LLM provider's dashboard
 # 2. Edit .env: replace LLM_API_KEY
 # 3. Restart so the new value is picked up
 make api-restart
 # 4. Verify
 curl -X POST localhost:8000/api/v1/admin/llm/test-chat \
   -d '{"prompt":"ping","purpose":"smoke"}' -H 'Content-Type: application/json'
-# 5. After confirming the new key works, revoke the old one in LLM API.
+# 5. After confirming the new key works, revoke the old one with the provider.
 ```
 
 ---
@@ -267,8 +267,8 @@ bell badge updates on the next poll (≤60s).
 
 ### Reset the embedding model
 
-Only relevant when promoting a new model (e.g. when LLM API publishes a
-successor to `nomic-embed-text-v1-5`). Process:
+Only relevant when promoting a new model (e.g. when your LLM provider publishes a
+successor to your current embedding model). Process:
 
 1. Insert the new row in `vectors.embedding_models` (manual SQL today;
    plan 31 will surface this as a workbook sheet).

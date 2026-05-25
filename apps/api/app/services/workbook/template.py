@@ -164,7 +164,7 @@ def _build_readme_sheet(ws: Worksheet) -> None:
             ),
             (
                 "Copy .env.example to .env. Open .env in a text editor and "
-                "paste your your LLM endpoint API key into the LLM_API_KEY field. "
+                "paste your LLM API key into the LLM_API_KEY field. "
                 "If you don't have a key yet, leave LLM_DRY_RUN=true and "
                 "Scout will boot with canned LLM responses so you can poke "
                 "the UI offline."
@@ -192,14 +192,14 @@ def _build_readme_sheet(ws: Worksheet) -> None:
             "Open the Settings tab. Look for the row where name = "
             "'llm_api_key'. The value cell is highlighted in red — that's "
             "the cell you NEED to fill in for Scout to do anything useful. "
-            "Paste your LLM API chat-model API key there. If your embedding "
+            "Paste your chat-model API key there. If your embedding "
             "model uses a separate key (different scope), also fill in "
             "llm_embedding_api_key.\n\n"
-            "Where to get a LLM key: log into your your LLM endpoint dashboard, "
-            "create a token with access to llama-scout-17b for chat and "
-            "nomic-embed-text-v1-5 for embeddings. The base URL Scout uses "
-            "by default is https://litellm-prod.apps.maas.redhatworkshops.io/v1 "
-            "— update llm_base_url if yours is different."
+            "Where to get a key: log into your LLM provider's dashboard "
+            "and create a token with access to a chat model and an "
+            "embedding model (Scout defaults expect nomic-embed-text-v1-5 "
+            "for embeddings). Set llm_base_url to your provider's "
+            "OpenAI-compatible endpoint."
         ),
     )
     row += 1
@@ -281,7 +281,7 @@ def _build_readme_sheet(ws: Worksheet) -> None:
             "carefully."
         )),
         ("Pillars", (
-            "your strategic pillars. Edit display_order to "
+            "Your AI strategy's pillars. Edit display_order to "
             "control how they're listed on the dashboard. You probably "
             "have 3-5 of these."
         )),
@@ -337,7 +337,7 @@ def _build_readme_sheet(ws: Worksheet) -> None:
     )
     setting_groups = [
         ("llm", (
-            "LLM API connection: base URL, API key, chat + embedding model "
+            "LLM connection: base URL, API key, chat + embedding model "
             "names, dry-run toggle, monthly USD budget cap. THIS IS WHERE "
             "YOUR API KEY GOES."
         )),
@@ -541,7 +541,7 @@ def _build_readme_sheet(ws: Worksheet) -> None:
                 "default, use the /settings/tunables UI's reset button."
             ),
             (
-                "Importing the workbook before .env has a valid LLM key. "
+                "Importing the workbook before .env has a valid LLM API key. "
                 "Scout's startup validator rejects the placeholder. Either "
                 "set LLM_DRY_RUN=true in .env, or put your real key in .env "
                 "before running 'make up'."
@@ -781,7 +781,7 @@ _SAMPLE_ROWS: dict[str, dict[str, object]] = {
     "SMEs": {
         "full_name": "Sample — Alice Chen",
         "email": "alice@example.com",
-        "team": "team",
+        "team": "Marketing",
         "expertise_areas": "Retrieval-augmented generation; Vector databases",
         "primary_topics": "rag; llm",
         "audience_focus": "Platform Engineering Leaders",

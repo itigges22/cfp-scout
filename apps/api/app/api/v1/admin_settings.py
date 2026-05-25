@@ -59,7 +59,7 @@ SPECS: list[SettingSpec] = [
         kind="secret",
         group="llm",
         label="LLM API key",
-        description="Maas/OpenAI-compatible API key. Stored encrypted at rest "
+        description="OpenAI-compatible API key. Stored encrypted at rest "
         "is a future feature; today the value lands in plain text in the DB.",
         restart_required=True,
     ),
@@ -68,7 +68,7 @@ SPECS: list[SettingSpec] = [
         kind="str",
         group="llm",
         label="LLM base URL",
-        description="OpenAI-compatible endpoint (e.g. https://maas.example/v1).",
+        description="OpenAI-compatible endpoint (e.g. https://your-llm-host.example/v1).",
         restart_required=True,
     ),
     SettingSpec(
@@ -84,7 +84,7 @@ SPECS: list[SettingSpec] = [
         kind="str",
         group="llm",
         label="Embedding model",
-        description="Embedding model name. Most LLM providers ship nomic-embed-text-v1-5 or text-embedding-3-small. Required for the matcher.",
+        description="Embedding model name. Common choices include nomic-embed-text-v1-5 or text-embedding-3-small. Required for the matcher.",
         restart_required=True,
     ),
     SettingSpec(
@@ -92,7 +92,7 @@ SPECS: list[SettingSpec] = [
         kind="secret",
         group="llm",
         label="Embedding API key (optional)",
-        description="If the chat key can't access the embedding model (common on your LLM endpoint — per-model keys), paste a key with embedding access here. Leave blank to reuse the chat key.",
+        description="If the chat key can't access the embedding model (common when providers issue per-model keys), paste a key with embedding access here. Leave blank to reuse the chat key.",
         restart_required=True,
     ),
     SettingSpec(
@@ -124,7 +124,7 @@ SPECS: list[SettingSpec] = [
         kind="int",
         group="llm",
         label="Max concurrent LLM calls",
-        description="Process-wide cap on in-flight LLM API calls (chat + embedding). Default 3 is safe under typical LLM quotas. If you see 429 rate-limit errors in /diagnostics during a bulk rescore or matcher fan-out, lower this; if you have headroom and want faster rescores, raise it.",
+        description="Process-wide cap on in-flight LLM calls (chat + embedding). Default 3 is safe under typical provider quotas. If you see 429 rate-limit errors in /diagnostics during a bulk rescore or matcher fan-out, lower this; if you have headroom and want faster rescores, raise it.",
         min_value=1,
         max_value=20,
     ),

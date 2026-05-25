@@ -63,7 +63,7 @@ const GROUP_ORDER: SettingSpec["group"][] = [
 ];
 
 const GROUP_TITLE: Record<SettingSpec["group"], string> = {
-  llm: "LLM / LLM API",
+  llm: "LLM API",
   matcher: "Matcher gates & weights",
   sme: "SME ranker weights",
   team: "Team recommendations",

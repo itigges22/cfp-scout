@@ -1,11 +1,11 @@
 """Audience-profile input schemas.
 
-Audience profiles are your marketing personas. The matcher uses
+Audience profiles are your team's marketing personas. The matcher uses
 audience overlap (Jaccard between conference_audiences and sme_audiences)
 as one of the SME-matching dimensions.
 
 The ``industry`` field is intentionally a freeform string rather than a
-Postgres enum — it gets validated against the team's industry vocabulary
+Postgres enum — it gets validated against your team's industry vocabulary
 (maintained via the XLSX workbook from plan 31). Doing it that way means
 adding a new industry is a workbook edit, not a code change + migration.
 """

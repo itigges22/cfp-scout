@@ -47,7 +47,7 @@ class SmeBase(StrictBase):
     full_name: ShortName
     email: EmailStr | None = None
 
-    # team: free-form for now (team + sibling team names). A future
+    # team: free-form for now (your team + sibling team names). A future
     # iteration could enum-ify this once we know the closed set.
     team: Annotated[str, Field(min_length=2, max_length=60)]
 

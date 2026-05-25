@@ -51,8 +51,8 @@ function SmesPage() {
         q: debouncedSearch || undefined,
         team: teamParam,
       }),
-    // Non-team filter is harder server-side (NOT match) — we'll fetch all and
-    // filter client-side for now. Cheap because the SME table stays small.
+    // "Other teams" filter is harder server-side (NOT match) — we'll fetch all
+    // and filter client-side for now. Cheap because the SME table stays small.
     select: (data) =>
       teamFilter === "non-daam"
         ? { ...data, items: data.items.filter((s) => s.team !== "team") }
@@ -70,7 +70,7 @@ function SmesPage() {
         description="Subject-matter experts. Their topic + audience focus drives the matcher's Stage C (who to send)."
       />
       <TeamGuidance
-        storedHere="team + non-team SMEs with their expertise areas, primary topics, audience focus, location, and bio. Bio similarity, topic overlap, and audience overlap all feed the per-conference SME ranker."
+        storedHere="SMEs (your team and beyond) with their expertise areas, primary topics, audience focus, location, and bio. Bio similarity, topic overlap, and audience overlap all feed the per-conference SME ranker."
         addInline="+ New SME"
         workbookSheet="SMEs"
       />
@@ -208,8 +208,8 @@ function TeamTabs({
 }) {
   const tabs: { value: TeamFilter; label: string }[] = [
     { value: "all", label: "All" },
-    { value: "daam", label: "team" },
-    { value: "non-daam", label: "Non-team" },
+    { value: "daam", label: "My team" },
+    { value: "non-daam", label: "Other" },
   ];
   return (
     <div className="inline-flex rounded-md border border-border bg-surface p-0.5">

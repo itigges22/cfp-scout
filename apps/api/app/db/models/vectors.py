@@ -1,7 +1,8 @@
 """Vector storage (the ``vectors`` schema).
 
 ``document_chunks.embedding`` uses pgvector's ``Vector`` type, dimension 768
-to match ``nomic-embed-text-v1-5`` (the only embedding model LLM API exposes).
+to match ``nomic-embed-text-v1-5`` (the default embedding model the LLM
+endpoint is configured for; change ``LLM_EMBEDDING_MODEL`` to use another).
 
 The HNSW index isn't created from the ORM — the initial migration creates it
 via raw SQL because Alembic doesn't expose vector-specific index params.

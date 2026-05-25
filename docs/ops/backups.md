@@ -106,7 +106,7 @@ make db-dump
 # on the destination host (first time setup)
 git clone https://github.com/<org>/scout
 cd scout
-cp .env.example .env   # edit LLM key
+cp .env.example .env   # edit LLM API key
 make up                # postgres boots, init SQL runs
 make db-restore FILE=./backups/scout-...sql.gz
 ```

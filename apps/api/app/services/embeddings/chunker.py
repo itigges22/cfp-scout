@@ -11,7 +11,7 @@ inputs keep calling ``chunk_text()`` below.
 
 Sizing target: ~750 tokens per chunk at ~4 chars/token = ~3000 chars,
 with 300-char overlap on adjacent chunks. Matches the embedder's 4k-token
-context budget per call (nomic-embed-text-v1-5 via LLM API).
+context budget per call (nomic-embed-text-v1-5 via the configured LLM endpoint).
 """
 
 from __future__ import annotations

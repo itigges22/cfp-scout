@@ -1,13 +1,14 @@
 """LLMClient — single entry point for chat + embeddings.
 
-Same client talks to the LLM API for both. Switch providers by changing 3 env vars
-(LLM_BASE_URL, LLM_API_KEY, LLM_CHAT_MODEL). No code changes.
+Same client talks to the configured LLM endpoint for both. Switch providers
+by changing 3 env vars (LLM_BASE_URL, LLM_API_KEY, LLM_CHAT_MODEL). No code
+changes.
 
 Every call:
   1. Resolves the model (per-purpose override -> default).
   2. Checks the monthly budget (raises BudgetExceeded on over).
   3. Acquires rate-limit slots (request + tokens).
-  4. Calls LLM API via the openai SDK (or returns a dry-run fake).
+  4. Calls the LLM via the openai SDK (or returns a dry-run fake).
   5. Computes cost from costs.py.
   6. Records the call to app.llm_calls.
   7. Returns a typed response.
@@ -45,16 +46,16 @@ from app.settings import Settings, get_settings
 log = structlog.get_logger("scout.llm.client")
 
 
-# Process-wide concurrency cap on outbound LLM API calls. Without this, a
+# Process-wide concurrency cap on outbound LLM calls. Without this, a
 # bulk rescore (recompute_all_matches → 500+ tasks) or the in-process
 # scheduler firing multiple jobs at once fans out to dozens of parallel
-# LLM requests and trips the LLM rate limit (429), causing every job
-# to back off + retry simultaneously (thundering herd).
+# LLM requests and trips the provider's rate limit (429), causing every
+# job to back off + retry simultaneously (thundering herd).
 #
 # Bound is set lazily from Settings.llm_max_concurrent_calls the first
-# time _gate() is called. Default 3 — safe under the typical LLM RPM
-# budget; operators can bump it via /settings/tunables if they have a
-# higher quota.
+# time _gate() is called. Default 3 — safe under the typical RPM budget;
+# operators can bump it via /settings/tunables if they have a higher
+# quota.
 _llm_call_sem: asyncio.Semaphore | None = None
 _llm_call_sem_size: int | None = None
 
@@ -78,13 +79,13 @@ class LLMClient:
         self._openai = AsyncOpenAI(
             base_url=_normalize_openai_base_url(self._settings.llm_base_url),
             api_key=self._settings.llm_api_key.get_secret_value(),
-            # Default timeout. Long enough for slow LLM API responses; short
+            # Default timeout. Long enough for slow LLM responses; short
             # enough that hung connections don't tie up workers forever.
             timeout=120.0,
         )
-        # Optional dedicated embedding client. your LLM endpoint (and others)
-        # often issue per-model keys, so the chat-model key can't access
-        # the embedding model. When ``llm_embedding_api_key`` is set we
+        # Optional dedicated embedding client. Many LLM providers issue
+        # per-model keys, so the chat-model key can't access the
+        # embedding model. When ``llm_embedding_api_key`` is set we
         # build a separate AsyncOpenAI for embedding calls; otherwise
         # embeddings reuse the chat client.
         embed_key = getattr(self._settings, "llm_embedding_api_key", None)
@@ -406,10 +407,10 @@ class LLMClient:
         return self._settings.llm_chat_model
 
     async def _call_chat(self, model: str, req: ChatRequest) -> Any:
-        """Make the actual LLM API call with retries.
+        """Make the actual LLM call with retries.
 
         Gated by the process-wide semaphore so a bulk rescore can't fan
-        out to dozens of parallel LLM API calls and trip the rate limit.
+        out to dozens of parallel LLM calls and trip the rate limit.
         """
         retry = get_retry()
         async with _gate():
@@ -433,7 +434,7 @@ class LLMClient:
             async for attempt in retry:
                 with attempt:
                     # Use the dedicated embedding client when configured.
-                    # Per-model LLM keys (<vendor> + others) require this.
+                    # Many providers require per-model keys for embeddings.
                     return await self._embed_openai.embeddings.create(
                         model=model,
                         input=req.texts,

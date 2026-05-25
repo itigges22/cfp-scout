@@ -1,6 +1,6 @@
 # Secrets handling
 
-Scout has one truly sensitive secret — the your LLM endpoint API key — and a
+Scout has one truly sensitive secret — the LLM API key — and a
 handful of operationally-sensitive values (the Postgres superuser password,
 the `app`-role password, future Eventbrite/Meetup API keys if those sources
 get enabled). This runbook covers what they are, where they live, how to
@@ -58,10 +58,10 @@ Secrets explicitly do NOT live in:
 
 ```bash
 git clone https://github.com/<your-org>/scout
-cd cfp-scout
+cd scout
 cp .env.example .env
 chmod 600 .env                   # restrict to your user only
-$EDITOR .env                     # add your LLM key, postgres password
+$EDITOR .env                     # add your LLM API key, postgres password
 make up
 ```
 
@@ -76,27 +76,27 @@ You should see one line at startup that includes
 but the redactor masked it. If you see the actual key in logs, **stop and
 escalate** — the redaction is broken.
 
-## Provisioning a LLM key
+## Provisioning an LLM API key
 
-1. Open the your LLM endpoint dashboard (URL depends on your environment).
-2. Create a new key labeled with your name + `scout` (e.g. `operator-scout`).
+1. Open your LLM provider's dashboard (URL depends on your provider).
+2. Create a new key labeled with your name + `scout` (e.g. `alice-scout`).
    The label makes audit/rotation obvious later.
 3. Copy the key into your `.env` as `LLM_API_KEY=...`.
 4. `make down && make up` to reload the api with the new value.
 5. Hit `/diagnostics` (plan 26, when it lands) or watch `make logs api` to
    confirm LLM API calls work.
 
-## Rotating the LLM key
+## Rotating the LLM API key
 
 You should rotate quarterly or any time:
 - A teammate with access leaves the project.
 - The key is suspected to be compromised (someone else's machine had a copy, etc.).
-- LLM API prompts you to.
+- The provider prompts you to.
 
 Procedure:
 
 ```bash
-# 1. Provision a new key on the LLM provider dashboard (label it with a date)
+# 1. Provision a new key on the provider's dashboard (label it with a date)
 # 2. Edit the .env to use the new key
 $EDITOR .env
 
@@ -104,10 +104,10 @@ $EDITOR .env
 make down && make up
 
 # 4. Verify the new key works
-make logs SERVICE=api | grep -i 'llm_api_key\|maas'
+make logs SERVICE=api | grep -i 'llm_api_key'
 # (expect '**********' for the key; no errors)
 
-# 5. Revoke the OLD key on the LLM provider dashboard
+# 5. Revoke the OLD key on the provider's dashboard
 ```
 
 **Do step 5 last.** If you revoke before swapping, in-flight requests fail
@@ -143,11 +143,11 @@ and update `APP_DB_PASSWORD` in `.env`.
 Treat these as serious incidents. The first three steps are non-negotiable.
 
 ### 1. Revoke immediately
-- **LLM key**: log into the LLM provider dashboard, revoke the key, generate a new one.
+- **LLM API key**: log into your provider's dashboard, revoke the key, generate a new one.
 - **Postgres password**: rotate per "Rotating the Postgres passwords" above.
 
 ### 2. Audit what was reachable with the leaked secret
-- For LLM API: check the LLM API billing dashboard for unexpected spend in the last 24 hours.
+- For the LLM API: check your provider's billing dashboard for unexpected spend in the last 24 hours.
 - For Postgres: review `audit_log` for unexpected writes. (Postgres isn't network-exposed by default, so the blast radius is local-machine only — but check anyway.)
 
 ### 3. Find how it leaked
@@ -188,7 +188,7 @@ In order of "first to fail" → "last line":
 4. **SecretStr in settings** prevents accidental `f"{settings.llm_api_key}"` from yielding the raw value.
 5. **structlog redactor** scrubs known-sensitive keys + bearer/sk- patterns from log records.
 6. **`ENV=prod` strips tracebacks** from error responses so a 500 doesn't leak environment values.
-7. **LLM API-side**: per-key billing isolation, revocable independently. A leaked Scout key doesn't compromise other apps that share LLM API access.
+7. **Provider-side**: per-key billing isolation, revocable independently. A leaked Scout key doesn't compromise other apps that share the same LLM provider account.
 
 ## Related
 

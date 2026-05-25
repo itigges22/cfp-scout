@@ -90,7 +90,7 @@ Product messaging and positioning. Drives the matcher's Stage A (messaging fit).
 | `is_active` | bool | Inactive docs excluded from matching but kept for history |
 
 #### `audience_profiles`
-<vendor> marketing/sales personas.
+Marketing/sales personas your team targets.
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -104,7 +104,7 @@ Product messaging and positioning. Drives the matcher's Stage A (messaging fit).
 | `is_active` | bool | |
 
 #### `strategic_pillars`
-the four-pillar strategy. Seeded; rarely changes.
+Your team's four-pillar strategy. Seeded; rarely changes.
 
 | Column | Type |
 |--------|------|
@@ -113,13 +113,13 @@ the four-pillar strategy. Seeded; rarely changes.
 | `display_order` | smallint |
 
 #### `smes`
-Subject-matter experts — team members and external collaborators.
+Subject-matter experts — your team members and external collaborators.
 
 | Column | Type | Purpose |
 |--------|------|---------|
 | `full_name` | text | 3–100 chars |
 | `email` | text nullable | RFC5322 validated; only for past-conference matching |
-| `team` | text | `team` or known sibling team name |
+| `team` | text | Free-form team name (your team or a known sibling team) |
 | `expertise_areas` | text[] | 2–10 items |
 | `primary_topics` | uuid[] | FK to `topics` (junction also authoritative) |
 | `audience_focus` | uuid[] | FK to `audience_profiles` |
@@ -341,7 +341,7 @@ Human approve/reject/needs-review actions.
 | Column | Type |
 |--------|------|
 | `conference_id` | uuid FK |
-| `decided_by_label` | text | Free-form attribution ("Ian", "team review") |
+| `decided_by_label` | text | Free-form attribution ("ops", "team review") |
 | `decision` | enum (`approve`/`reject`/`needs_review`) |
 | `reason` | text nullable |
 | `decided_at` | timestamptz |

@@ -1,6 +1,6 @@
 """LLM service layer.
 
-A provider-agnostic abstraction over LLM API via the OpenAI-compatible API.
+A provider-agnostic abstraction over an OpenAI-compatible LLM endpoint.
 Same client for chat and embeddings. Retries, cost accounting, dry-run mode,
 budget guardrail.
 

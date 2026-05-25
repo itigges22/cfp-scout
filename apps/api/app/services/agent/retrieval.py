@@ -5,7 +5,7 @@ amount of post-processing:
 
   * Dedup by ``owner_id`` so one verbose owner can't crowd out the rest.
   * Compose human-friendly source labels (e.g. "Conference: NeurIPS 2027",
-    "Messaging: team positioning") for the UI citation chips.
+    "Messaging: product positioning") for the UI citation chips.
   * Compute the numbered snippet text the prompt + UI both reference.
 
 Single owner-type set per call — keeps the embedding cost predictable.

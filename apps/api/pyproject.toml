@@ -6,7 +6,7 @@ description = "Scout FastAPI service (also serves the built SPA and runs APSched
 requires-python = ">=3.12,<3.13"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-authors = [{ name = "your team" }]
+authors = [{ name = "Scout maintainers", email = "scout@example.invalid" }]
 
 # Plan 02 ships the minimum for the api container to start and serve /healthz +
 # the placeholder SPA. Step 06 adds SQLAlchemy / Alembic / Pydantic settings /

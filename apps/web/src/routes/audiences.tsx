@@ -73,10 +73,10 @@ function AudiencesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Audiences"
-        description="<vendor> personas. Used by the matcher to predict which conference attendees the team is trying to reach."
+        description="Audience personas. Used by the matcher to predict which conference attendees the team is trying to reach."
       />
       <TeamGuidance
-        storedHere="The 11 <vendor> audience personas (C-Suite, App Dev ITDM, Data Scientist, …) with their pain points, key messages, and exclusion criteria. The SME ranker uses these to compute SME ↔ audience overlap; the matcher uses them when scoring conference fit."
+        storedHere="Your audience personas (C-Suite, App Dev ITDM, Data Scientist, …) with their pain points, key messages, and exclusion criteria. The SME ranker uses these to compute SME ↔ audience overlap; the matcher uses them when scoring conference fit."
         addInline="+ New audience"
         workbookSheet="Audiences"
       />

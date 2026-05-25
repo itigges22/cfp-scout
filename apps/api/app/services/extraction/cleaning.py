@@ -18,9 +18,9 @@ import structlog
 log = structlog.get_logger("scout.extraction.cleaning")
 
 # Cap on cleaned-text length sent to the LLM. ~24 KB is enough for a typical
-# conference page; longer pages get truncated with a flagged note. chat-model's
-# 8B has a ~128k context, but we'd rather pay for a focused extraction than
-# pour the whole sitemap into the context.
+# conference page; longer pages get truncated with a flagged note. Modern
+# LLMs have ~128k context, but we'd rather pay for a focused extraction
+# than pour the whole sitemap into the context.
 MAX_CLEANED_CHARS = 24_000
 
 

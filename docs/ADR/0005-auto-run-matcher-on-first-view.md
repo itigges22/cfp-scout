@@ -63,7 +63,7 @@ has a Match row is a no-op for the matcher.
 - First view of a freshly-ingested conference is slow (5–30 s vs ~200 ms).
   Acceptable because subsequent views are fast and the user is already
   context-switching when they click into a detail page.
-- The request handler holds a DB transaction and a LLM API embedding call for
+- The request handler holds a DB transaction and an LLM API embedding call for
   the duration. Under heavy concurrent first-view traffic this could starve
   the api workers; we accept this at single-user scale.
 - Auto-match failures (no messaging documents, no SMEs, LLM API outage) need

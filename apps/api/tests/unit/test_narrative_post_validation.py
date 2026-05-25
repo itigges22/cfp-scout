@@ -18,7 +18,7 @@ class _Conf:
 
 class _Sme:
     full_name = "Alice Chen"
-    team = "team"
+    team = "Marketing"
     expertise_areas = ["retrieval-augmented generation", "vector databases"]
 
 

@@ -110,10 +110,10 @@ async def import_calendar_sync(
         UploadFile,
         File(
             description=(
-                "CSV exported from the AI BU Developer Marketing 2026 Events "
-                "spreadsheet (Events tab). Same shape teammate/"
-                "google-calendar-events-sync expects. Falls back to "
-                "Docling + LLM extraction if the linter rejects the file."
+                "CSV exported from your team's events spreadsheet "
+                "(Events tab). Same shape as a typical Google Calendar "
+                "events export. Falls back to Docling + LLM extraction "
+                "if the linter rejects the file."
             )
         ),
     ],

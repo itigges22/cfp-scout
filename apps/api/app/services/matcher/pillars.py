@@ -104,8 +104,8 @@ async def stage_b_pillar_alignment(db: AsyncSession, conference_id: UUID) -> Pil
     for pid, chunk in msg_q.all():
         pillar_msg_chunks.setdefault(pid, []).append(chunk)
 
-    # Embed each pillar description once (1 LLM call per pillar; nomic on
-    # LLM API is cheap and the result is the same every run). Could be cached
+    # Embed each pillar description once (1 LLM call per pillar; nomic
+    # is cheap and the result is the same every run). Could be cached
     # in ``vectors.document_chunks`` later, but for phase 1 the volume is
     # 4-ish rows.
     client = get_llm_client()

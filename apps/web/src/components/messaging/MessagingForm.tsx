@@ -108,7 +108,7 @@ export function MessagingForm({
               value={title}
               maxLength={120}
               onChange={(e) => setTitle(e.currentTarget.value)}
-              placeholder="AI platform 2026 positioning"
+              placeholder="Flagship platform 2026 positioning"
             />
           </FieldRow>
           <FieldRow
@@ -121,7 +121,7 @@ export function MessagingForm({
               onChange={(e) => setElevatorPitch(e.currentTarget.value)}
               rows={3}
               className="min-h-[5rem] rounded-md border border-border bg-surface px-3 py-2 text-sm"
-              placeholder="AI platform is the platform that…"
+              placeholder="Our platform is the one that…"
             />
           </FieldRow>
           <FieldRow

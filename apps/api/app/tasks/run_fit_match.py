@@ -70,7 +70,7 @@ async def _do_recompute_all() -> dict[str, Any]:
     the matcher-job level (default 4); each task acquires its own
     short-lived DB session inside _do_run_fit_match, returns it
     promptly, and the pool stays healthy. The LLM semaphore still
-    applies inside each task for the actual LLM API call.
+    applies inside each task for the actual LLM call.
     """
     import asyncio
 

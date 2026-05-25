@@ -6,7 +6,7 @@ import { QueryClient } from "@tanstack/react-query";
 //   * 30s staleTime — most data the team views is freshish but not real-time.
 //     CFP-digest + diagnostics override per-query when they need tighter freshness.
 //   * 3 retries on failure with exponential backoff — covers transient network
-//     blips against LLM API / Postgres without hammering on real outages.
+//     blips against the LLM API / Postgres without hammering on real outages.
 //   * `refetchOnWindowFocus: false` — internal tool, the user knows when to refresh.
 export const queryClient = new QueryClient({
   defaultOptions: {

@@ -1,7 +1,7 @@
 """Operational tables in the ``app`` schema.
 
 ingest_jobs   — every scrape/match/decay run (plan 13)
-llm_calls     — every LLM API call; powers the budget guardrail (plan 10) and the /diagnostics LLM panel (plan 26)
+llm_calls     — every LLM call; powers the budget guardrail (plan 10) and the /diagnostics LLM panel (plan 26)
 chat_sessions, chat_messages — agent chat persistence (plan 22)
 notifications — CFP-closing digest, etc. (plan 24)
 """
@@ -48,7 +48,7 @@ class IngestJob(TimestampedMixin, Base):
 
 
 class LLMCall(Base):
-    """Every LLM API call. NO TimestampedMixin — we use ``created_at`` only
+    """Every LLM call. NO TimestampedMixin — we use ``created_at`` only
     (no UPDATE semantics for an append-only log)."""
 
     __tablename__ = "llm_calls"

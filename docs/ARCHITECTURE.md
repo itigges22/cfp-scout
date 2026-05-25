@@ -10,9 +10,9 @@ Scout is a single-user, locally-installed web app. Two containers come up
 via `docker compose up` (or `podman compose up`): **postgres** and **api**.
 The api is FastAPI; it serves the JSON API at `/api/v1/*`, the built React
 SPA at `/`, and hosts an in-process APScheduler that runs background jobs
-(scraping, embedding, matching, decay, CFP digests). The api calls <vendor>
-the LLM API over the OpenAI-compatible API for both chat (`llama-scout-17b`)
-and embeddings (`nomic-embed-text-v1-5`).
+(scraping, embedding, matching, decay, CFP digests). The api calls an
+OpenAI-compatible LLM endpoint for both chat (an instruction-tuned chat
+model) and embeddings (a 768-dim text embedding model).
 
 ## System diagram
 
@@ -26,7 +26,7 @@ flowchart LR
             API --> DB
         end
     end
-    API -.OpenAI-compatible HTTPS.-> LLM API[your LLM endpoint]
+    API -.OpenAI-compatible HTTPS.-> LLM[LLM API endpoint]
     API -.Crawl4AI HTTPS.-> Web[(public conference sites,<br/>RSS, sitemaps, ICS, wikicfp)]
 ```
 
@@ -49,8 +49,8 @@ flowchart LR
 - FastAPI app (`apps/api/app/main.py`).
 - Hosts an `AsyncIOScheduler` started in the FastAPI lifespan.
 - Serves the SPA built by `apps/web` as static files at `/`.
-- Talks to LLM API via an OpenAI-compatible client. No direct network calls
-  to model inference outside of LLM API.
+- Talks to the LLM API via an OpenAI-compatible client. No direct network calls
+  to model inference outside of that endpoint.
 
 ### Web discovery (`app/services/web_discovery/`)
 
@@ -166,12 +166,12 @@ the full pipeline narrative.
 | DB | Postgres 16 + pgvector | Single store; HNSW vector search; Apache AGE not needed (NetworkX in-mem) |
 | Background jobs | APScheduler in-process | No Redis; jobs persisted in Postgres |
 | Graph | NetworkX in-memory + Postgres junctions | Obsidian-style derived graph |
-| LLM client | `openai` SDK pointed at LLM API base_url | Provider-agnostic |
+| LLM client | `openai` SDK pointed at a configurable base_url | Provider-agnostic |
 | Scraping | Crawl4AI + `icalendar` + dedicated wikicfp parser | No Playwright |
 | Page fetch (discovery) | Crawl4AI `AsyncHTTPCrawlerStrategy` | HTTP-only mode keeps the api image lean; no headless browser dependency |
 | Web search (discovery) | `ddgs` (default) + Brave + Tavily adapters | `ddgs` replaced the deprecated `duckduckgo_search` package; provider chosen via `discovery_search_provider` setting |
 | Geocoding | Nominatim (OpenStreetMap) | Free, no API key; 1 req/sec policy enforced in-process |
-| PDF parsing + chunking | Docling (`DocumentConverter` + `HybridChunker`) | IBM Research; layout-aware; built-in OCR; replaces pypdf + ocrmypdf + langchain-text-splitters ([ADR-0003](ADR/0003-docling-for-pdf-and-chunking.md)) |
+| PDF parsing + chunking | Docling (`DocumentConverter` + `HybridChunker`) | Layout-aware; built-in OCR; replaces pypdf + ocrmypdf + langchain-text-splitters ([ADR-0003](ADR/0003-docling-for-pdf-and-chunking.md)) |
 | World map (web) | `react-simple-maps` + self-hosted TopoJSON | Plots geocoded conferences; TopoJSON ships at `/world-110m.json` to dodge v3's silent CDN fetch failures |
 | Graph viz (web) | `react-force-graph-2d` | Renders the conference ↔ topic ↔ SME graph derived from Postgres junctions |
 | Migrations | Alembic | Standard |
@@ -205,12 +205,11 @@ Provisioning + rotation + leak response in
 
 ## Glossary
 
-- **team** — <vendor> data and AI advocacy team
-- **SME** — subject-matter expert (the your team and external collaborators)
+- **SME** — subject-matter expert (your team and external collaborators)
 - **CFP** — call for papers; submission window for a conference
 - **CFP scout** — the digest job + UI surface that nudges the operator when CFP windows are about to close
-- **Pillar** — one of your four strategic pillars
-- **Audience** — <vendor>-defined marketing/sales persona
+- **Pillar** — one of your team's four strategic pillars
+- **Audience** — your team's marketing/sales persona
 - **Series** — year-over-year linkage between editions of the same conference
 - **Match** — the matcher output (scores + recommended SMEs + rationale) for a conference
 - **Discovery** — the two-track event-finding pipeline (bulk JSON feed + on-demand Crawl4AI). See [`web-discovery.md`](web-discovery.md).

@@ -1,8 +1,9 @@
-"""Calendar-sync importer for the AI BU Developer Marketing events sheet.
+"""Calendar-sync importer for the team's events spreadsheet.
 
-Mirrors the parsing logic in a teammate's calendar-sync utility —
-same exact columns, same date parser, same row-filter rules — so a CSV
-that runs cleanly through that cron also runs cleanly through Scout.
+Mirrors the parsing logic in a separate Google-Calendar events sync
+script — same exact columns, same date parser, same row-filter rules —
+so a CSV that runs cleanly through that cron also runs cleanly through
+Scout.
 
 Public entry: ``import_calendar_sync_csv``. Tries the strict linter first;
 on format error (wrong columns, non-CSV upload), falls back to

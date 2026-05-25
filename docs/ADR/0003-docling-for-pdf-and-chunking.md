@@ -28,7 +28,7 @@ The original Phase 1 plan called for **three** libraries to cover the path:
 
 Three deps, two fallback paths, no structural awareness. Chunk quality suffers on real documents (which have tables, lists, and sections).
 
-A teammate flagged [Docling](https://github.com/DS4SD/docling) — IBM Research's open-source document conversion + chunking library — as a single replacement.
+A teammate flagged [Docling](https://github.com/DS4SD/docling) — an open-source document conversion + chunking library — as a single replacement.
 
 ## Decision
 
@@ -48,7 +48,6 @@ Add a `chunk_metadata jsonb` column to `document_chunks` to capture Docling's st
 - **Better chunk quality.** Tables stay intact, headings preserved with content, section boundaries honored. Direct impact on matcher quality.
 - **Multi-format upside.** Docling also handles DOCX, PPTX, HTML, and images via the same converter. Phase 1 only enables PDF uploads, but enabling .pptx (KubeCon trip-report decks!) or .docx (Word-formatted messaging docs) is a flag-flip away — no new library, no new code path.
 - **OCR is automatic.** Docling decides per-page whether to run OCR; no manual "text yield < 100 chars/page" heuristic.
-- **<vendor> alignment.** Docling is IBM Research's project, sister to the chat-model models we use via LLM API. Same ecosystem, same maintenance trajectory.
 - **Tokenizer parity.** `HybridChunker` accepts a tokenizer; we pair it with the `nomic-embed-text-v1-5` tokenizer so chunk sizes line up exactly with embedding-call token limits. No wasted padding.
 
 **Negative**
@@ -63,7 +62,7 @@ Add a `chunk_metadata jsonb` column to `document_chunks` to capture Docling's st
 ## Alternatives considered
 
 - **Status quo: `pypdf` + `ocrmypdf` + `langchain-text-splitters`** — Lost because: three deps, two fallback paths, no structural awareness. Specifically would hurt the matcher on documents with tables (audience profile decks often have them).
-- **`unstructured.io`** — Considered. Comparable feature set; popular in the LangChain ecosystem. Lost because: not as cleanly aligned with the <vendor>/IBM ecosystem; broader scope means more dep surface (it carries lots of optional integrations); Docling's HybridChunker is purpose-built for RAG in a way unstructured's chunker isn't.
+- **`unstructured.io`** — Considered. Comparable feature set; popular in the LangChain ecosystem. Lost because: broader scope means more dep surface (it carries lots of optional integrations); Docling's HybridChunker is purpose-built for RAG in a way unstructured's chunker isn't.
 - **LlamaParse (paid service)** — Lost because: not a hosted-services tool. Local install means local parsing.
 - **Marker** — Considered (it's a smaller, focused PDF→Markdown tool). Lost because: PDF-only; no built-in chunker.
 - **Keeping `langchain-text-splitters` and only adopting Docling for PDFs** — Possible but loses the structure-aware chunking win on plain-text inputs too. Better to do both at once.

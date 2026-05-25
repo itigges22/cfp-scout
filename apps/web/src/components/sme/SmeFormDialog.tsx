@@ -30,7 +30,7 @@ interface Props {
 const EMPTY_FORM: SmeCreate = {
   full_name: "",
   email: null,
-  team: "team",
+  team: "Engineering",
   expertise_areas: ["", ""],
   primary_topics: [],
   audience_focus: [],
@@ -143,7 +143,7 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
                   onChange={(e) =>
                     setForm({ ...form, email: e.currentTarget.value || null })
                   }
-                  placeholder="sarah@redhat.com"
+                  placeholder="sarah@example.com"
                 />
               </Field>
             </div>
@@ -151,7 +151,7 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
               <Input
                 value={form.team}
                 onChange={(e) => setForm({ ...form, team: e.currentTarget.value })}
-                placeholder="team"
+                placeholder="Engineering"
               />
             </Field>
           </Section>

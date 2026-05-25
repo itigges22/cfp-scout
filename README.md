@@ -2,7 +2,7 @@
 
 **Find AI conferences worth attending. Pick the right teammate to send.**
 
-Scout is a private web app for the your team. It crawls the public web for AI events, scores each one against your team's messaging and four-pillar strategy, and tells you which of your subject-matter experts is the best fit to submit a talk or attend.
+Scout is a private web app for AI-event discovery. It crawls the public web for AI events, scores each one against your team's messaging and four-pillar strategy, and tells you which of your subject-matter experts is the best fit to submit a talk or attend.
 
 It runs entirely on your laptop. The only outside service Scout talks to is your LLM endpoint for chat and embeddings — everything else (database, scoring, UI, scraping) is local.
 
@@ -10,7 +10,7 @@ It runs entirely on your laptop. The only outside service Scout talks to is your
 
 ## Why use it
 
-If you're on the your team, you've probably done some version of this manually:
+If you're on a developer-advocacy or AI-marketing team, you've probably done some version of this manually:
 
 - Subscribed to ten newsletters that surface AI conferences.
 - Bookmarked CFP pages and forgotten which deadlines are coming up.
@@ -77,15 +77,15 @@ You'll need either Docker Desktop, or Podman + podman-compose. That's it.
 
 ```bash
 git clone https://github.com/<your-org>/scout
-cd cfp-scout
-cp .env.example .env       # paste your your LLM endpoint API key when you open this
+cd scout
+cp .env.example .env       # paste your LLM API key when you open this
 make up                    # builds the images and brings up the stack (~2 min first time)
 make migrate               # creates the database schema + seeds the conference series catalog
 ```
 
 Open <http://localhost:8000> in your browser. That's it.
 
-If you don't have a LLM key yet, leave `LLM_DRY_RUN=true` in `.env` and Scout will run with canned LLM responses so you can poke around the UI offline.
+If you don't have an LLM API key yet, leave `LLM_DRY_RUN=true` in `.env` and Scout will run with canned LLM responses so you can poke around the UI offline.
 
 ---
 
@@ -159,7 +159,7 @@ Once a week, click **Discover more** on `/conferences` to pick up anything new. 
 
 ## Reporting a security issue
 
-Open a GitHub issue tagged `security`, or email the your team lead directly. Don't include sensitive payloads in public issues.
+Open a GitHub issue tagged `security`, or email the maintainers directly. Don't include sensitive payloads in public issues.
 
 ---
 
