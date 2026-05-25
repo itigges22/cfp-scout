@@ -55,21 +55,73 @@ async def run_fit_match_task(*, conference_id: str) -> dict[str, Any]:
 
 
 async def _do_recompute_all() -> dict[str, Any]:
-    enqueued: list[str] = []
+    """Process every non-quarantined conference inline with bounded
+    concurrency.
+
+    Previous version fanned each conference out as its OWN APScheduler
+    job. With 583 conferences, that meant 583 jobs all firing in the
+    event loop at once, each grabbing a DB session, and the SQLAlchemy
+    pool (5 + 10 overflow = 15 max) exhausted in seconds → 564 timed
+    out at QueuePool. The LLM semaphore couldn't help because the
+    bottleneck was DB connections, not LLM calls.
+
+    Now: one orchestrator task loops the conferences and runs them
+    through an asyncio.Semaphore-bounded gather. Concurrency lives at
+    the matcher-job level (default 4); each task acquires its own
+    short-lived DB session inside _do_run_fit_match, returns it
+    promptly, and the pool stays healthy. The LLM semaphore still
+    applies inside each task for the actual LLM API call.
+    """
+    import asyncio
+
     async with get_session_factory()() as session:
         rows = (
             await session.execute(select(Conference.id).where(Conference.status != "quarantined"))
         ).all()
-    for (cid,) in rows:
-        job_id = f"match-{cid}"
-        enqueue_now(
-            run_fit_match_task,
-            job_id=job_id,
-            kwargs={"conference_id": str(cid)},
-        )
-        enqueued.append(str(cid))
-    log.info("matcher.recompute_all.enqueued", count=len(enqueued))
-    return {"enqueued_count": len(enqueued), "conference_ids": enqueued}
+    conf_ids = [str(cid) for (cid,) in rows]
+    log.info("matcher.recompute_all.start", count=len(conf_ids))
+
+    # Concurrency knob: keep below the DB pool ceiling (15) with headroom
+    # for the rest of the app. 4 is safe; tune via the same setting that
+    # gates LLM calls (llm_max_concurrent_calls) since both share an
+    # operational story.
+    from app.settings import get_settings
+
+    cap = max(1, min(8, int(get_settings().llm_max_concurrent_calls)))
+    sem = asyncio.Semaphore(cap)
+    results = {"succeeded": 0, "failed": 0}
+
+    async def _one(cid: str) -> None:
+        async with sem:
+            try:
+                await _do_run_fit_match(conference_id=cid)
+                results["succeeded"] += 1
+            except Exception as exc:  # noqa: BLE001 — keep the loop going
+                results["failed"] += 1
+                log.warning(
+                    "matcher.recompute_all.task_failed",
+                    conference_id=cid,
+                    error=str(exc)[:200],
+                )
+
+    # asyncio.gather schedules all tasks but the semaphore caps how many
+    # actually proceed past `async with sem`. The rest park on the
+    # semaphore without holding DB connections.
+    await asyncio.gather(*(_one(cid) for cid in conf_ids))
+
+    log.info(
+        "matcher.recompute_all.done",
+        total=len(conf_ids),
+        succeeded=results["succeeded"],
+        failed=results["failed"],
+        concurrency_cap=cap,
+    )
+    return {
+        "total": len(conf_ids),
+        "succeeded": results["succeeded"],
+        "failed": results["failed"],
+        "concurrency_cap": cap,
+    }
 
 
 async def recompute_all_matches() -> dict[str, Any]:
