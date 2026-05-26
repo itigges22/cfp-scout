@@ -303,17 +303,23 @@ async def parse_raw_page(db: AsyncSession, raw_page_id: UUID) -> ParseResult:
     except Exception as exc:
         bound.warning("extraction.conference_embed_failed", error=str(exc))
 
-    # ---- 12. Enqueue plan-17 matcher (skip quarantined) --------------
-    # Local import avoids a circular dep (scheduler -> tasks -> extraction
-    # would chain back here in the tasks/parse_raw_page path).
+    # ---- 12. Enqueue enrich → re-embed → match (skip quarantined) ----
+    # Single background job runs the full new-conference pipeline:
+    # LLM-enrich the bare name+topics blob into a 70-word tech-
+    # vocabulary description, re-embed using that, then score. Without
+    # the enrichment step the matcher sees the 14-word raw blob and
+    # produces near-zero messaging scores — fine for the duplicate path
+    # (existing chunks still on disk), critical for fresh rows.
+    # Local import avoids a circular dep (scheduler -> tasks ->
+    # extraction would chain back here via tasks/parse_raw_page).
     if outcome.status != "quarantined":
         from app.scheduler import enqueue_now
-        from app.tasks.run_fit_match import run_fit_match_task
+        from app.tasks.enrich_and_match import enrich_and_match_task
 
         enqueue_now(
-            run_fit_match_task,
-            job_id=f"match-{conference.id}",
-            kwargs={"conference_id": str(conference.id)},
+            enrich_and_match_task,
+            job_id=f"enrich-match-{conference.id}",
+            kwargs={"conference_id": str(conference.id), "force": False},
         )
     return ParseResult(
         raw_page_id=str(row.id),

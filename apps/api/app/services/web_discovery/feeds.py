@@ -435,4 +435,25 @@ async def _persist_event(
     except Exception as exc:
         log.warning("feed.embed_failed", conference_id=str(row.id), error=str(exc))
 
+    # Enqueue the full enrich → re-embed → match flow as a background
+    # task. The inline embed above gives the matcher *something* to
+    # work with if the queued job is delayed; the queued job replaces
+    # that with a properly enriched-text embedding + a real match row.
+    # Local import keeps the scheduler dep out of the cold-import path.
+    try:
+        from app.scheduler import enqueue_now
+        from app.tasks.enrich_and_match import enrich_and_match_task
+
+        enqueue_now(
+            enrich_and_match_task,
+            job_id=f"enrich-match-{row.id}",
+            kwargs={"conference_id": str(row.id), "force": False},
+        )
+    except Exception as exc:  # noqa: BLE001 — scheduler outage shouldn't fail ingest
+        log.warning(
+            "feed.enqueue_match_failed",
+            conference_id=str(row.id),
+            error=str(exc),
+        )
+
     return "new"
