@@ -106,11 +106,12 @@ Marketing/sales personas your team targets.
 #### `strategic_pillars`
 Your team's four-pillar strategy. Seeded; rarely changes.
 
-| Column | Type |
-|--------|------|
-| `name` | text UNIQUE |
-| `description` | text |
-| `display_order` | smallint |
+| Column | Type | Purpose |
+|--------|------|---------|
+| `name` | text UNIQUE | Pillar headline (e.g. "Agentic AI innovation") |
+| `description` | text | Short operator-authored tagline (~300 chars) |
+| `enriched_description` | text nullable | Long-form (500–800 word) LLM-extracted description grounded in the operator's active messaging documents. Matcher Stage B embeds this in preference to `description` because the short tagline doesn't have enough discriminative vocabulary for cosine to separate "fits this pillar" from "AI-adjacent in general." Populated by `scripts/enrich_pillars.py`. |
+| `display_order` | smallint | |
 
 #### `smes`
 Subject-matter experts — your team members and external collaborators.
@@ -205,6 +206,7 @@ The canonical, deduplicated conference list. The hot table.
 | `acceptance_rate_percent` | smallint nullable | 0–100, extracted where available |
 | `estimated_cost_usd` | integer nullable | |
 | `topics` | text[] | Denormalized for fast filtering; `conference_topics` junction is authoritative |
+| `enriched_description` | text nullable | 2–3 sentence factual description LLM-expanded from the bare name+topics+location (median 14 words → ~70 words). The matcher's embedder uses this in preference to the raw structural fields because cosine similarity needs real semantic surface area to separate "genuine fit" from "AI-adjacent." Populated automatically on ingest by `enrich_and_match_task`; can be refreshed via `scripts/enrich_and_reembed.py`. |
 | `confidence_score` | real | Final = min(LLM-reported, structural). Drives routing (plan 15) |
 | `status` | enum | `discovered`/`needs_review`/`needs_review_pillar`/`needs_sme_review`/`low_messaging_fit`/`approved`/`rejected`/`quarantined`/`archived` |
 | `series_id` | uuid nullable | FK to `conference_series` (plan 23) |
@@ -309,12 +311,14 @@ One row per conference per matcher run.
 | Column | Type | Purpose |
 |--------|------|---------|
 | `conference_id` | uuid FK | |
-| `messaging_score` | real | Stage A output |
-| `pillar_score` | real | Stage B output |
-| `sme_score` | real | Stage C output |
-| `overall_score` | real | Weighted combination |
+| `messaging_score` | real | Stage A — top-K mean cosine ⊕ lexical keyword overlap |
+| `pillar_score` | real | Stage B — softmax-distinctiveness-weighted top pillar cosine |
+| `sme_score` | real | Stage C — weighted blend of SME composite signals |
+| `judge_score` | real nullable | Stage D — LLM-as-judge calibrated 0..1 cross-encoder score. NULL when the judge stage is disabled or the LLM call failed |
+| `judge_rationale` | text | One-sentence human-readable reasoning the judge LLM emitted, surfaced in the conference detail card |
+| `overall_score` | real | Weighted combination of A/B/C/D; weights auto-renormalize when any stage's weight is 0 or its score is NULL |
 | `recommended_sme_ids` | uuid[] | Top-K SMEs (mechanical) |
-| `rationale_text` | text | LLM-generated 2-3 sentences |
+| `rationale_text` | text | LLM-generated 2-3 sentence summary of the match (Stage E narrative — distinct from `judge_rationale`) |
 | `sme_fit_narratives` | jsonb | Keyed by sme_id; populated by plan 19 for the top 3 |
 | `algorithm_version` | text | Bumps when matcher logic changes; drives selective recompute |
 | `computed_at` | timestamptz | |

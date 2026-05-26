@@ -42,6 +42,14 @@ class Match(TimestampedMixin, Base):
     messaging_score: Mapped[float] = mapped_column(nullable=False)
     pillar_score: Mapped[float] = mapped_column(nullable=False)
     sme_score: Mapped[float] = mapped_column(nullable=False)
+    # LLM-as-judge cross-encoder score (Stage D). Nullable because
+    # operators can disable the judge stage to save LLM cost — when
+    # it's off the overall_score formula re-normalizes across the
+    # remaining stages without judge.
+    judge_score: Mapped[float | None] = mapped_column(nullable=True)
+    judge_rationale: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''")
+    )
     overall_score: Mapped[float] = mapped_column(nullable=False)
 
     recommended_sme_ids: Mapped[list[uuid.UUID]] = mapped_column(

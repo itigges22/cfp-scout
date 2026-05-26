@@ -94,19 +94,105 @@ every 20 rows so the dashboard map populates incrementally instead of
 only at the end of a ~9-minute run for 500 rows. The dashboard
 `WorldMap` consumes `GET /api/v1/conferences/stats/by-location`.
 
-### Auto-matcher
+### Matcher (four stages)
 
-`GET /api/v1/conferences/{id}/match` and
-`GET /api/v1/conferences/{id}/brief` both inspect for a `Match` row
-with the current `algorithm_version`. If none exists, they call
-`app.services.matcher.run_fit_match` inline, commit, and re-read.
-The browser shows a skeleton during the 5–30 second run. The user
-never needs to know about a separate "run the matcher" step — the
-detail page is self-sufficient.
+The matcher answers "how well does this conference fit our strategy?"
+in four progressively more semantic stages. Each stage returns a
+0..1 score; the operator-configurable weighted blend in
+`overall_score` is what the dashboard sorts by.
 
-Manual one-off re-runs are still available at
-`POST /api/v1/admin/matcher/run-now/{id}` for the operator, and the
-nightly cron re-scores any conference whose inputs changed.
+```
+Stage A — Messaging fit
+  Top-K mean cosine between the conference's embedded text and the
+  active messaging-doc chunks, rescaled into [0, 1] against an
+  empirical floor/ceiling, blended 55/45 with a lexical co-signal
+  that scores keyword overlap against the auto-extracted vocabulary
+  of the active messaging corpus. See app/services/matcher/messaging.py
+  + lexical.py.
+
+Stage B — Pillar alignment
+  Cosine between conference text and each of the operator's strategic
+  pillars (using the long-form ``enriched_description`` extracted
+  from the messaging PDFs, not the short tagline). Aggregated via
+  softmax-based DISTINCTIVENESS rather than max-across-pillars: a
+  conference peaked on ONE pillar (high cosine to it, low to the
+  rest) scores high; a conference uniformly relevant to all 4
+  (generic AI adjacency) scores moderate; an off-topic event scores
+  low. See app/services/matcher/pillars.py.
+
+Stage C — SME fit
+  Weighted blend of topic-overlap, audience-overlap, bio-similarity,
+  location, and past-attendance signals across the operator's SME
+  roster. Returns the top-N composite score. See sme_ranker.py.
+
+Stage D — LLM-as-judge (cross-encoder reranker)
+  One LLM call per conference asking llama-scout-17b to score the
+  conference against the full pillar context on a calibrated
+  0..100 scale, with a one-sentence rationale stored in
+  ``matches.judge_rationale`` for UI display. Stage D catches
+  alignment the cosine/lexical signals miss because they work on
+  averages and surface tokens; the LLM reasons about intent.
+  Disable via the ``enable_llm_judge`` setting to save LLM cost —
+  ``overall_score`` then re-normalizes across A/B/C only.
+  See app/services/matcher/judge.py.
+```
+
+Cosine alone is not enough for this corpus because
+``nomic-embed-text-v1-5`` produces a narrow cosine band (p95 ≈ 0.05
+for short-form-vs-long-form pairs); without the lexical co-signal,
+the distinctiveness aggregation, and the LLM judge, every AI
+conference scores ~100% on at least one stage and the matcher
+provides no ranking signal.
+
+Conference text is itself LLM-enriched at ingest: the bare 14-word
+name+topics blob is expanded into a 2-3 sentence factual description
+with concrete technical vocabulary (vLLM, MLOps, RAG, …) before
+embedding. Strategic pillars get the same treatment: a 500-800 word
+LLM-extracted description grounded in the operator's messaging
+documents replaces the short tagline at embed time.
+
+#### Ingest → match pipeline
+
+Newly-ingested conferences (developers.events feed OR LLM extraction
+from uploaded PDFs/URLs) enqueue one
+``enrich_and_match_task(conference_id)`` job that:
+
+  1. LLM-enriches the conference into a 2-3 sentence description.
+  2. Re-embeds using that enriched text.
+  3. Runs the matcher pipeline (stages A→D, persists the match row).
+
+So new rows are scored within seconds of ingest — no manual rescore
+step required.
+
+#### Re-running the matcher
+
+- `GET /api/v1/conferences/{id}/match` / `/brief` will inline-run if no
+  match row exists for the current `algorithm_version`.
+- `POST /api/v1/admin/matcher/run-now/{id}` — operator one-off.
+- `POST /api/v1/admin/matcher/recompute-all` — full rescore (slow).
+- Nightly cron re-scores any conference whose inputs changed.
+
+#### References
+
+The judge stage implements the **cross-encoder reranker** pattern from
+the modern RAG / dense-retrieval literature. Industry guidance from
+2026:
+
+- "From BM25 to Corrective RAG: Benchmarking Retrieval Strategies"
+  ([arXiv:2604.01733](https://arxiv.org/abs/2604.01733)) — cross-encoder
+  reranking on top of hybrid retrieval yields +17pp MRR@3 and +12pp
+  Recall@5 over unreranked hybrid alone.
+- "Domain-Adaptive and Scalable Dense Retrieval for Content-Based
+  Recommendation" ([arXiv:2602.00899](https://arxiv.org/abs/2602.00899))
+  — dense retrieval + reranking for recommender systems.
+- [ZeroEntropy reranker guide (2026)](https://zeroentropy.dev/articles/ultimate-guide-to-choosing-the-best-reranking-model-in-2025/)
+- [Hybrid Search in Production: Why BM25 Still Wins on the Queries That Matter](https://tianpan.co/blog/2026-04-12-hybrid-search-production-bm25-dense-embeddings)
+
+We use the chat LLM as the cross-encoder (LLM-as-judge) rather than
+a dedicated reranker model because the operator's MaaS key only
+exposes ``llama-scout-17b`` — same idea (model sees both query +
+document together and produces a single relevance score), slightly
+higher latency, no extra infrastructure required.
 
 ### Frontend (`apps/web` — built into the api image)
 - Vite 6 + React 19 + TypeScript strict.
@@ -137,8 +223,9 @@ flowchart TD
     Extract --> Validate[validate + dedup]
     Filter --> Confs[(conferences<br/>+ topics<br/>+ audiences<br/>+ pillars)]
     Validate --> Confs
-    Confs --> Embed[embeddings<br/>pgvector]
-    Embed --> Matcher[fit matcher<br/>messaging → pillars → SME]
+    Confs --> Enrich[LLM enrichment<br/>14 words → 70 words]
+    Enrich --> Embed[embeddings<br/>pgvector]
+    Embed --> Matcher[fit matcher<br/>A messaging · B pillars ·<br/>C SME · D LLM judge]
     Matcher --> Team[SME team rec<br/>size 1/2/3]
     Matcher --> Narr[SME fit narrative<br/>top-3]
     Team --> Match[(matches row<br/>+ decisions queue)]

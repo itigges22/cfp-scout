@@ -76,11 +76,13 @@ class MatchResult:
     messaging_score: float
     pillar_score: float
     sme_score: float
-    overall_score: float
+    judge_score: float | None = None
+    overall_score: float = 0.0
 
     matched_pillar_name: str | None = None
     recommended_sme_ids: list[str] = field(default_factory=list)
     rationale_text: str = ""
+    judge_rationale: str = ""
 
     # Diagnostic; not persisted to matches table.
     n_messaging_pairs: int = 0
@@ -119,11 +121,41 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
     # ---- Stage C: SMEs ----------------------------------------------
     sm: SmeStageResult = await stage_c_sme_match(db, conference.id, gate=settings.match_s_gate)
 
+    # ---- Stage D: LLM-as-judge cross-encoder (optional) --------------
+    # Calibrated 0..1 relevance score from a chat-LLM cross-encoder.
+    # Catches alignment the cosine + lexical signals miss because they
+    # work on averages / surface tokens; the LLM reasons about intent.
+    # Disable via ``enable_llm_judge`` setting to save the per-rescore
+    # LLM cost; overall_score then re-normalizes across A/B/C only.
+    judge_score: float | None = None
+    judge_rationale: str = ""
+    if settings.enable_llm_judge:
+        from app.services.matcher.judge import judge_conference
+
+        judge = await judge_conference(db=db, conference=conference)
+        if judge is not None:
+            judge_score = judge.score
+            judge_rationale = judge.rationale
+
     # ---- Overall + status -------------------------------------------
+    # Re-normalize weights to whichever stages we actually have. When
+    # the judge is disabled / failed, its weight is zeroed and the
+    # remaining stage weights are scaled so they still sum to 1.0.
+    w_msg = settings.match_w_messaging
+    w_pil = settings.match_w_pillar
+    w_sme = settings.match_w_sme
+    w_judge = settings.match_w_judge if judge_score is not None else 0.0
+    total_w = w_msg + w_pil + w_sme + w_judge
+    if total_w <= 0:
+        total_w = 1.0
     overall = clamp01(
-        settings.match_w_messaging * ms.score
-        + settings.match_w_pillar * pl.score
-        + settings.match_w_sme * sm.score
+        (
+            w_msg * ms.score
+            + w_pil * pl.score
+            + w_sme * sm.score
+            + w_judge * (judge_score or 0.0)
+        )
+        / total_w
     )
 
     status = _choose_status(
@@ -163,6 +195,8 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
             messaging_score=ms.score,
             pillar_score=pl.score,
             sme_score=sm.score,
+            judge_score=judge_score,
+            judge_rationale=judge_rationale,
             overall_score=overall,
             recommended_sme_ids=recommended_sme_uuids,
             rationale_text=rationale or "",
@@ -174,6 +208,8 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
         existing.messaging_score = ms.score
         existing.pillar_score = pl.score
         existing.sme_score = sm.score
+        existing.judge_score = judge_score
+        existing.judge_rationale = judge_rationale
         existing.overall_score = overall
         existing.recommended_sme_ids = recommended_sme_uuids
         existing.rationale_text = rationale or ""
@@ -251,6 +287,7 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
         messaging_score=round(ms.score, 4),
         pillar_score=round(pl.score, 4),
         sme_score=round(sm.score, 4),
+        judge_score=round(judge_score, 4) if judge_score is not None else None,
         overall=round(overall, 4),
         status=status,
         rec_sme_count=len(sm.recommendations),
@@ -264,10 +301,12 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
         messaging_score=round(ms.score, 4),
         pillar_score=round(pl.score, 4),
         sme_score=round(sm.score, 4),
+        judge_score=round(judge_score, 4) if judge_score is not None else None,
         overall_score=round(overall, 4),
         matched_pillar_name=pl.matched_pillar_name,
         recommended_sme_ids=[r.sme_id for r in sm.recommendations],
         rationale_text=rationale or "",
+        judge_rationale=judge_rationale,
         n_messaging_pairs=ms.n_compared,
         per_pillar=[asdict(h) for h in pl.per_pillar],
         rationale_prompt_version="rationale.match.v1",

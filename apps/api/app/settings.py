@@ -164,6 +164,17 @@ class Settings(BaseSettings):
     # entirely and every SME is treated as internal.
     primary_team_label: str = Field(default="")
 
+    # Stage D — LLM-as-judge reranker.
+    # When enabled, the matcher makes one extra LLM call per conference
+    # to produce a calibrated 0..1 cross-encoder-style score. This
+    # catches relevance the cosine + lexical signals miss (a vLLM
+    # meetup that the embedder thinks is "mostly inference" but a
+    # human/LLM would see as a perfect organizational fit). Disable
+    # to save LLM cost — overall_score re-normalizes across the
+    # remaining stages.
+    enable_llm_judge: bool = Field(default=True)
+    match_w_judge: float = Field(default=0.30, ge=0.0, le=1.0)
+
     # SME narrative (plan 19). Hard cap on how many narratives we generate
     # per conference — cost = K LLM calls per conference. K=3 is the
     # plan's default + acceptance criterion.

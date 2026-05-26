@@ -328,3 +328,47 @@ on every row. When you bump it in
 `apps/api/app/services/matcher/pipeline.py`, run
 `POST /api/v1/admin/matcher/recompute-all` to re-score every conference
 under the new version.
+
+### How do I re-enrich conferences / pillars?
+
+Three independent enrichment jobs, all idempotent:
+
+| Job | Script | When to run |
+|-----|--------|-------------|
+| Conference text | `podman exec scout-api /app/.venv/bin/python /app/scripts/enrich_and_reembed.py` | After bulk-importing conferences that bypassed `enrich_and_match_task`; pass `--force` to redo everyone. |
+| Pillar text | `podman exec scout-api /app/.venv/bin/python /app/scripts/enrich_pillars.py` | After editing strategic-pillar names/descriptions or adding/removing messaging documents; pass `--force` to redo. |
+| LLM judge (Stage D) | `podman exec scout-api /app/.venv/bin/python /app/scripts/bulk_judge.py` | After enriching conferences or pillars; refreshes `matches.judge_score` and `matches.overall_score` for every row. |
+
+The per-ingest auto-process hook (`enrich_and_match_task`) runs all
+three steps inline for one new conference, so manual runs are only
+needed for backfill or after corpus-wide changes.
+
+### How do I disable the LLM judge to save cost?
+
+Two settings on `app.app_setting_overrides`:
+
+```sql
+INSERT INTO app.app_setting_overrides (name, value, actor_label) VALUES
+  ('enable_llm_judge', 'false', 'ops')
+ON CONFLICT (name) DO UPDATE SET value=EXCLUDED.value;
+```
+
+Restart the api container; the next matcher run will skip Stage D
+and `overall_score` will re-normalize across A/B/C only. Existing
+`judge_score` values stay in the DB but are no longer used in
+ranking. Re-enable by setting `enable_llm_judge=true`.
+
+To rebalance without disabling, lower `match_w_judge` (default
+`0.30`) via the same table or the `/settings/tunables` admin UI.
+
+### Why is pillar score 100% for everyone?
+
+That was a pre-v2 bug — the v1 matcher took `max` across pillars
+which always saturated. Symptom: every conference in
+`app.matches` had `pillar_score = 1.0`. Fix: ensure your code
+includes ADR-0008's distinctiveness-weighted aggregation
+(`app/services/matcher/pillars.py`, softmax with `PEAK_T = 50.0`).
+If you see saturation on a freshly-rolled-out v2 matcher, verify
+the pillar `enriched_description` column is populated — without
+the long-form text, the embedder collapses pillar cosines into a
+narrow band where every conference looks identical.
