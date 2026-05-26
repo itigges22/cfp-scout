@@ -162,6 +162,7 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
         ms_score=ms.score,
         pl_score=pl.score,
         sm_score=sm.score,
+        judge_score=judge_score,
         settings=settings,
     )
 
@@ -318,11 +319,35 @@ def _choose_status(
     ms_score: float,
     pl_score: float,
     sm_score: float,
+    judge_score: float | None = None,
     settings,
 ) -> str:
-    """Plan 17 gate logic. Order matters — the first failing gate wins
-    the status so admins see the earliest reason in the queue.
+    """Plan 17 gate logic with ADR-0008 judge override.
+
+    Ordering:
+      1. If the LLM judge is confident off-topic (< 0.20), it vetoes
+         everything else — saves human review time on events the
+         embedder + pillar matcher overrated.
+      2. If the LLM judge is confident on-topic (>= 0.70), it lifts
+         the conference past the messaging gate and out of
+         ``low_messaging_fit`` — catches the inverse failure mode
+         where a sparsely-named event (e.g. "AgentCon - Phoenix")
+         scores low on cosine messaging but is obviously relevant.
+      3. Otherwise fall through to the original gate cascade —
+         first failing gate wins so the operator sees the earliest
+         reason in the queue.
     """
+    if judge_score is not None and judge_score < 0.20:
+        return "low_messaging_fit"
+    if judge_score is not None and judge_score >= 0.70:
+        # Judge says strong fit. Still send through pillar + SME gates
+        # so the operator gets a specific reason if those dimensions
+        # are weak — but never demote to ``low_messaging_fit``.
+        if pl_score < settings.match_p_gate:
+            return "needs_review_pillar"
+        if sm_score < settings.match_s_gate:
+            return "needs_sme_review"
+        return "needs_review"
     if ms_score < settings.match_m_gate:
         return "low_messaging_fit"
     if pl_score < settings.match_p_gate:
