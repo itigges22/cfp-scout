@@ -434,7 +434,9 @@ async def list_conferences(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=200),
     status_in: list[str] | None = Query(default=None, alias="status"),
-    sort: Literal["score", "date", "name"] = Query(default="score"),
+    sort: Literal["score", "messaging", "pillar", "sme", "date", "name"] = Query(
+        default="score",
+    ),
 ) -> ConferenceListResponse:
     """List conferences. Default excludes quarantined rows so the dashboard
     doesn't show them. Pass ``?status=quarantined`` (multi-OK) to opt in.
@@ -454,6 +456,21 @@ async def list_conferences(
     if sort == "score":
         stmt = stmt.order_by(
             Match.overall_score.desc().nullslast(),
+            Conference.start_date.asc().nullslast(),
+        )
+    elif sort == "messaging":
+        stmt = stmt.order_by(
+            Match.messaging_score.desc().nullslast(),
+            Conference.start_date.asc().nullslast(),
+        )
+    elif sort == "pillar":
+        stmt = stmt.order_by(
+            Match.pillar_score.desc().nullslast(),
+            Conference.start_date.asc().nullslast(),
+        )
+    elif sort == "sme":
+        stmt = stmt.order_by(
+            Match.sme_score.desc().nullslast(),
             Conference.start_date.asc().nullslast(),
         )
     elif sort == "date":

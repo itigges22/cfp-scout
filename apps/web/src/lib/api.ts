@@ -301,7 +301,7 @@ type ConferenceListParams = {
   page?: number;
   per_page?: number;
   status?: string | string[];
-  sort?: "score" | "date" | "name";
+  sort?: "score" | "messaging" | "pillar" | "sme" | "date" | "name";
 };
 
 export const conferencesApi = {

@@ -33,7 +33,23 @@ const STATUS_FILTERS = [
   { value: "low_messaging_fit", label: "Low messaging fit" },
 ] as const;
 
-type SortOpt = "score" | "date" | "name";
+type SortOpt = "score" | "messaging" | "pillar" | "sme" | "date" | "name";
+
+// Sort buttons + labels. Order matters: leftmost is the default.
+// "score" = combined overall_score (messaging+pillar+sme weighted).
+// The three component sorts (messaging/pillar/sme) let the operator
+// drill into which dimension drives a conference's rank, since the
+// three signals don't always agree (an Agentic-named event peaks
+// hard on pillar but is moderate on raw messaging; a vLLM Meetup is
+// the inverse).
+const SORT_OPTS: { value: SortOpt; label: string }[] = [
+  { value: "score", label: "Overall" },
+  { value: "messaging", label: "Messaging" },
+  { value: "pillar", label: "Pillar" },
+  { value: "sme", label: "SME" },
+  { value: "date", label: "Date" },
+  { value: "name", label: "Name" },
+];
 
 function ConferencesPage() {
   const [status, setStatus] = useState<string | null>(null);
@@ -116,14 +132,14 @@ function ConferencesPage() {
         ))}
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-fg-muted">Sort:</span>
-          {(["score", "date", "name"] as const).map((opt) => (
+          {SORT_OPTS.map((opt) => (
             <Button
-              key={opt}
-              variant={sort === opt ? "default" : "ghost"}
+              key={opt.value}
+              variant={sort === opt.value ? "default" : "ghost"}
               size="sm"
-              onClick={() => setSort(opt)}
+              onClick={() => setSort(opt.value)}
             >
-              {opt}
+              {opt.label}
             </Button>
           ))}
         </div>
