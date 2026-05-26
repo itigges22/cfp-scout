@@ -19,7 +19,9 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.entities import Conference, MessagingDocument
 from app.db.models.vectors import DocumentChunk
+from app.services.matcher.lexical import build_context, lexical_score
 from app.services.matcher._scoring import (
     apply_chunk_decay,
     clamp01,
@@ -33,6 +35,14 @@ log = structlog.get_logger("scout.matcher.messaging")
 # K for top-K mean. Plan 17 specifies 10; keep at module level so tests can
 # monkeypatch without rebuilding settings.
 TOPK_MESSAGING = 10
+
+# Blend weight between embedding cosine and lexical keyword overlap.
+# 0.55 means "embedding has slight priority over lexical, but lexical
+# is heavy enough to discriminate when the embedder collapses scores
+# into a tight band (which it does on this corpus — see lexical.py
+# docstring for why)."
+EMBEDDING_WEIGHT = 0.55
+LEXICAL_WEIGHT = 1.0 - EMBEDDING_WEIGHT
 
 
 @dataclass(slots=True, frozen=True)
@@ -77,13 +87,32 @@ async def stage_a_messaging_fit(db: AsyncSession, conference_id: UUID) -> Messag
         log.info("matcher.messaging.no_conference_chunks", conference_id=str(conference_id))
         return MessagingStageResult(score=0.0, n_compared=0, snippets=[])
 
-    # Pull all messaging chunks once. Phase-1 messaging volume is tiny
-    # (one PDF = ~12 chunks), so a single fetch + in-memory dot is faster
-    # than N round-trips to pgvector. If volume grows, swap to a single
-    # SQL query that flattens conf chunks via UNNEST and joins on
-    # cosine_distance ORDER BY LIMIT N.
+    # Pull all messaging chunks once, but ONLY from documents that are
+    # currently active. Without this filter, deactivated docs (e.g. a
+    # project planning doc the operator uploaded for reference but
+    # didn't intend to use as messaging) pollute the chunk pool — even
+    # 10 noise chunks can dominate the top-K mean because every
+    # conference has a non-trivial cosine to generic planning text.
+    #
+    # Phase-1 messaging volume is tiny (one PDF = ~12 chunks), so a
+    # single fetch + in-memory dot is faster than N round-trips to
+    # pgvector. If volume grows, swap to a single SQL query that
+    # flattens conf chunks via UNNEST and joins on cosine_distance
+    # ORDER BY LIMIT N.
     messaging_chunks = (
-        (await db.execute(select(DocumentChunk).where(DocumentChunk.owner_type == "messaging")))
+        (
+            await db.execute(
+                select(DocumentChunk)
+                .join(
+                    MessagingDocument,
+                    MessagingDocument.id == DocumentChunk.owner_id,
+                )
+                .where(
+                    DocumentChunk.owner_type == "messaging",
+                    MessagingDocument.is_active.is_(True),
+                )
+            )
+        )
         .scalars()
         .all()
     )
@@ -105,13 +134,26 @@ async def stage_a_messaging_fit(db: AsyncSession, conference_id: UUID) -> Messag
             all_pairs.append((sim, mc))
 
     # Top-K mean of RAW cosines, then rescale against the empirical
-    # floor/ceiling so the score actually spreads out across the
-    # [0, 1] range instead of saturating at ~0.9996 for every event.
-    # See rescale_score docstring for the math.
+    # floor/ceiling so the embedding score actually spreads out across
+    # the [0, 1] range instead of saturating at one end. See
+    # rescale_score docstring for the math.
     all_pairs.sort(key=lambda p: p[0], reverse=True)
     top = all_pairs[:TOPK_MESSAGING]
     raw_topk_mean = topk_mean([p[0] for p in top], k=TOPK_MESSAGING)
-    score = rescale_score(raw_topk_mean)
+    embedding_score = rescale_score(raw_topk_mean)
+
+    # Lexical co-signal — for short-form vs long-form text the embedder
+    # produces low-discrimination cosines (p95 ~0.05 in this corpus), so
+    # we add a keyword-overlap signal that lights up on concrete tech
+    # terms (vLLM, MLOps, RAG, Kubernetes, …) shared between the
+    # conference text and the messaging vocabulary.
+    conf = (
+        await db.execute(select(Conference).where(Conference.id == conference_id))
+    ).scalar_one_or_none()
+    lex_ctx = await build_context(db)
+    lex_score = lexical_score(conference=conf, ctx=lex_ctx) if conf else 0.0
+
+    score = clamp01(EMBEDDING_WEIGHT * embedding_score + LEXICAL_WEIGHT * lex_score)
 
     snippets = [
         MessagingSnippet(
@@ -127,6 +169,9 @@ async def stage_a_messaging_fit(db: AsyncSession, conference_id: UUID) -> Messag
         "matcher.messaging.scored",
         conference_id=str(conference_id),
         score=round(score, 4),
+        embedding_score=round(embedding_score, 4),
+        lexical_score=round(lex_score, 4),
+        raw_topk_mean=round(raw_topk_mean, 4),
         n_conf_chunks=len(conf_chunks),
         n_messaging_chunks=len(messaging_chunks),
         n_pairs=len(all_pairs),

@@ -51,13 +51,21 @@ log = structlog.get_logger("scout.extraction.pipeline")
 
 
 def _conference_embed_text(c: Conference) -> str:
-    """Compose the short descriptive blob we embed for the matcher.
+    """Compose the descriptive blob we embed for the matcher.
 
-    Kept structural-only — names, topics, location, deadline topics. Avoids
-    the raw page body (long, noisy) and the LLM rationale (would feed a
-    matcher into a matcher). Mirrors the audience/sme embed-text helpers.
+    Prefers the LLM-generated ``enriched_description`` when present —
+    that text contains real technical vocabulary (vLLM, MLOps, RAG,
+    etc.) that lets cosine similarity actually find alignment with
+    messaging documents. Without enrichment, the bare name+topics blob
+    is 14 words median and the matcher scores almost everything 0%.
+
+    Falls back to the bare structural fields when enrichment hasn't
+    run yet (NULL ``enriched_description`` on freshly-ingested rows
+    before the enrichment pass).
     """
     parts: list[str] = [c.name]
+    if c.enriched_description:
+        parts.append(c.enriched_description)
     if c.topics:
         parts.append("Topics: " + ", ".join(c.topics))
     if c.cfp_topics_of_interest:

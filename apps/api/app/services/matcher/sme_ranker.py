@@ -269,7 +269,7 @@ async def _score_one(
         team=sme.team,
         location_country=sme.location_country,
         location_city=sme.location_city,
-        is_external=(sme.team.lower() != "daam"),
+        is_external=_is_external_team(sme.team, settings.primary_team_label),
         dimensions=dims,
         composite=round(composite, 4),
         above_gate=False,  # filled by caller
@@ -279,6 +279,17 @@ async def _score_one(
 # --------------------------------------------------------------------------
 # Dimension helpers
 # --------------------------------------------------------------------------
+def _is_external_team(team: str, primary_label: str) -> bool:
+    """Tag an SME as ``external`` when their team field doesn't match the
+    operator's configured primary-team label. Empty ``primary_label``
+    means the operator hasn't configured a home team, so we treat
+    everyone as internal — keeps the code portable across organizations
+    instead of hardcoding any one team's name."""
+    if not primary_label:
+        return False
+    return (team or "").strip().lower() != primary_label.strip().lower()
+
+
 def _jaccard(a: set, b: set) -> float:
     """Jaccard = |A∩B| / |A∪B|. Both empty → 0 (no signal, not 1.0)."""
     if not a or not b:

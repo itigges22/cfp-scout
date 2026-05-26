@@ -23,35 +23,32 @@ def clamp01(x: float) -> float:
     return x
 
 
-def rescale_score(raw_cosine: float) -> float:
+def rescale_score(raw_cosine: float, *, floor: float | None = None, ceiling: float | None = None) -> float:
     """Map a raw cosine in [floor, ceiling] onto [0, 1].
 
     Why this exists: nomic-embed-text-v1-5 (and most modern text embedders)
     produce unit vectors that cluster in a narrow part of the sphere.
-    For ANY two AI-related texts the cosine is typically in [0.65, 0.92] —
+    For ANY two AI-related texts the cosine is typically in a narrow band —
     so the matcher's old "raw cosine, top-K mean" formula made every
     conference score ~0.9996 on messaging fit and ~1.0 on pillars,
     because top-K cherry-picked the best matches from a saturated range.
 
-    Rescaling against an empirical floor + ceiling restores useful spread:
-      - raw 0.65 (baseline noise) → 0.0
-      - raw 0.78 (decent match)   → ~0.48
-      - raw 0.92 (strong match)   → 1.0
-      - raw >0.92 (near-dup)      → clamped to 1.0
-
-    Floor/ceiling come from Settings (matcher_baseline_cosine /
-    matcher_ceiling_cosine) so the operator can recalibrate from
-    /settings/tunables if the embedding model changes.
+    Floor/ceiling default to ``matcher_baseline_cosine`` /
+    ``matcher_ceiling_cosine`` from Settings; callers can pass explicit
+    overrides per-stage when the embedding distribution for that stage
+    differs from the messaging-stage default. Pillar stage in particular
+    sees a wider cosine range (it compares against richer pillar-
+    description embeddings, not just short chunks).
     """
     from app.settings import get_settings
 
     s = get_settings()
-    floor = float(getattr(s, "matcher_baseline_cosine", 0.65))
-    ceiling = float(getattr(s, "matcher_ceiling_cosine", 0.92))
-    if ceiling <= floor:
+    f = floor if floor is not None else float(getattr(s, "matcher_baseline_cosine", 0.65))
+    c = ceiling if ceiling is not None else float(getattr(s, "matcher_ceiling_cosine", 0.92))
+    if c <= f:
         # Defensive — bad setting shouldn't crash the matcher.
         return clamp01(raw_cosine)
-    rescaled = (raw_cosine - floor) / (ceiling - floor)
+    rescaled = (raw_cosine - f) / (c - f)
     return clamp01(rescaled)
 
 

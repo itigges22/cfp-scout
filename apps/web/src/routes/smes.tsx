@@ -29,7 +29,7 @@ export const Route = createFileRoute("/smes")({
 });
 
 const PER_PAGE = 20;
-type TeamFilter = "all" | "daam" | "non-daam";
+type TeamFilter = "all" | "primary" | "other";
 
 function SmesPage() {
   const [page, setPage] = useState(1);
@@ -41,7 +41,7 @@ function SmesPage() {
   const [editing, setEditing] = useState<import("@/lib/api-types").SmeRead | null>(null);
 
   const queryClient = useQueryClient();
-  const teamParam = teamFilter === "daam" ? "team" : undefined;
+  const teamParam = teamFilter === "primary" ? "team" : undefined;
   const query = useQuery({
     queryKey: ["smes", { page, q: debouncedSearch, teamFilter }],
     queryFn: () =>
@@ -54,7 +54,7 @@ function SmesPage() {
     // "Other teams" filter is harder server-side (NOT match) — we'll fetch all
     // and filter client-side for now. Cheap because the SME table stays small.
     select: (data) =>
-      teamFilter === "non-daam"
+      teamFilter === "other"
         ? { ...data, items: data.items.filter((s) => s.team !== "team") }
         : data,
   });
@@ -208,8 +208,8 @@ function TeamTabs({
 }) {
   const tabs: { value: TeamFilter; label: string }[] = [
     { value: "all", label: "All" },
-    { value: "daam", label: "My team" },
-    { value: "non-daam", label: "Other" },
+    { value: "primary", label: "My team" },
+    { value: "other", label: "Other" },
   ];
   return (
     <div className="inline-flex rounded-md border border-border bg-surface p-0.5">

@@ -100,6 +100,13 @@ class StrategicPillar(TimestampedMixin, Base):
 
     name: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    # Long-form (500-800 word) pillar description, extracted from the
+    # operator's messaging documents via the LLM. Used by the matcher's
+    # stage B in place of ``description`` when present — the short
+    # default ``description`` doesn't have enough discriminative
+    # vocabulary for cosine similarity to separate "this conference
+    # genuinely fits pillar X" from "this conference is AI-adjacent."
+    enriched_description: Mapped[str | None] = mapped_column(Text)
     display_order: Mapped[int] = mapped_column(SmallInteger, nullable=False)
 
 
@@ -355,6 +362,14 @@ class Conference(TimestampedMixin, Base):
     acceptance_rate_percent: Mapped[int | None] = mapped_column(SmallInteger)
 
     estimated_cost_usd: Mapped[int | None] = mapped_column(Integer)
+
+    # 2-3 sentence LLM-generated factual description, used by the matcher's
+    # embedder. Populated on ingest (or on backfill) by app.services.enrichment.
+    # When NULL the matcher falls back to the bare name+topics blob, which
+    # is signal-starved — most conferences score 0% on messaging without
+    # enrichment because their bare text has 14 words median.
+    enriched_description: Mapped[str | None] = mapped_column(Text)
+
     topics: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )

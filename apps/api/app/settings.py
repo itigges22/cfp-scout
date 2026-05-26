@@ -157,6 +157,13 @@ class Settings(BaseSettings):
     sme_w_location: float = 0.10
     sme_w_past: float = 0.05
 
+    # Label of the "home" team — used purely for UI distinction
+    # (an SME whose team field doesn't match this gets tagged
+    # ``is_external=True``, which the frontend may surface as a small
+    # "(external)" label). Empty string disables the distinction
+    # entirely and every SME is treated as internal.
+    primary_team_label: str = Field(default="")
+
     # SME narrative (plan 19). Hard cap on how many narratives we generate
     # per conference — cost = K LLM calls per conference. K=3 is the
     # plan's default + acceptance criterion.
