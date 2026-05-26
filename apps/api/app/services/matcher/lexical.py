@@ -31,11 +31,19 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import Conference, MessagingDocument
 from app.db.models.vectors import DocumentChunk
+
+log = structlog.get_logger("scout.matcher.lexical")
+
+# Above this many active messaging chunks, swap the curated lexical
+# scorer for proper BM25 (rank_bm25). Below it, IDF statistics are
+# too noisy to be useful and the hand-tuned weights here win.
+_BM25_THRESHOLD_DOCS = 30
 
 # Word characters + hyphen so "llm-d" / "fine-tuning" stay as one token.
 _TOKEN_RE = re.compile(r"[a-z][a-z0-9-]{1,}")
@@ -198,6 +206,13 @@ async def build_context(db: AsyncSession) -> LexicalContext:
     set operations). We deliberately don't cache at module level —
     operator messaging-doc edits via the admin UI must take effect on
     the next score run, not on the next process restart.
+
+    When the corpus grows past ``_BM25_THRESHOLD_DOCS`` documents, a
+    proper BM25 implementation (e.g. ``rank_bm25`` package) starts to
+    have enough document-frequency statistics to beat this hand-tuned
+    scorer — log a one-time recommendation so future-you knows when
+    to revisit the design choice. Below the threshold, IDF is
+    statistically noisy and the curated weights here win.
     """
     rows = (
         await db.execute(
@@ -212,6 +227,18 @@ async def build_context(db: AsyncSession) -> LexicalContext:
             )
         )
     ).scalars().all()
+    if len(rows) > _BM25_THRESHOLD_DOCS:
+        log.info(
+            "lexical.corpus_size_threshold_exceeded",
+            n_messaging_docs=len(rows),
+            recommendation=(
+                f"Messaging corpus has grown past {_BM25_THRESHOLD_DOCS} chunks — "
+                "consider switching from the curated lexical scorer to proper "
+                "BM25 (rank_bm25). The custom scorer's hand-tuned weights are "
+                "tuned for small corpora; BM25's IDF statistics become "
+                "meaningful at this scale."
+            ),
+        )
     vocab: set[str] = set()
     for text in rows:
         for token in _tokenize(text):

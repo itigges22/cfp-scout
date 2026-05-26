@@ -36,6 +36,7 @@ $0.30 and takes ~10 minutes wall time at the user-level rate limit.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 
@@ -46,6 +47,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.entities import Conference, MessagingDocument, StrategicPillar
 from app.db.models.vectors import DocumentChunk
 from app.services.llm import ChatMessage, ChatRequest, get_llm_client
+from app.services.matcher.calibration import (
+    CalibrationContext,
+    format_examples_block,
+)
 
 log = structlog.get_logger("scout.matcher.judge")
 
@@ -134,6 +139,7 @@ def _build_user_prompt(
     pillars: list[StrategicPillar],
     conference: Conference,
     conference_topic_str: str,
+    calibration: CalibrationContext | None = None,
 ) -> str:
     pillar_block = "\n".join(
         f"PILLAR {i + 1}: {p.name}\n"
@@ -141,10 +147,12 @@ def _build_user_prompt(
         for i, p in enumerate(pillars)
     )
     conf_desc = conference.enriched_description or "(no description available)"
+    examples_block = format_examples_block(calibration) if calibration else ""
     return (
         f"Strategic pillars (the organization cares about these):\n\n"
         f"{pillar_block}\n"
         f"---\n"
+        f"{examples_block}"
         f"<conference>\n"
         f"Name: {conference.name}\n"
         f"Topics: {conference_topic_str}\n"
@@ -155,15 +163,45 @@ def _build_user_prompt(
     )
 
 
+def compute_judge_input_hash(
+    *,
+    conference: Conference,
+    pillars: list[StrategicPillar],
+    calibration: CalibrationContext | None = None,
+) -> str:
+    """SHA-256 of every input that goes into the judge prompt. Storing
+    this on ``matches.judge_input_hash`` lets the matcher skip the LLM
+    call when nothing relevant has changed since the last judge run."""
+    parts: list[str] = [
+        PROMPT_VERSION,
+        conference.name or "",
+        conference.enriched_description or "",
+        ",".join(conference.topics or []),
+    ]
+    for p in pillars:
+        parts.append(p.name or "")
+        parts.append(p.enriched_description or p.description or "")
+    if calibration is not None:
+        parts.append(calibration.fingerprint)
+    payload = "\x1f".join(parts).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 async def judge_conference(
     *,
     db: AsyncSession,
     conference: Conference,
     pillars: list[StrategicPillar] | None = None,
+    calibration: CalibrationContext | None = None,
 ) -> JudgeResult | None:
     """Score one conference. Returns None on LLM failure (non-fatal —
     caller stores ``judge_score=NULL`` and overall_score is computed
-    without the judge contribution)."""
+    without the judge contribution).
+
+    ``calibration`` is the operator's past approve/reject decisions
+    formatted as few-shot examples. When None, the judge runs in
+    pure zero-shot mode (acceptable cold-start behavior).
+    """
     if pillars is None:
         pillars = (
             await db.execute(
@@ -182,6 +220,7 @@ async def judge_conference(
                     pillars=pillars,
                     conference=conference,
                     conference_topic_str=topic_str,
+                    calibration=calibration,
                 ),
             ),
         ],
@@ -208,4 +247,9 @@ async def judge_conference(
     return parsed
 
 
-__all__ = ["JudgeResult", "judge_conference", "PROMPT_VERSION"]
+__all__ = [
+    "JudgeResult",
+    "judge_conference",
+    "compute_judge_input_hash",
+    "PROMPT_VERSION",
+]

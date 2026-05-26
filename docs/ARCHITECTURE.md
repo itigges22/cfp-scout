@@ -135,6 +135,23 @@ Stage D — LLM-as-judge (cross-encoder reranker)
   Disable via the ``enable_llm_judge`` setting to save LLM cost —
   ``overall_score`` then re-normalizes across A/B/C only.
   See app/services/matcher/judge.py.
+
+  v2.1 enhancements:
+  - Few-shot calibration: prepends recent approve/reject decisions
+    from app.decisions as in-context examples so the judge learns
+    operator taste over time. See calibration.py.
+  - Response cache: SHA-256 of (conf text + pillar text + examples
+    + prompt version) → matches.judge_input_hash. Cache hits skip
+    the LLM call entirely; typically 90%+ hit rate on bulk rescores.
+
+Post-matcher boosts
+  Small (+/- 0.10) nudges applied to overall_score AFTER the
+  four stages produce their weighted blend:
+  - CFP urgency (+0.10) if cfp_close_at in next 30 days
+  - Recency penalty (-0.05) if start_date > 12 months out
+  - Series memory (+0.10) if any past edition was approved
+  These are pure business logic — no LLM, no embeddings — and
+  each toggleable individually. See boosts.py.
 ```
 
 Cosine alone is not enough for this corpus because

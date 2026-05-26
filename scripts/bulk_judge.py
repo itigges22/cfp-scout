@@ -31,7 +31,9 @@ from app.db.models.matching import Match
 from app.db.session import get_session_factory
 from app.services import settings_overrides
 from app.services.matcher._scoring import clamp01
-from app.services.matcher.judge import judge_conference
+from app.services.matcher.boosts import apply_boosts, compute_boosts
+from app.services.matcher.calibration import load_calibration_examples
+from app.services.matcher.judge import compute_judge_input_hash, judge_conference
 from app.services.matcher.pipeline import ALGORITHM_VERSION
 from app.settings import get_settings
 
@@ -63,14 +65,18 @@ async def _process_one(
                     select(StrategicPillar).order_by(StrategicPillar.display_order)
                 )
             ).scalars().all()
-            judge = await judge_conference(db=db, conference=conf, pillars=pillars)
-            if judge is None:
-                counters["llm_failed"] += 1
-                # Don't touch overall_score on failure — leave it as-is.
-                await db.commit()
-                return
 
-            # Pull the existing match row so we can recompute overall.
+            # Load few-shot calibration examples (operator's past
+            # approve/reject decisions). Cold-start installs return an
+            # empty set; judge falls back to zero-shot.
+            calibration = (
+                await load_calibration_examples(db)
+                if settings.enable_judge_few_shot
+                else None
+            )
+
+            # Pull the existing match row so we can both check the
+            # judge cache and (later) recompute overall_score.
             match = (
                 await db.execute(
                     select(Match)
@@ -83,6 +89,36 @@ async def _process_one(
                 await db.commit()
                 return
 
+            # Cache check: if the hash matches and we already have a
+            # judge score, skip the LLM call entirely.
+            new_hash = compute_judge_input_hash(
+                conference=conf, pillars=pillars, calibration=calibration
+            )
+            judge_score = None
+            judge_rationale = ""
+            if (
+                settings.enable_judge_cache
+                and match.judge_input_hash == new_hash
+                and match.judge_score is not None
+            ):
+                judge_score = match.judge_score
+                judge_rationale = match.judge_rationale
+                counters["cached"] += 1
+            else:
+                judge = await judge_conference(
+                    db=db,
+                    conference=conf,
+                    pillars=pillars,
+                    calibration=calibration,
+                )
+                if judge is None:
+                    counters["llm_failed"] += 1
+                    await db.commit()
+                    return
+                judge_score = judge.score
+                judge_rationale = judge.rationale
+
+            # Recompute overall_score with the (possibly-fresh) judge.
             w_msg = settings.match_w_messaging
             w_pil = settings.match_w_pillar
             w_sme = settings.match_w_sme
@@ -93,16 +129,21 @@ async def _process_one(
                     w_msg * match.messaging_score
                     + w_pil * match.pillar_score
                     + w_sme * match.sme_score
-                    + w_judge * judge.score
+                    + w_judge * judge_score
                 )
                 / total_w
             )
+            # Apply the post-matcher boosts (CFP urgency, recency, series memory).
+            boosts = await compute_boosts(db=db, conference=conf, settings=settings)
+            overall = apply_boosts(overall, boosts)
+
             await db.execute(
                 update(Match)
                 .where(Match.id == match.id)
                 .values(
-                    judge_score=judge.score,
-                    judge_rationale=judge.rationale,
+                    judge_score=judge_score,
+                    judge_rationale=judge_rationale,
+                    judge_input_hash=new_hash,
                     overall_score=overall,
                     computed_at=datetime.now(tz=UTC),
                 )
@@ -146,6 +187,7 @@ async def main() -> int:
     sem = asyncio.Semaphore(CONCURRENCY)
     counters: dict = {
         "ok": 0,
+        "cached": 0,
         "llm_failed": 0,
         "no_match": 0,
         "missing": 0,
@@ -157,6 +199,7 @@ async def main() -> int:
     elapsed = time.monotonic() - counters["_t0"]
     print(
         f"\nDone in {elapsed / 60:.1f}min. ok={counters['ok']} "
+        f"cached={counters['cached']} "
         f"llm_failed={counters['llm_failed']} no_match={counters['no_match']} "
         f"missing={counters['missing']}"
     )

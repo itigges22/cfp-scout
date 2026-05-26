@@ -50,6 +50,14 @@ class Match(TimestampedMixin, Base):
     judge_rationale: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("''")
     )
+    # SHA-256 hex of (conference enriched_description + pillar context
+    # + prompt version + few-shot example set hash). The judge stage
+    # skips the LLM call when this matches the stored value — saves
+    # ~95% of LLM cost + latency on full rescores where most
+    # conference text hasn't changed.
+    judge_input_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     overall_score: Mapped[float] = mapped_column(nullable=False)
 
     recommended_sme_ids: Mapped[list[uuid.UUID]] = mapped_column(

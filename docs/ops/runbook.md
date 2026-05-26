@@ -361,6 +361,23 @@ ranking. Re-enable by setting `enable_llm_judge=true`.
 To rebalance without disabling, lower `match_w_judge` (default
 `0.30`) via the same table or the `/settings/tunables` admin UI.
 
+### Operator-facing tunables on the matcher
+
+All settings live in `app.app_setting_overrides`; flip via the
+`/settings/tunables` admin UI or direct SQL upsert. Restart the api
+container after changing.
+
+| Setting | Default | Purpose |
+|---------|--------:|---------|
+| `enable_llm_judge` | `true` | Master switch for Stage D. Off → matcher uses A/B/C only. |
+| `match_w_judge` | `0.30` | Weight of Stage D in `overall_score`. |
+| `enable_judge_few_shot` | `true` | Prepend recent decisions as in-context examples in the judge prompt. |
+| `enable_judge_cache` | `true` | Skip the Stage D LLM call when inputs haven't changed since the last run. |
+| `enable_cfp_urgency_boost` | `true` | +0.10 to overall if CFP closes in next 30 days. |
+| `enable_recency_penalty` | `true` | -0.05 to overall if start date is >12 months out. |
+| `enable_series_memory_boost` | `true` | +0.10 to overall if any past edition of the conference series was approved. |
+| `primary_team_label` | `""` | Tag SMEs whose team doesn't match this as `is_external` for UI. Empty → all internal. |
+
 ### Why is pillar score 100% for everyone?
 
 That was a pre-v2 bug — the v1 matcher took `max` across pillars

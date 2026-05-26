@@ -1,6 +1,7 @@
 # ADR-0008 — Matcher v2: enrichment + lexical co-signal + distinctiveness pillar + LLM-as-judge
 
 **Status:** Accepted · 2026-05-26
+**Updated:** 2026-05-26 (v2.1: few-shot calibration · judge cache · business-logic boosts · lexical corpus-size guard)
 **Supersedes:** ADR-0005 (Auto-run matcher on first view) — still in force but
 the matcher it triggers is now the v2 pipeline described here.
 
@@ -164,12 +165,88 @@ messaging docs, 4 strategic pillars):
 - `settings.llm_max_concurrent_calls` — caps concurrent LLM calls
   across the whole process.
 
+## v2.1 additions (2026-05-26)
+
+Four polish changes layered onto the v2 architecture above. None
+change the matcher's fundamental shape — they make it cheaper to
+re-run, sharper at calibration, and more sensitive to
+business-logic signal the embedder + LLM can't see.
+
+### 5.1 Few-shot calibration from the operator's decisions
+
+The judge prompt now optionally prepends recent approve/reject
+decisions from `app.decisions` as in-context examples. After the
+operator labels ~20 conferences, the judge's calibration aligns
+to *their specific taste* — no LLM fine-tuning, no extra
+infrastructure. Cold-start installs (zero decisions) fall back to
+the zero-shot prompt with no degradation.
+
+Selection: 3 most-recent approved + 3 most-recent rejected, capped
+per the [Sun et al. 2023 (arXiv:2305.14502)](https://arxiv.org/abs/2305.14502)
+finding that 4-6 in-context examples is the sweet spot for ranking
+tasks (more adds noise + cost). Implementation in
+`app/services/matcher/calibration.py`.
+
+Toggle: `settings.enable_judge_few_shot` (default true).
+
+### 5.2 Judge response cache
+
+The judge stage now caches its result keyed by a SHA-256 of
+(conference text + pillar context + few-shot example set + prompt
+version). On a re-run where nothing relevant has changed, the
+matcher reuses the cached score + rationale and skips the LLM call
+entirely. Typically saves 90%+ of LLM cost + latency on bulk
+rescores where most conferences haven't been edited.
+
+The hash is stored on `app.matches.judge_input_hash`. Cache
+invalidates automatically when any input changes (the operator
+edits messaging docs, adds/removes pillars, or accumulates new
+decisions that change the few-shot fingerprint).
+
+Toggle: `settings.enable_judge_cache` (default true).
+
+### 5.3 Post-matcher business-logic boosts
+
+Three small additive nudges applied to `overall_score` after the
+matcher stages finish. Each is capped at +/- 0.10 so they nudge
+the ranking without overriding the semantic verdict.
+
+- **CFP urgency** (+0.10): event's CFP deadline is in the next
+  30 days. Surfaces actionable events first.
+- **Recency penalty** (-0.05): event's start date is more than 12
+  months out. Hard to plan that far ahead; deprioritize.
+- **Series memory** (+0.10): operator approved a past edition of
+  this conference series (via `app.conferences.series_id`).
+
+Each toggleable individually:
+`settings.enable_cfp_urgency_boost` / `enable_recency_penalty` /
+`enable_series_memory_boost` (all default true).
+
+Implementation in `app/services/matcher/boosts.py`. Boost
+attribution is logged on every match run for observability so
+operators can see why `overall_score` doesn't exactly equal the
+weighted blend of stage scores.
+
+### 5.4 Lexical corpus-size guard
+
+The custom lexical scorer in `lexical.py` is tuned for a small
+messaging corpus (5-30 docs) — its hand-curated weights beat BM25
+at that scale because BM25's IDF statistics are too noisy on a
+small `N`. When the corpus grows past 30 documents (configurable
+via `_BM25_THRESHOLD_DOCS`), the matcher logs a one-time
+recommendation to switch to proper BM25 (`rank_bm25` package).
+
+This avoids the trap of writing BM25 upfront for a corpus where
+it would perform worse than the simpler scorer, while still
+catching the moment when it'd start to pay off.
+
 ## Negative space
 
 - We did NOT switch from custom lexical to proper BM25 (e.g.
   `rank_bm25` package). The custom scorer is fine for a 5-doc
   corpus; BM25 would be the right next step if the messaging
-  corpus grows past ~50 documents.
+  corpus grows past ~30 documents. See v2.1.4 above for the
+  built-in guard.
 - We did NOT add a dedicated cross-encoder reranker model
   (BGE-Reranker-v2-m3, Jina Reranker v2, etc.) because the
   operator's MaaS key only exposes the chat model. If a dedicated
@@ -206,4 +283,31 @@ messaging docs, 4 strategic pillars):
 - ["Hybrid Search in Production: Why BM25 Still Wins on the Queries That Matter" — TianPan.co](https://tianpan.co/blog/2026-04-12-hybrid-search-production-bm25-dense-embeddings)
   — operational notes on hybrid retrieval at production scale.
 - ["Hybrid RAG Search: BM25 + Embeddings [Deep Dive 2026]" — TechBytes](https://techbytes.app/posts/hybrid-rag-search-bm25-embeddings-deep-dive-2026/)
+  — implementation patterns for hybrid scoring with RRF fusion.
+
+### v2.1 additions
+
+- "Is ChatGPT Good at Search? Investigating Large Language Models as
+  Re-Ranking Agents" — Sun et al., EMNLP 2023
+  ([arXiv:2304.09542](https://arxiv.org/abs/2304.09542)) — establishes
+  the in-context-learning baseline for LLM rerankers; finds 4-6
+  examples is the sweet spot before noise/cost outweighs gain.
+  Informs v2.1's few-shot calibration design.
+- "RankVicuna: Zero-Shot Listwise Document Reranking with Open-Source
+  Large Language Models"
+  ([arXiv:2309.15088](https://arxiv.org/abs/2309.15088)) — extends the
+  LLM-reranker pattern to open-weight models; informs the framing of
+  llama-scout-17b as a viable cross-encoder substitute.
+- "Demonstrate-Search-Predict: Composing retrieval and language models
+  for knowledge-intensive NLP"
+  ([arXiv:2212.14024](https://arxiv.org/abs/2212.14024)) — original
+  framing of using prior decisions / demonstrations as in-context
+  signal; foundational for the calibration approach in v2.1.1.
+- "Rethinking Retrieval: From Traditional RAG"
+  ([arXiv:2511.18177](https://arxiv.org/abs/2511.18177)) — 2026 survey
+  of recent retrieval paradigms (PageIndex / vectorless / hierarchical
+  reasoning); used to evaluate whether to adopt PageIndex over the
+  current dense+lexical+judge stack — concluded PageIndex solves a
+  different problem (long-document navigation vs. ranking fixed
+  candidates), so we kept the current architecture.
   — implementation patterns for hybrid scoring with RRF fusion.

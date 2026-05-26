@@ -316,6 +316,7 @@ One row per conference per matcher run.
 | `sme_score` | real | Stage C — weighted blend of SME composite signals |
 | `judge_score` | real nullable | Stage D — LLM-as-judge calibrated 0..1 cross-encoder score. NULL when the judge stage is disabled or the LLM call failed |
 | `judge_rationale` | text | One-sentence human-readable reasoning the judge LLM emitted, surfaced in the conference detail card |
+| `judge_input_hash` | char(64) nullable | SHA-256 of (conference text + pillar context + few-shot example set + prompt version). The matcher skips the Stage D LLM call when this hash matches the prior run's stored value — saves ~90% of LLM cost + latency on repeat rescores. Invalidates automatically when any input changes (operator edits messaging docs, adds pillars, accumulates new approve/reject decisions). |
 | `overall_score` | real | Weighted combination of A/B/C/D; weights auto-renormalize when any stage's weight is 0 or its score is NULL |
 | `recommended_sme_ids` | uuid[] | Top-K SMEs (mechanical) |
 | `rationale_text` | text | LLM-generated 2-3 sentence summary of the match (Stage E narrative — distinct from `judge_rationale`) |

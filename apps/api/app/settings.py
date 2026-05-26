@@ -175,6 +175,25 @@ class Settings(BaseSettings):
     enable_llm_judge: bool = Field(default=True)
     match_w_judge: float = Field(default=0.30, ge=0.0, le=1.0)
 
+    # Stage D enhancements: few-shot calibration + response cache.
+    # When enabled, the judge prompt prepends recent approve/reject
+    # decisions from ``app.decisions`` as in-context examples, so the
+    # judge learns the operator's actual taste over time without any
+    # LLM fine-tuning. The cache skips the LLM call entirely when
+    # the conference text + pillar context + example set haven't
+    # changed since the previous run — typically saves 90%+ of LLM
+    # cost + latency on repeat rescores.
+    enable_judge_few_shot: bool = Field(default=True)
+    enable_judge_cache: bool = Field(default=True)
+
+    # Post-matcher score adjustments — see app/services/matcher/boosts.py.
+    # Each one is small (+/- 0.10 max) so the semantic matcher
+    # dominates; these just nudge actionable events up and unactionable
+    # events down. Toggleable individually for ops calibration.
+    enable_cfp_urgency_boost: bool = Field(default=True)
+    enable_recency_penalty: bool = Field(default=True)
+    enable_series_memory_boost: bool = Field(default=True)
+
     # SME narrative (plan 19). Hard cap on how many narratives we generate
     # per conference — cost = K LLM calls per conference. K=3 is the
     # plan's default + acceptance criterion.

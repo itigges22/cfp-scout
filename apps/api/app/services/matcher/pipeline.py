@@ -29,7 +29,7 @@ import structlog
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.entities import Conference
+from app.db.models.entities import Conference, StrategicPillar
 from app.db.models.junctions import ConferencePillar, ConferenceSme
 from app.db.models.matching import Match
 from app.services.matcher._scoring import clamp01
@@ -127,15 +127,66 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
     # work on averages / surface tokens; the LLM reasons about intent.
     # Disable via ``enable_llm_judge`` setting to save the per-rescore
     # LLM cost; overall_score then re-normalizes across A/B/C only.
+    #
+    # Two enhancements on top of the base judge call:
+    #   - few-shot calibration: prepend recent approve/reject decisions
+    #     so the judge learns the operator's actual taste.
+    #   - response cache: if the conference text + pillar context +
+    #     example set hash matches the previous run's hash, reuse
+    #     the cached judge_score + rationale and skip the LLM call.
     judge_score: float | None = None
     judge_rationale: str = ""
+    judge_input_hash: str | None = None
     if settings.enable_llm_judge:
-        from app.services.matcher.judge import judge_conference
+        from app.services.matcher.calibration import load_calibration_examples
+        from app.services.matcher.judge import (
+            compute_judge_input_hash,
+            judge_conference,
+        )
 
-        judge = await judge_conference(db=db, conference=conference)
-        if judge is not None:
-            judge_score = judge.score
-            judge_rationale = judge.rationale
+        pillars_for_judge = (
+            await db.execute(
+                select(StrategicPillar).order_by(StrategicPillar.display_order)
+            )
+        ).scalars().all()
+        calibration = (
+            await load_calibration_examples(db)
+            if settings.enable_judge_few_shot
+            else None
+        )
+        judge_input_hash = compute_judge_input_hash(
+            conference=conference,
+            pillars=pillars_for_judge,
+            calibration=calibration,
+        )
+
+        # Cache hit: reuse the previous match row's judge fields.
+        cached = (
+            await db.execute(
+                select(Match.judge_score, Match.judge_rationale, Match.judge_input_hash)
+                .where(Match.conference_id == conference.id)
+                .where(Match.algorithm_version == ALGORITHM_VERSION)
+            )
+        ).first()
+        if (
+            settings.enable_judge_cache
+            and cached is not None
+            and cached.judge_input_hash == judge_input_hash
+            and cached.judge_score is not None
+        ):
+            judge_score = cached.judge_score
+            judge_rationale = cached.judge_rationale
+            bound.debug("matcher.judge.cache_hit", hash=judge_input_hash[:12])
+        else:
+            judge = await judge_conference(
+                db=db,
+                conference=conference,
+                pillars=pillars_for_judge,
+                calibration=calibration,
+            )
+            if judge is not None:
+                judge_score = judge.score
+                judge_rationale = judge.rationale
 
     # ---- Overall + status -------------------------------------------
     # Re-normalize weights to whichever stages we actually have. When
@@ -157,6 +208,12 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
         )
         / total_w
     )
+
+    # ---- Post-matcher boosts (CFP urgency, recency, series memory) ---
+    from app.services.matcher.boosts import apply_boosts, compute_boosts
+
+    boosts = await compute_boosts(db=db, conference=conference, settings=settings)
+    overall = apply_boosts(overall, boosts)
 
     status = _choose_status(
         ms_score=ms.score,
@@ -198,6 +255,7 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
             sme_score=sm.score,
             judge_score=judge_score,
             judge_rationale=judge_rationale,
+            judge_input_hash=judge_input_hash,
             overall_score=overall,
             recommended_sme_ids=recommended_sme_uuids,
             rationale_text=rationale or "",
@@ -211,6 +269,7 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
         existing.sme_score = sm.score
         existing.judge_score = judge_score
         existing.judge_rationale = judge_rationale
+        existing.judge_input_hash = judge_input_hash
         existing.overall_score = overall
         existing.recommended_sme_ids = recommended_sme_uuids
         existing.rationale_text = rationale or ""
@@ -289,6 +348,8 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
         pillar_score=round(pl.score, 4),
         sme_score=round(sm.score, 4),
         judge_score=round(judge_score, 4) if judge_score is not None else None,
+        boost_total=round(boosts.total, 4),
+        boosts=boosts.as_dict(),
         overall=round(overall, 4),
         status=status,
         rec_sme_count=len(sm.recommendations),
