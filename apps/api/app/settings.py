@@ -143,9 +143,14 @@ class Settings(BaseSettings):
     match_p_gate: float = 0.55  # pillar alignment gate (Stage B)
     match_s_gate: float = 0.50  # SME match gate (Stage C top SME)
 
-    match_w_messaging: float = 0.35  # weight on messaging in overall score
-    match_w_pillar: float = 0.35
-    match_w_sme: float = 0.30
+    # Stage weights. Rebalanced 2026-05-26 — pillar weight pulled down
+    # from 0.30 to 0.15 because softmax-distinctiveness aggregation
+    # was over-rewarding small single-pillar meetups vs broad
+    # flagship events. Judge weight pulled up from 0.30 to 0.45 so
+    # the LLM's holistic strategic-value reasoning has more authority.
+    match_w_messaging: float = 0.40  # weight on messaging in overall score
+    match_w_pillar: float = 0.15
+    match_w_sme: float = 0.20
 
     # SME matcher (plan 18) per-dimension weights. Sum must equal 1.0; the
     # validator below enforces. Per-dimension breakdown surfaces in
@@ -173,7 +178,7 @@ class Settings(BaseSettings):
     # to save LLM cost — overall_score re-normalizes across the
     # remaining stages.
     enable_llm_judge: bool = Field(default=True)
-    match_w_judge: float = Field(default=0.30, ge=0.0, le=1.0)
+    match_w_judge: float = Field(default=0.45, ge=0.0, le=1.0)
 
     # Stage D enhancements: few-shot calibration + response cache.
     # When enabled, the judge prompt prepends recent approve/reject
@@ -193,6 +198,13 @@ class Settings(BaseSettings):
     enable_cfp_urgency_boost: bool = Field(default=True)
     enable_recency_penalty: bool = Field(default=True)
     enable_series_memory_boost: bool = Field(default=True)
+    # +0.15 for future-dated editions of known flagship industry
+    # events (NVIDIA GTC, KubeCon, PyTorch Conference, NeurIPS, etc.)
+    # — the matcher's other signals systematically undervalue them
+    # because their content is broad, but their reach makes them
+    # strategically valuable. See app/services/matcher/boosts.py for
+    # the curated pattern list.
+    enable_flagship_event_boost: bool = Field(default=True)
 
     # SME narrative (plan 19). Hard cap on how many narratives we generate
     # per conference — cost = K LLM calls per conference. K=3 is the
@@ -408,12 +420,33 @@ class Settings(BaseSettings):
         return value.strip()
 
     @model_validator(mode="after")
-    def _matcher_weights_sum_to_one(self) -> Settings:
-        total = self.match_w_messaging + self.match_w_pillar + self.match_w_sme
-        # Allow tiny floating-point drift.
-        if abs(total - 1.0) > 0.001:
+    def _matcher_weights_positive(self) -> Settings:
+        """Sanity-check matcher weights without requiring sum to 1.0.
+
+        The matcher pipeline (run_fit_match) divides the weighted sum
+        of stage scores by the total weight, so the weights don't need
+        to sum to 1.0 — they just need to be non-negative and at
+        least one needs to be positive. This relaxation became
+        necessary in v2.1 when Stage D (LLM judge) was added with
+        its own independent weight; the v1 invariant of "msg + pil
+        + sme == 1.0" no longer composes cleanly with a 4-stage
+        pipeline.
+        """
+        weights = [
+            self.match_w_messaging,
+            self.match_w_pillar,
+            self.match_w_sme,
+            self.match_w_judge,
+        ]
+        if any(w < 0 for w in weights):
             raise ValueError(
-                f"MATCH_W_MESSAGING + MATCH_W_PILLAR + MATCH_W_SME must sum to 1.0; got {total}"
+                f"matcher weights must be non-negative; got "
+                f"msg={self.match_w_messaging} pil={self.match_w_pillar} "
+                f"sme={self.match_w_sme} judge={self.match_w_judge}"
+            )
+        if sum(weights) <= 0:
+            raise ValueError(
+                "at least one matcher weight (msg/pil/sme/judge) must be > 0"
             )
         return self
 

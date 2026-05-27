@@ -2,6 +2,7 @@
 
 **Status:** Accepted · 2026-05-26
 **Updated:** 2026-05-26 (v2.1: few-shot calibration · judge cache · business-logic boosts · lexical corpus-size guard)
+**Updated:** 2026-05-26 (v2.2: judge prompt reframe for strategic value · flagship-event boost · weight rebalance)
 **Supersedes:** ADR-0005 (Auto-run matcher on first view) — still in force but
 the matcher it triggers is now the v2 pipeline described here.
 
@@ -239,6 +240,84 @@ recommendation to switch to proper BM25 (`rank_bm25` package).
 This avoids the trap of writing BM25 upfront for a corpus where
 it would perform worse than the simpler scorer, while still
 catching the moment when it'd start to pay off.
+
+## v2.2 additions (2026-05-26)
+
+After a self-audit of the v2.1 matcher's top 30, three concrete
+problems were visible — all symptoms of the same root cause:
+
+  - NVIDIA GTC was ranked **#170** (judge=0.50).
+  - KubeCon NA 2026 was ranked **#217** (judge=0.30).
+  - PyTorch Conference 2026 was ranked **#227** (judge=0.50).
+  - The top 25 had **17 of 30** small local "AgentCon - <city>" /
+    "AgentCamp <city>" / "Agentic AI Summit - <city>" events.
+
+These are flagship industry megaconferences. They should be near
+the top of any AI-strategy team's ranking. They were buried below
+50-person local meetups.
+
+**Root cause:** the v2.1 judge prompt rewarded "laser-focused on
+ONE pillar AND specific subject matter named" — that's a defensible
+rule about pillar fit but a strategically wrong rule about whether
+to attend. A flagship event covering all 4 pillars broadly has
+more strategic value than a 50-person meetup peaked on one.
+
+Three coordinated fixes:
+
+### 6.1 Judge prompt reframe
+
+Rewrote `_SYSTEM_PROMPT` from "score pillar alignment" to "score
+strategic value." The new prompt explicitly names flagship events
+(NVIDIA GTC, KubeCon, PyTorch Conference, NeurIPS, ICML, AAAI, AI
+Engineer World Fair, AI Infra Summit, Open Source Summit, etc.) as
+80+ defaults *even when broad*, and explicitly caps local
+single-pillar meetups at 55-70 unless their location is itself
+strategic. Bumped `PROMPT_VERSION` from `v1` → `v2` so the response
+cache invalidates and every conference re-judges.
+
+Smoke-test verified the recalibration on representative events:
+
+| Conference | v1 judge | v2 judge | Verdict |
+|------------|---------:|---------:|---------|
+| NVIDIA GTC | 0.50 | 0.95 | flagship recognized |
+| NeurIPS 2026 | 0.50 | 0.95 | flagship academic |
+| KubeCon NA 2026 | 0.30 | 0.70 | strong fit |
+| PyTorch Conference 2026 | 0.50 | 0.70 | strong fit |
+| vLLM & llm-d Meetup London | 0.90 | 0.70 | correctly tier-shifted |
+| AgentCon - Lincoln | 0.70-0.90 | 0.60 | local meetup demoted |
+| Devoxx Morocco | 0.00 | 0.30 | adjacent (slightly generous) |
+
+### 6.2 Flagship-event boost
+
+Added a `flagship_event` boost in `boosts.py` — +0.15 for future-
+dated editions matching a curated case-insensitive substring list:
+NVIDIA GTC, KubeCon + CloudNativeCon, PyTorch Conference, NeurIPS,
+ICML, ICLR, AAAI, KDD, RecSys, AI Engineer World Fair, AI Infra
+Summit, MLOps World, Open Source Summit, Ray Summit, Data + AI
+Summit, Snowflake Summit, AWS re:Invent, Google Cloud Next,
+Microsoft Ignite, Open Data Science Conference, Kubeflow.
+
+The boost is a safety net for the cases where the judge somehow
+still under-scores a flagship — defense-in-depth. Past-dated
+editions don't get the boost (they're handled by the
+archive/recency pipeline). Toggle via `enable_flagship_event_boost`.
+
+### 6.3 Weight rebalance
+
+Stage weights changed:
+
+| Stage | v2.1 | v2.2 | Why |
+|-------|-----:|-----:|-----|
+| messaging | 0.45 | 0.40 | minor reduction |
+| pillar | 0.30 | **0.15** | softmax distinctiveness was over-rewarding small peaked events |
+| sme | 0.25 | 0.20 | minor reduction |
+| judge | 0.30 | **0.45** | the LLM's holistic strategic-value reasoning needed more authority |
+
+The Pydantic validator on `Settings` previously required
+`msg+pillar+sme = 1.0`; this no longer composes with a 4-stage
+pipeline, so it was relaxed to "weights non-negative and sum > 0."
+The matcher pipeline already renormalizes by `sum(weights)`
+internally.
 
 ## Negative space
 

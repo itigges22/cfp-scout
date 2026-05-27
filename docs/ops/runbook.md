@@ -376,6 +376,7 @@ container after changing.
 | `enable_cfp_urgency_boost` | `true` | +0.10 to overall if CFP closes in next 30 days. |
 | `enable_recency_penalty` | `true` | -0.05 to overall if start date is >12 months out. |
 | `enable_series_memory_boost` | `true` | +0.10 to overall if any past edition of the conference series was approved. |
+| `enable_flagship_event_boost` | `true` | +0.15 to overall for future-dated editions of curated industry megaconferences (NVIDIA GTC, KubeCon, PyTorch Conference, NeurIPS, etc.). See boosts.py for the full list. |
 | `primary_team_label` | `""` | Tag SMEs whose team doesn't match this as `is_external` for UI. Empty → all internal. |
 
 ### Why is pillar score 100% for everyone?

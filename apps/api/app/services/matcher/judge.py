@@ -54,11 +54,19 @@ from app.services.matcher.calibration import (
 
 log = structlog.get_logger("scout.matcher.judge")
 
-PROMPT_VERSION = "judge.cross_encoder.v1"
+PROMPT_VERSION = "judge.cross_encoder.v2"
 
 _SYSTEM_PROMPT = """\
-You are scoring how well a tech/AI conference aligns with an
-organization's strategic messaging pillars.
+You are scoring whether the operator should send a senior speaker /
+sponsor to a tech conference, given the organization's strategic
+messaging pillars.
+
+The question you are answering is NOT "how pillar-specific is this
+conference?" — it is "is this a strategically valuable event for
+this operator?" Those are different. A flagship industry event with
+thousands of attendees that covers ALL FOUR pillars at moderate
+depth is typically more valuable than a 50-person local meetup that
+laser-focuses on ONE pillar. Reach matters.
 
 You will be shown:
   1. The organization's strategic pillars (each with a long-form
@@ -71,24 +79,67 @@ Output JSON with two fields and nothing else:
   "rationale": "<one sentence explaining the score>"
 }
 
-Scoring guide (be calibrated, not generous):
-  - 90-100: conference is laser-focused on at least one pillar AND
-    its specific subject matter is named in the pillar text
-    (e.g. a vLLM meetup against a pillar that lists vLLM)
-  - 70-89: conference is a strong fit for at least one pillar via
-    closely related technologies (e.g. KServe Day for a pillar
-    about model serving)
-  - 50-69: conference covers AI/ML topics that touch the pillars
-    but isn't pillar-specific (e.g. a generic "AI Conference 2026")
-  - 30-49: conference is software/engineering adjacent but only
-    tangentially relevant (e.g. KubeCon for an AI-pillar-only org)
-  - 0-29: conference is off-topic (e.g. PHP conference, generic
-    DevFest, payments conference)
+Scoring guide (calibrated to STRATEGIC VALUE, not pillar fit alone):
 
-Be strict. A conference whose name doesn't contain any AI/ML
-vocabulary AND whose topics don't match should score below 30
-regardless of how AI-flavored its description sounds — the LLM
-enrichment may have over-AI-fied a generic event.
+  90-100 — Must-attend
+    Flagship industry events deeply covering at least one pillar,
+    OR specifically-named pillar matches.
+    Examples:
+      · NVIDIA GTC, KubeCon + CloudNativeCon, PyTorch Conference,
+        Ray Summit, Databricks Data+AI Summit, NeurIPS, ICML,
+        ICLR, AAAI, Open Source Summit, AWS re:Invent — these are
+        the global ML/AI/infra megaconferences every AI-strategy
+        team should consider, regardless of how "broad" they look
+        from the description alone.
+      · A "vLLM Meetup" or "Kubeflow Day" type event where the
+        pillar subject matter is named directly in the conference.
+
+  70-89 — Strong fit
+    Real specialty events for a pillar (Agentic AI Summit, MLOps
+    World, Cloud Native AI & Inference Day, AI Infra Summit) OR
+    mid-size industry events with clear AI/infrastructure focus
+    (AI Engineer World Fair, KServe Day, KDD, RecSys).
+
+  50-69 — Worth considering
+    Mid-size events broadly covering AI/ML/MLOps topics that touch
+    the pillars but aren't a top priority. Small regional meetups
+    on a pillar topic also belong here — they are real matches
+    but their audience size limits strategic value.
+    Examples: a small local AgentCon, generic "AI Conference 2026",
+    regional Cloud Native Day.
+
+  30-49 — Adjacent
+    Software / data / cloud events with only partial AI relevance.
+    Examples: a data engineering conference that's not specifically
+    AI-focused; Snowflake Summit if the org doesn't run on
+    Snowflake; a SQL-only Power BI event.
+
+  0-29 — Off-topic
+    Genuinely irrelevant — PHP conference, generic DevFest, a
+    payments conference, a Power BI user group with no AI track.
+    Should also score here if the conference NAME contains no
+    AI/ML vocabulary AND the topics list doesn't match (regardless
+    of how AI-flavored the enriched description sounds, since
+    enrichment can over-AI-ify a generic event).
+
+CRITICAL RULES:
+- Flagship events (NVIDIA GTC, KubeCon + CloudNativeCon, PyTorch
+  Conference, Kubeflow events, NeurIPS, ICML, ICLR, AAAI, AI
+  Engineer World Fair, AI Infra Summit, Cloud Native AI Inference
+  Day, Open Source Summit, KDD, RecSys, AWS re:Invent) default to
+  80+ even when "broad" — they are where the industry shows up
+  and Red Hat / similar orgs need a presence.
+- Local single-pillar meetups (AgentCon - Lincoln, AgentCamp
+  Lagos) should typically score 55-70 — they're real matches but
+  their audience size limits strategic value. Do not score them
+  90+ unless the location is itself strategic.
+- A conference name that mentions a specifically-named pillar
+  technology (vLLM, llm-d, Kubeflow, RAG, MCP, agentic) gets a
+  +10 bump within its bucket.
+- Past-tense academic editions ("NeurIPS 2024", "ICLR 2024") that
+  have already happened still score well — the future editions
+  will be the same level of strategic event. Don't penalize a
+  conference for being last year's edition; future editions exist.
 
 Output the JSON object directly, no preamble, no markdown fences.
 

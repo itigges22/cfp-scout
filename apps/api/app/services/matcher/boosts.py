@@ -47,10 +47,68 @@ log = structlog.get_logger("scout.matcher.boosts")
 CFP_URGENCY_BOOST = 0.10
 RECENCY_PENALTY = -0.05
 SERIES_MEMORY_BOOST = 0.10
+FLAGSHIP_EVENT_BOOST = 0.15
 
 # Threshold windows.
 CFP_URGENCY_DAYS = 30
 RECENCY_PENALTY_MONTHS = 12  # events further out than this get the penalty
+
+# Vendor-neutral flagship AI / ML / infrastructure conferences. A
+# future-dated edition whose name matches any of these gets a +0.15
+# bump. These are the global megaconferences any AI-strategy team
+# should consider regardless of how "pillar-specific" they look —
+# the matcher's other signals systematically undervalue them because
+# their content is broad (touches all pillars at moderate depth
+# rather than peaking on one), but their strategic value is the
+# OPPOSITE of that pattern: thousands of attendees, the industry's
+# center of gravity.
+#
+# Match is case-insensitive substring on conference.name. List
+# updated periodically; submit additions via a docs PR.
+_FLAGSHIP_PATTERNS: tuple[str, ...] = (
+    # GPU + inference / model serving
+    "nvidia gtc",
+    "ray summit",
+    # Kubernetes / cloud-native
+    "kubecon",
+    "cloudnativecon",
+    "open source summit",
+    "kubeflow",
+    # Frameworks
+    "pytorch conference",
+    "tensorflow",
+    # Academic ML
+    "neurips",
+    "icml ",
+    " icml",
+    "iclr",
+    "aaai",
+    "kdd ",
+    " kdd",
+    "recsys",
+    "emnlp",
+    "acl ",
+    " acl",
+    # Industry AI summits
+    "ai engineer world fair",
+    "ai engineer summit",
+    "ai infra summit",
+    "ai infrastructure summit",
+    "mlops world",
+    "mlops community",
+    "cloud native ai",
+    # Data + AI platform megaconferences
+    "data + ai summit",
+    "databricks data + ai",
+    "snowflake summit",
+    "aws re:invent",
+    "google cloud next",
+    "microsoft ignite",
+    # LLM / GenAI specialized but high-reach
+    "open data science conference",  # ODSC
+    "transform x",
+    "world summit ai",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,16 +120,23 @@ class BoostBreakdown:
     cfp_urgency: float = 0.0
     recency_penalty: float = 0.0
     series_memory: float = 0.0
+    flagship_event: float = 0.0
 
     @property
     def total(self) -> float:
-        return self.cfp_urgency + self.recency_penalty + self.series_memory
+        return (
+            self.cfp_urgency
+            + self.recency_penalty
+            + self.series_memory
+            + self.flagship_event
+        )
 
     def as_dict(self) -> dict[str, float]:
         return {
             "cfp_urgency": self.cfp_urgency,
             "recency_penalty": self.recency_penalty,
             "series_memory": self.series_memory,
+            "flagship_event": self.flagship_event,
             "total": self.total,
         }
 
@@ -94,10 +159,16 @@ async def compute_boosts(
         if settings.enable_series_memory_boost
         else 0.0
     )
+    flagship = (
+        _flagship_event(conference, today)
+        if settings.enable_flagship_event_boost
+        else 0.0
+    )
     return BoostBreakdown(
         cfp_urgency=cfp,
         recency_penalty=recency,
         series_memory=series,
+        flagship_event=flagship,
     )
 
 
@@ -125,6 +196,29 @@ def _recency_penalty(conference: Conference, today: date) -> float:
     horizon = today + timedelta(days=30 * RECENCY_PENALTY_MONTHS)
     if start > horizon:
         return RECENCY_PENALTY
+    return 0.0
+
+
+def _flagship_event(conference: Conference, today: date) -> float:
+    """+0.15 if the conference's name matches a known flagship event
+    pattern AND the event is in the future.
+
+    Past-dated flagships (NeurIPS 2024 etc.) are correctly handled
+    elsewhere — they get archived / aged out. The boost only applies
+    to upcoming editions because that's where strategic value lives.
+
+    Match is case-insensitive substring on the conference name —
+    cheap, deterministic, no LLM, no DB lookup. The pattern list
+    is curated and vendor-neutral; see ``_FLAGSHIP_PATTERNS``.
+    """
+    if not conference.name:
+        return 0.0
+    if conference.start_date and conference.start_date < today:
+        return 0.0
+    name_lower = conference.name.lower()
+    for pattern in _FLAGSHIP_PATTERNS:
+        if pattern in name_lower:
+            return FLAGSHIP_EVENT_BOOST
     return 0.0
 
 
@@ -164,4 +258,5 @@ __all__ = [
     "CFP_URGENCY_BOOST",
     "RECENCY_PENALTY",
     "SERIES_MEMORY_BOOST",
+    "FLAGSHIP_EVENT_BOOST",
 ]
