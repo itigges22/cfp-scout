@@ -10,10 +10,15 @@ workbook import (plan 31) validate against this schema.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
+
+# Operator's retrospective on whether attending this past edition was
+# a good idea. Drives the matcher's series_memory boost on similar
+# upcoming events (positive boost / no boost / negative penalty).
+PastConferenceVerdict = Literal["would_attend", "unsure", "would_not_attend"]
 
 from app.schemas.common import (
     READ_CONFIG,
@@ -50,6 +55,7 @@ class PastConferenceBase(StrictBase):
 
     notes: ShortNote | None = ""
     imported_from: Annotated[str | None, Field(default=None, max_length=120)] = None
+    verdict: PastConferenceVerdict = "unsure"
 
     @field_validator("year")
     @classmethod
@@ -67,6 +73,15 @@ class PastConferenceCreate(PastConferenceBase):
 
 class PastConferenceUpdate(PastConferenceBase):
     pass
+
+
+class PastConferenceVerdictPatch(BaseModel):
+    """Single-field PATCH for the verdict column. Used by the UI's
+    three-button verdict picker so the operator can flip 👍 / — / 👎
+    without re-validating every other field on the past_conferences
+    row (PUT requires the full schema)."""
+
+    verdict: PastConferenceVerdict
 
 
 class PastConferenceRead(PastConferenceBase):

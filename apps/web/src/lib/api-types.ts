@@ -146,7 +146,12 @@ export interface PastConferenceBase {
   session_type: PastConferenceSessionType | null;
   notes: string | null;
   imported_from: string | null;
+  /** Operator's retrospective: would the team attend a future
+   * edition again? Drives the matcher's series_memory boost. */
+  verdict: PastConferenceVerdict;
 }
+
+export type PastConferenceVerdict = "would_attend" | "unsure" | "would_not_attend";
 
 export type PastConferenceCreate = PastConferenceBase;
 export type PastConferenceUpdate = PastConferenceBase;

@@ -50,6 +50,54 @@ function PastConferencesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["past-conferences"] }),
   });
 
+  // Verdict mutation with optimistic update — the row's verdict
+  // changes instantly in the UI, then sync to the server in the
+  // background. The conferences list will reflect the change on
+  // next render (live boost recompute, no rescore needed).
+  const verdictMut = useMutation({
+    mutationFn: ({
+      id,
+      verdict,
+    }: {
+      id: string;
+      verdict: import("@/lib/api-types").PastConferenceVerdict;
+    }) => pastConferencesApi.setVerdict(id, verdict),
+    onMutate: async ({ id, verdict }) => {
+      // Optimistic: patch the cached past-conferences list so the
+      // button highlights immediately. If the server PATCH fails,
+      // onError reverts.
+      const keys = qc.getQueryCache().findAll({ queryKey: ["past-conferences"] });
+      const snapshots: Array<{ key: readonly unknown[]; data: unknown }> = [];
+      for (const k of keys) {
+        const prev = qc.getQueryData<{
+          items: Array<{ id: string; verdict: string }>;
+        }>(k.queryKey);
+        if (prev) {
+          snapshots.push({ key: k.queryKey, data: prev });
+          qc.setQueryData(k.queryKey, {
+            ...prev,
+            items: prev.items.map((it) =>
+              it.id === id ? { ...it, verdict } : it,
+            ),
+          });
+        }
+      }
+      return { snapshots };
+    },
+    onError: (_err, _vars, ctx) => {
+      // Revert all snapshots if server rejected.
+      for (const s of ctx?.snapshots ?? []) {
+        qc.setQueryData(s.key, s.data);
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["past-conferences"] });
+      // Also invalidate the upcoming-conferences list so its
+      // overall_score reorders to reflect the new verdict.
+      qc.invalidateQueries({ queryKey: ["conferences"] });
+    },
+  });
+
   const yearAsNum = /^\d{4}$/.test(yearFilter) ? Number(yearFilter) : undefined;
 
   const query = useQuery({
@@ -138,6 +186,12 @@ function PastConferencesPage() {
                   <TableHead>Role</TableHead>
                   <TableHead>Session</TableHead>
                   <TableHead>Attendees</TableHead>
+                  <TableHead
+                    className="text-center"
+                    title="Was attending this worth it? Drives the matcher's series_memory boost on similar upcoming events. Updates take effect on the next /conferences page load — no rescore needed."
+                  >
+                    Worth it?
+                  </TableHead>
                   <TableHead className="w-8" />
                 </TableRow>
               </TableHeader>
@@ -187,6 +241,15 @@ function PastConferencesPage() {
                       ) : (
                         <span className="text-fg-subtle">—</span>
                       )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <VerdictPicker
+                        current={p.verdict}
+                        onChange={(verdict) =>
+                          verdictMut.mutate({ id: p.id, verdict })
+                        }
+                        disabled={verdictMut.isPending}
+                      />
                     </TableCell>
                     <TableCell>
                       <Button
@@ -241,6 +304,79 @@ function PastConferencesPage() {
           if (!o) setEditing(null);
         }}
       />
+    </div>
+  );
+}
+
+/**
+ * Three-button toggle: 👍 / — / 👎 mapping to ``would_attend`` /
+ * ``unsure`` / ``would_not_attend``. Clicking the currently-selected
+ * button flips back to ``unsure`` so the operator can "unset" a
+ * verdict without leaving the page.
+ *
+ * Stops click propagation so clicking a button doesn't bubble up
+ * to the TableRow's onClick (which opens the edit dialog).
+ */
+function VerdictPicker({
+  current,
+  onChange,
+  disabled,
+}: {
+  current: import("@/lib/api-types").PastConferenceVerdict;
+  onChange: (v: import("@/lib/api-types").PastConferenceVerdict) => void;
+  disabled: boolean;
+}) {
+  const opts: Array<{
+    value: import("@/lib/api-types").PastConferenceVerdict;
+    label: string;
+    title: string;
+    active: string;
+  }> = [
+    {
+      value: "would_attend",
+      label: "👍",
+      title: "Would attend again — boosts similar upcoming events by +0.10.",
+      active: "bg-success/20 ring-1 ring-success/40",
+    },
+    {
+      value: "unsure",
+      label: "—",
+      title: "No verdict yet — small +0.05 nudge on similar upcoming events.",
+      active: "bg-surface-3 ring-1 ring-border-strong",
+    },
+    {
+      value: "would_not_attend",
+      label: "👎",
+      title: "Would NOT attend again — penalty of −0.10 on similar upcoming events.",
+      active: "bg-danger/20 ring-1 ring-danger/40",
+    },
+  ];
+  return (
+    <div className="inline-flex gap-1" onClick={(e) => e.stopPropagation()}>
+      {opts.map((opt) => {
+        const isActive = current === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            title={opt.title}
+            disabled={disabled}
+            onClick={(e) => {
+              e.stopPropagation();
+              // Click the currently-active button to clear to "unsure".
+              onChange(isActive && opt.value !== "unsure" ? "unsure" : opt.value);
+            }}
+            className={
+              "size-7 rounded text-sm leading-none transition-colors hover:bg-surface-2 " +
+              (isActive ? opt.active : "text-fg-muted")
+            }
+            aria-pressed={isActive}
+            aria-label={opt.title}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

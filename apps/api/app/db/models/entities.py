@@ -228,6 +228,13 @@ class PastConference(TimestampedMixin, Base):
     session_type: Mapped[str | None] = mapped_column(String(20))
     notes: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
     imported_from: Mapped[str | None] = mapped_column(String(120))
+    # Operator's retrospective on whether attending this was a good
+    # idea. Drives the matcher's series_memory boost: would_attend
+    # → +0.10, unsure → +0.05, would_not_attend → −0.10. CHECK-
+    # constrained to those three values at the DB level.
+    verdict: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'unsure'")
+    )
 
 
 # ===========================================================================

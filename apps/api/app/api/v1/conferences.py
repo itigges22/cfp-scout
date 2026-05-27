@@ -463,12 +463,23 @@ async def list_conferences(
     non-empty). The ``attendance_filter`` query parameter narrows the
     result set by that flag.
     """
+    from app.services.matcher.boosts import (
+        apply_boosts,
+        compute_boosts,
+        load_boost_context,
+    )
+    from app.services.matcher._scoring import clamp01
     from app.services.past_attendance import (
         is_previously_attended,
         load_attended_names,
     )
 
+    settings = get_settings()
     attended_names = await load_attended_names(db)
+    # Single-load of boost state — verdicts, approved series — used
+    # below to recompute overall_score live so verdict edits take
+    # effect on the next render without a rescore.
+    boost_ctx = await load_boost_context(db)
 
     stmt = select(Conference, Match).outerjoin(
         Match,
@@ -479,12 +490,12 @@ async def list_conferences(
     else:
         stmt = stmt.where(Conference.status != "quarantined")
 
-    if sort == "score":
-        stmt = stmt.order_by(
-            Match.overall_score.desc().nullslast(),
-            Conference.start_date.asc().nullslast(),
-        )
-    elif sort == "messaging":
+    # SQL-level sort kicks in below ONLY for non-overall sorts.
+    # ``score`` sort uses live-computed overall (so verdict changes
+    # reorder the list instantly without persisting overall_score).
+    # ``date`` / ``name`` / per-stage sorts use SQL ORDER BY since
+    # the column is stable / doesn't depend on verdict state.
+    if sort == "messaging":
         stmt = stmt.order_by(
             Match.messaging_score.desc().nullslast(),
             Conference.start_date.asc().nullslast(),
@@ -504,8 +515,11 @@ async def list_conferences(
             Conference.start_date.asc().nullslast(),
             Match.overall_score.desc().nullslast(),
         )
-    else:  # name
+    elif sort == "name":
         stmt = stmt.order_by(Conference.name.asc())
+    # else: ``sort == "score"`` — Python-side sort by live overall
+    # happens after we recompute. We still sort by start_date as a
+    # stable secondary key.
 
     # Past-attendance filtering happens in Python because the
     # comparison key is a normalized name (year/edition stripped),
@@ -520,15 +534,64 @@ async def list_conferences(
             (c, m) for c, m in all_rows
             if is_previously_attended(c.name, attended_names) == attended
         ]
-    total = len(all_rows)
-    rows = all_rows[(page - 1) * per_page : page * per_page]
+
+    # Recompute overall_score LIVE using the stored stage scores +
+    # current verdicts. This is what makes verdict edits instant —
+    # the operator clicks a thumb, the verdict commits to past_
+    # conferences, the next list render reads the new verdict via
+    # ``boost_ctx`` and re-orders without any LLM call.
+    w_msg = settings.match_w_messaging
+    w_pil = settings.match_w_pillar
+    w_sme = settings.match_w_sme
+    w_jdg = settings.match_w_judge
+    total_w = w_msg + w_pil + w_sme + w_jdg or 1.0
+
+    enriched: list[tuple[Conference, Match | None, float | None]] = []
+    for conf, match in all_rows:
+        if match is None:
+            enriched.append((conf, None, None))
+            continue
+        boosts = await compute_boosts(
+            db=db, conference=conf, settings=settings, context=boost_ctx
+        )
+        # Recompose overall from the matcher pipeline's formula, then
+        # apply the (now-live) boost total. Matches what
+        # ``run_fit_match`` would produce on a fresh run.
+        judge_contrib = (
+            w_jdg * float(match.judge_score) if match.judge_score is not None else 0.0
+        )
+        base = (
+            w_msg * float(match.messaging_score)
+            + w_pil * float(match.pillar_score)
+            + w_sme * float(match.sme_score)
+            + judge_contrib
+        ) / total_w
+        live_overall = apply_boosts(clamp01(base), boosts)
+        enriched.append((conf, match, live_overall))
+
+    # Python-side sort by live overall when sort == "score".
+    if sort == "score":
+        def _sort_key(row: tuple[Conference, Match | None, float | None]) -> tuple:
+            _conf, _match, ov = row
+            # Sort descending by overall (use negation since list.sort
+            # is ascending). Push None scores to the BOTTOM with a
+            # large positive primary key.
+            return (
+                float("inf") if ov is None else -ov,
+                _conf.start_date or date.max,
+            )
+
+        enriched.sort(key=_sort_key)
+
+    total = len(enriched)
+    page_rows = enriched[(page - 1) * per_page : page * per_page]
 
     items: list[ConferenceListItem] = []
-    for conf, match in rows:
+    for conf, match, live_overall in page_rows:
         base = _to_read(conf).model_dump()
         item = ConferenceListItem(
             **base,
-            overall_score=float(match.overall_score) if match else None,
+            overall_score=live_overall,
             messaging_score=float(match.messaging_score) if match else None,
             pillar_score=float(match.pillar_score) if match else None,
             sme_score=float(match.sme_score) if match else None,

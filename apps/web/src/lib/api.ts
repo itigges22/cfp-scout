@@ -257,6 +257,11 @@ export const pastConferencesApi = {
       method: "DELETE",
       query: { actor_label },
     }),
+  setVerdict: (id: string, verdict: import("./api-types").PastConferenceVerdict) =>
+    request<PastConferenceRead>(`${BASE}/past-conferences/${id}/verdict`, {
+      method: "PATCH",
+      body: { verdict },
+    }),
   importCsv: (file: File, ignore_errors = false, actor_label = "csv_import") => {
     const form = new FormData();
     form.append("file", file);

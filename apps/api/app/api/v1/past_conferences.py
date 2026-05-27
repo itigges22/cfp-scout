@@ -5,14 +5,16 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, File, Query, Response, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile, status
 
 from app.db.session import DbSession
+from app.db.models.entities import PastConference
 from app.schemas.common import Page
 from app.schemas.past_conference import (
     PastConferenceCreate,
     PastConferenceRead,
     PastConferenceUpdate,
+    PastConferenceVerdictPatch,
 )
 from app.services import past_conference_service
 
@@ -73,6 +75,33 @@ async def delete_(
     )
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/{pc_id}/verdict", response_model=PastConferenceRead)
+async def patch_verdict(
+    db: DbSession,
+    pc_id: UUID,
+    payload: PastConferenceVerdictPatch,
+) -> PastConferenceRead:
+    """Update only the operator's verdict on this past conference.
+
+    Cheap operation — no LLM, no rescore of upcoming events. The
+    matcher's ``series_memory`` boost reads ``verdict`` live on the
+    next list-render, so the verdict change reflects in conference
+    rankings without a rescore delay. The operator can thumbs-up /
+    thumbs-down through their entire past-events list in a few
+    minutes without ever waiting on the LLM.
+    """
+    obj = await db.get(PastConference, pc_id)
+    if obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"past conference {pc_id} not found",
+        )
+    obj.verdict = payload.verdict
+    await db.commit()
+    await db.refresh(obj)
+    return PastConferenceRead.model_validate(obj)
 
 
 @router.post("/import")

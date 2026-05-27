@@ -46,8 +46,17 @@ log = structlog.get_logger("scout.matcher.boosts")
 # Boost magnitudes — kept small so semantic fit dominates.
 CFP_URGENCY_BOOST = 0.10
 RECENCY_PENALTY = -0.05
-SERIES_MEMORY_BOOST = 0.10
 FLAGSHIP_EVENT_BOOST = 0.15
+
+# Series-memory boost is signed by the operator's verdict on the
+# past edition they attended. Symmetric +/-0.10 for explicit
+# verdicts; a smaller +0.05 for "we attended but haven't decided
+# yet" (default `unsure`).
+SERIES_MEMORY_BOOST_POSITIVE = 0.10
+SERIES_MEMORY_BOOST_NEUTRAL = 0.05
+SERIES_MEMORY_BOOST_NEGATIVE = -0.10
+# Kept for backwards-compat with code that imports the old name.
+SERIES_MEMORY_BOOST = SERIES_MEMORY_BOOST_POSITIVE
 
 # Threshold windows.
 CFP_URGENCY_DAYS = 30
@@ -133,6 +142,23 @@ _FLAGSHIP_EXCLUSIONS: tuple[str, ...] = (
 
 
 @dataclass(frozen=True, slots=True)
+class BoostContext:
+    """Pre-loaded state needed to compute boosts WITHOUT additional
+    DB queries per conference. Built once at the start of a list
+    request and reused across all conferences in the page.
+
+    Keeps the conference-list endpoint at O(1) DB queries regardless
+    of how many conferences are rendered.
+    """
+
+    # Normalized past-conference name → verdict. Built from
+    # past_conferences where attended_sme_ids is non-empty.
+    attended_name_to_verdict: dict[str, str]
+    # Set of conference series the operator approved in app.decisions.
+    approved_series_ids: frozenset[UUID]
+
+
+@dataclass(frozen=True, slots=True)
 class BoostBreakdown:
     """What got applied + why. The matcher logs this for observability
     so an operator can see why a conference's overall_score doesn't
@@ -167,19 +193,27 @@ async def compute_boosts(
     db: AsyncSession,
     conference: Conference,
     settings,
+    context: BoostContext | None = None,
 ) -> BoostBreakdown:
     """Compute the additive boost for one conference. Each component
     respects its own enable-flag setting; disabled components return
-    0.0 so the resulting total is just the sum of what's enabled."""
+    0.0 so the resulting total is just the sum of what's enabled.
+
+    If ``context`` is provided, ``_series_memory`` uses it for zero
+    additional DB queries. Otherwise we load context just-in-time
+    (one query) — convenient for single-conference detail endpoints
+    that don't justify the batching overhead.
+    """
     today = datetime.now(tz=UTC).date()
 
     cfp = _cfp_urgency(conference, today) if settings.enable_cfp_urgency_boost else 0.0
     recency = _recency_penalty(conference, today) if settings.enable_recency_penalty else 0.0
-    series = (
-        await _series_memory(db, conference)
-        if settings.enable_series_memory_boost
-        else 0.0
-    )
+    series: float
+    if settings.enable_series_memory_boost:
+        ctx = context if context is not None else await load_boost_context(db)
+        series = _series_memory_from_ctx(conference, ctx)
+    else:
+        series = 0.0
     flagship = (
         _flagship_event(conference, today)
         if settings.enable_flagship_event_boost
@@ -190,6 +224,50 @@ async def compute_boosts(
         recency_penalty=recency,
         series_memory=series,
         flagship_event=flagship,
+    )
+
+
+async def load_boost_context(db: AsyncSession) -> BoostContext:
+    """One-shot loader for the data ``_series_memory`` needs.
+
+    Two cheap queries (one for past_conferences + verdicts, one for
+    series_ids touched by approved decisions). Hold the result for
+    the duration of one API request — operator edits during a render
+    don't matter; the next request picks up the fresh state.
+    """
+    from app.db.models.entities import PastConference
+    from app.services.past_attendance import _normalize
+
+    past_rows = (
+        await db.execute(
+            select(PastConference.name, PastConference.verdict)
+            .where(PastConference.attended_sme_ids != [])
+        )
+    ).all()
+    attended: dict[str, str] = {}
+    for name, verdict in past_rows:
+        if not name or not name.strip():
+            continue
+        key = _normalize(name)
+        if not key:
+            continue
+        # Last-write-wins on duplicate normalized names. Operator can
+        # always re-thumb the duplicate row if they care which wins.
+        attended[key] = verdict
+
+    approved_q = (
+        select(Conference.series_id)
+        .join(Decision, Decision.conference_id == Conference.id)
+        .where(Decision.decision == "approved")
+        .where(Conference.series_id.is_not(None))
+        .distinct()
+    )
+    approved_ids = frozenset(
+        sid for sid in (await db.execute(approved_q)).scalars().all() if sid is not None
+    )
+    return BoostContext(
+        attended_name_to_verdict=attended,
+        approved_series_ids=approved_ids,
     )
 
 
@@ -254,43 +332,60 @@ def _flagship_event(conference: Conference, today: date) -> float:
     return 0.0
 
 
-async def _series_memory(db: AsyncSession, conference: Conference) -> float:
-    """+0.10 boost when the operator has a real prior connection to
-    this conference series — either:
+def _series_memory_from_ctx(conference: Conference, ctx: BoostContext) -> float:
+    """Verdict-signed series-memory boost using pre-loaded context.
 
-      a) approved a past edition in Scout's decisions table (requires
-         ``conference.series_id`` to be linked, plan 23), OR
-      b) actually attended a past edition (any row in
-         ``app.past_conferences`` whose normalized name matches and
-         has non-empty ``attended_sme_ids``).
+    Three signals, in priority order:
 
-    Path (b) is the practical workhorse — most operators have past
-    attendance imported from CSV but haven't built up a decision
-    history in Scout yet. Path (a) is for once the operator's
-    decision history accumulates.
+      1. Past attendance with EXPLICIT verdict:
+         - ``would_attend`` → +0.10 (clear positive)
+         - ``would_not_attend`` → −0.10 (clear penalty — keep these
+           events OFF the top of the list even though we did go)
+      2. Past attendance with ``unsure`` verdict:
+         - +0.05 (we attended once; small positive while the operator
+           hasn't formed an opinion)
+      3. Approved past edition in decisions table (no attendance row):
+         - +0.10
+
+    Operator intent (verdict) always wins over implicit signals when
+    a verdict exists.
     """
-    # Path (a): approved past edition via series_id linkage.
-    if conference.series_id is not None:
-        approved_exists = (
-            await db.execute(
-                select(Decision.id)
-                .join(Conference, Conference.id == Decision.conference_id)
-                .where(Conference.series_id == conference.series_id)
-                .where(Conference.id != conference.id)
-                .where(Decision.decision == "approved")
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if approved_exists is not None:
-            return SERIES_MEMORY_BOOST
+    # Path (1+2): past attendance with verdict — use trigram-style
+    # match against the pre-normalized name set.
+    target_name = conference.name or ""
+    if target_name and ctx.attended_name_to_verdict:
+        # Local import to avoid circular dep through past_attendance.
+        from app.services.past_attendance import _normalize, _similarity
 
-    # Path (b): operator actually attended a past edition. Local
-    # import to avoid a circular dep through services/past_attendance.
-    from app.services.past_attendance import conference_was_previously_attended
+        target_norm = _normalize(target_name)
+        if target_norm:
+            best_verdict: str | None = None
+            best_sim = 0.0
+            for past_name, verdict in ctx.attended_name_to_verdict.items():
+                sim = _similarity(target_norm, past_name)
+                if sim > best_sim:
+                    best_sim = sim
+                    best_verdict = verdict
+            if best_verdict is not None and best_sim >= 0.45:
+                if best_verdict == "would_attend":
+                    return SERIES_MEMORY_BOOST_POSITIVE
+                if best_verdict == "would_not_attend":
+                    return SERIES_MEMORY_BOOST_NEGATIVE
+                # "unsure" — small positive while operator decides.
+                return SERIES_MEMORY_BOOST_NEUTRAL
 
-    if await conference_was_previously_attended(db, conference):
-        return SERIES_MEMORY_BOOST
+    # Path (3): approved past edition by series_id linkage.
+    if conference.series_id is not None and conference.series_id in ctx.approved_series_ids:
+        return SERIES_MEMORY_BOOST_POSITIVE
     return 0.0
+
+
+async def _series_memory(db: AsyncSession, conference: Conference) -> float:
+    """Single-conference wrapper for legacy callers (matcher pipeline,
+    detail endpoints). Loads context on the fly. Prefer the batched
+    ``_series_memory_from_ctx`` for list endpoints."""
+    ctx = await load_boost_context(db)
+    return _series_memory_from_ctx(conference, ctx)
 
 
 def apply_boosts(base_score: float, boosts: BoostBreakdown) -> float:
@@ -300,10 +395,15 @@ def apply_boosts(base_score: float, boosts: BoostBreakdown) -> float:
 
 __all__ = [
     "BoostBreakdown",
+    "BoostContext",
     "apply_boosts",
     "compute_boosts",
+    "load_boost_context",
     "CFP_URGENCY_BOOST",
     "RECENCY_PENALTY",
     "SERIES_MEMORY_BOOST",
+    "SERIES_MEMORY_BOOST_POSITIVE",
+    "SERIES_MEMORY_BOOST_NEUTRAL",
+    "SERIES_MEMORY_BOOST_NEGATIVE",
     "FLAGSHIP_EVENT_BOOST",
 ]

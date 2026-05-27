@@ -56,6 +56,7 @@ const EMPTY: PastConferenceCreate = {
   session_type: null,
   notes: "",
   imported_from: null,
+  verdict: "unsure",
 };
 
 interface Props {
@@ -90,6 +91,7 @@ export function PastConferenceEditDialog({ open, initial, onOpenChange }: Props)
         session_type: initial.session_type,
         notes: initial.notes ?? "",
         imported_from: initial.imported_from,
+        verdict: initial.verdict,
       });
     } else {
       setForm(EMPTY);
