@@ -240,16 +240,85 @@ function ScorePanel({
         <ScoreRow label="Messaging fit" value={match.messaging_score} />
         <ScoreRow label="Pillar alignment" value={match.pillar_score} />
         <ScoreRow label="SME match" value={match.sme_score} />
+        {match.judge_score !== null && match.judge_score !== undefined ? (
+          <ScoreRow label="LLM judge" value={match.judge_score} />
+        ) : null}
+        {match.boosts && match.boosts.total !== 0 ? (
+          <BoostsBreakdown boosts={match.boosts} />
+        ) : null}
+        {match.judge_rationale ? (
+          <div className="mt-2 rounded-md border border-border-subtle bg-surface-2 p-3 text-sm text-fg">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-muted">
+              Judge rationale
+            </p>
+            <p>{match.judge_rationale}</p>
+          </div>
+        ) : null}
         {match.rationale_text ? (
           <div className="mt-2 rounded-md border border-border-subtle bg-surface-2 p-3 text-sm text-fg">
             <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-muted">
-              Rationale
+              Match rationale
             </p>
             <p>{match.rationale_text}</p>
           </div>
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function BoostsBreakdown({ boosts }: { boosts: import("@/lib/api-types").MatchBoosts }) {
+  // Render only the boosts that actually fired. Each entry is a
+  // signed pp adjustment to overall_score; positive lifts the rank,
+  // negative sinks it. The total is what got added to the weighted
+  // stage blend to produce overall_score.
+  const items: { label: string; value: number; title: string }[] = [];
+  if (boosts.flagship_event) {
+    items.push({
+      label: "Flagship event",
+      value: boosts.flagship_event,
+      title: "Name matches a curated list of industry / developer megaconferences (KubeCon, AWS re:Invent, NVIDIA GTC, etc.) and the event is future-dated.",
+    });
+  }
+  if (boosts.cfp_urgency) {
+    items.push({
+      label: "CFP urgency",
+      value: boosts.cfp_urgency,
+      title: "CFP deadline is within the next 30 days.",
+    });
+  }
+  if (boosts.series_memory) {
+    items.push({
+      label: "Series memory",
+      value: boosts.series_memory,
+      title: "Your team has attended a past edition of this series, or approved a past edition in Scout.",
+    });
+  }
+  if (boosts.recency_penalty) {
+    items.push({
+      label: "Recency penalty",
+      value: boosts.recency_penalty,
+      title: "Event is more than 12 months in the future — discounted because long-horizon planning is hard.",
+    });
+  }
+  if (items.length === 0) return null;
+  return (
+    <div className="rounded-md border border-border-subtle bg-surface-2 p-3 text-sm">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">
+        Boosts applied (+ {Math.round(boosts.total * 100)} pp to overall)
+      </p>
+      <ul className="space-y-1">
+        {items.map((it) => (
+          <li key={it.label} className="flex items-baseline justify-between" title={it.title}>
+            <span>{it.label}</span>
+            <span className={`tabular-nums font-medium ${it.value >= 0 ? "text-success" : "text-danger"}`}>
+              {it.value >= 0 ? "+" : ""}
+              {Math.round(it.value * 100)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

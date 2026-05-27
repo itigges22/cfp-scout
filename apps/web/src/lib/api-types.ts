@@ -235,12 +235,23 @@ export interface ConferenceListResponse {
   per_page: number;
 }
 
+export interface MatchBoosts {
+  cfp_urgency: number;
+  recency_penalty: number;
+  series_memory: number;
+  flagship_event: number;
+  total: number;
+}
+
 export interface ConferenceMatch {
   id: string;
   messaging_score: number;
   pillar_score: number;
   sme_score: number;
+  judge_score: number | null;
+  judge_rationale: string;
   overall_score: number;
+  boosts: MatchBoosts;
   recommended_sme_ids: string[];
   rationale_text: string;
   computed_at: string | null;

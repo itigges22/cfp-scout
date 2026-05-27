@@ -709,6 +709,14 @@ async def conference_match(db: DbSession, conference_id: UUID) -> dict:
             "algorithm_version": ALGORITHM_VERSION,
             "match": None,
         }
+    # Compute the boost breakdown live so the UI can show exactly
+    # what's lifting (or sinking) overall_score above the weighted
+    # stage blend. Cheap — no LLM, no embeddings.
+    from app.services.matcher.boosts import compute_boosts
+
+    conf = await db.get(Conference, conference_id)
+    settings = get_settings()
+    boosts = await compute_boosts(db=db, conference=conf, settings=settings)
     return {
         "conference_id": str(conference_id),
         "algorithm_version": ALGORITHM_VERSION,
@@ -717,7 +725,14 @@ async def conference_match(db: DbSession, conference_id: UUID) -> dict:
             "messaging_score": round(float(match.messaging_score), 4),
             "pillar_score": round(float(match.pillar_score), 4),
             "sme_score": round(float(match.sme_score), 4),
+            "judge_score": (
+                round(float(match.judge_score), 4)
+                if match.judge_score is not None
+                else None
+            ),
+            "judge_rationale": match.judge_rationale or "",
             "overall_score": round(float(match.overall_score), 4),
+            "boosts": boosts.as_dict(),
             "recommended_sme_ids": [str(s) for s in match.recommended_sme_ids],
             "rationale_text": match.rationale_text,
             "computed_at": match.computed_at.isoformat() if match.computed_at else None,
