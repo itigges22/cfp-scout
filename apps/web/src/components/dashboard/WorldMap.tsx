@@ -23,6 +23,8 @@ import {
 
 const WORLD_TOPO_URL = "/world-110m.json";
 
+type AttendanceStatus = "planned" | "attended" | "new";
+
 type LocationItem = {
   id: string;
   name: string;
@@ -32,6 +34,7 @@ type LocationItem = {
   lng: number;
   status: string;
   start_date: string | null;
+  attendance_status?: AttendanceStatus;
 };
 
 type CityCluster = {
@@ -41,7 +44,37 @@ type CityCluster = {
   lng: number;
   lat: number;
   conferences: LocationItem[];
+  // Strongest attendance signal in the cluster: planned > attended > new.
+  // Drives the marker color (green / yellow / red).
+  rolled_status: AttendanceStatus;
 };
+
+// Marker color palette by attendance status. Light fill + saturated
+// stroke so dots stay visible on the dark map background.
+const STATUS_FILL: Record<AttendanceStatus, string> = {
+  planned: "rgba(34, 197, 94, 0.85)",   // green-500
+  attended: "rgba(234, 179, 8, 0.85)",  // amber-500
+  new: "rgba(239, 68, 68, 0.85)",       // red-500
+};
+const STATUS_FILL_ACTIVE: Record<AttendanceStatus, string> = {
+  planned: "rgba(74, 222, 128, 1)",     // green-400
+  attended: "rgba(250, 204, 21, 1)",    // yellow-400
+  new: "rgba(248, 113, 113, 1)",        // red-400
+};
+const STATUS_HALO: Record<AttendanceStatus, string> = {
+  planned: "rgba(34, 197, 94, 0.18)",
+  attended: "rgba(234, 179, 8, 0.18)",
+  new: "rgba(239, 68, 68, 0.15)",
+};
+
+// Pick the strongest signal in a cluster of mixed-status events.
+// A city with ONE planned event + 5 new events should glow green —
+// the user already committed to going there.
+function rollupStatus(items: LocationItem[]): AttendanceStatus {
+  if (items.some((it) => it.attendance_status === "planned")) return "planned";
+  if (items.some((it) => it.attendance_status === "attended")) return "attended";
+  return "new";
+}
 
 export function WorldMap({ items }: { items: LocationItem[] }) {
   const navigate = useNavigate();
@@ -66,7 +99,10 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
     view.center[1] === DEFAULT_VIEW.center[1];
 
   // Cluster by (city, country) so 7 events in Boston render as one dot
-  // sized by count, with a popover listing each event.
+  // sized by count, with a popover listing each event. We compute the
+  // ``rolled_status`` in a second pass so cluster color reflects the
+  // strongest signal in the cluster (one planned event in a city of
+  // unseen events should still glow green).
   const clusters = useMemo<CityCluster[]>(() => {
     const m = new Map<string, CityCluster>();
     for (const it of items) {
@@ -85,8 +121,12 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
           lat: it.lat,
           lng: it.lng,
           conferences: [it],
+          rolled_status: "new", // filled in below
         });
       }
+    }
+    for (const cluster of m.values()) {
+      cluster.rolled_status = rollupStatus(cluster.conferences);
     }
     return [...m.values()];
   }, [items]);
@@ -157,15 +197,19 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
                   setPinnedKey(c.key === pinnedKey ? null : c.key);
                 }}
               >
-                {/* halo */}
+                {/* halo — color matches cluster's strongest attendance signal */}
                 <circle
                   r={radius * 1.8}
-                  fill="rgba(238,0,0,0.15)"
+                  fill={STATUS_HALO[c.rolled_status]}
                   pointerEvents="none"
                 />
                 <circle
                   r={radius}
-                  fill={isActive ? "rgba(255,80,80,1)" : "rgba(238,0,0,0.85)"}
+                  fill={
+                    isActive
+                      ? STATUS_FILL_ACTIVE[c.rolled_status]
+                      : STATUS_FILL[c.rolled_status]
+                  }
                   stroke="rgba(255,255,255,0.85)"
                   strokeWidth={isActive ? strokeW * 1.6 : strokeW}
                   style={{ cursor: "pointer" }}
@@ -249,6 +293,36 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
           )}
         </div>
       )}
+      {/* Status legend — bottom-left, away from zoom controls + hint
+          text. Counts come from the cluster set so the user sees the
+          relative breadth of each bucket at a glance. */}
+      <div className="absolute bottom-3 left-3 rounded-md border border-border-strong bg-surface-2/95 px-3 py-2 text-xs text-fg shadow backdrop-blur">
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
+          Attendance
+        </div>
+        <ul className="space-y-0.5">
+          {(
+            [
+              { s: "planned" as const, label: "Planning to attend" },
+              { s: "attended" as const, label: "Previously attended" },
+              { s: "new" as const, label: "Never attended" },
+            ]
+          ).map(({ s, label }) => {
+            const count = clusters.filter((c) => c.rolled_status === s).length;
+            return (
+              <li key={s} className="flex items-center gap-2">
+                <span
+                  className="inline-block size-2.5 rounded-full"
+                  style={{ backgroundColor: STATUS_FILL[s] }}
+                  aria-hidden
+                />
+                <span className="flex-1">{label}</span>
+                <span className="tabular-nums text-fg-muted">{count}</span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
       <div className="pointer-events-none absolute bottom-2 right-3 text-[10px] uppercase tracking-wider text-fg-subtle">
         Drag to pan · scroll to zoom · click a dot to pin · click a name to open
       </div>

@@ -174,7 +174,31 @@ async def stats_by_location(db: DbSession) -> dict:
 
     Excludes virtual events (they have no physical location) and
     quarantined / rejected conferences (clutter, not actionable).
+
+    Tags each conference with ``attendance_status``:
+      - ``planned``  → status is ``approved``, or operator's decisions
+        table has an ``approved`` decision for this conference
+      - ``attended`` → matches a past_conferences row the team attended
+        (trigram OR token OR substring name match — see
+        ``past_attendance._names_match``)
+      - ``new``      → none of the above; we have no history with this
+        series
     """
+    from app.services.past_attendance import is_previously_attended, load_attended_names
+
+    attended_names = await load_attended_names(db)
+
+    # Set of conference IDs the operator has approved in app.decisions.
+    # Cheap: one query for the small decisions set.
+    approved_ids = set(
+        (
+            await db.execute(
+                select(Decision.conference_id)
+                .where(Decision.decision == "approved")
+            )
+        ).scalars().all()
+    )
+
     rows = (
         await db.execute(
             select(
@@ -193,6 +217,15 @@ async def stats_by_location(db: DbSession) -> dict:
             .where(Conference.status.not_in(["quarantined", "rejected"]))
         )
     ).all()
+
+    def _status_of(conf_id, conf_name: str, conf_status: str) -> str:
+        # planned wins over attended wins over new — strongest first.
+        if conf_status == "approved" or conf_id in approved_ids:
+            return "planned"
+        if is_previously_attended(conf_name, attended_names):
+            return "attended"
+        return "new"
+
     return {
         "items": [
             {
@@ -204,6 +237,7 @@ async def stats_by_location(db: DbSession) -> dict:
                 "lng": float(r.longitude),
                 "status": r.status,
                 "start_date": r.start_date.isoformat() if r.start_date else None,
+                "attendance_status": _status_of(r.id, r.name, r.status),
             }
             for r in rows
         ]

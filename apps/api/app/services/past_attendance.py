@@ -44,6 +44,13 @@ log = structlog.get_logger("scout.past_attendance")
 # noise floor.
 _SIMILARITY_THRESHOLD = 0.45
 
+# Whole-word token Jaccard threshold — covers the case where one name
+# is a short prefix of the other (e.g. past "KubeCon" → upcoming
+# "KubeCon Conference 2027"), which fails trigram because the longer
+# string has many trigrams the short one doesn't share. Token Jaccard
+# is more forgiving here because it operates at the word level.
+_TOKEN_JACCARD_THRESHOLD = 0.5
+
 
 def _normalize(name: str) -> str:
     """Lowercase + strip year/edition + strip non-alphanumeric.
@@ -71,6 +78,55 @@ def _similarity(a: str, b: str) -> float:
     return len(ga & gb) / len(ga | gb)
 
 
+def _tokens(s: str) -> set[str]:
+    """Whole-word tokens from a normalized name. Single-letter tokens
+    are dropped because they're usually noise (the "&" in
+    "KubeCon & CloudNativeCon" becoming a stray "a")."""
+    return {tok for tok in s.split() if len(tok) > 1}
+
+
+def _token_jaccard(a: str, b: str) -> float:
+    """Token-level Jaccard. Handles the prefix case where one name is
+    a strict subset of the other ("kubecon" tokens ⊂ "kubecon
+    conference" tokens), which trigram Jaccard penalizes because of
+    the length asymmetry in the denominator."""
+    ta, tb = _tokens(a), _tokens(b)
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / len(ta | tb)
+
+
+def _names_match(target: str, past: str) -> bool:
+    """Decide whether two normalized event names are the same series.
+
+    Three independent signals — match wins if ANY fires:
+
+      1. Trigram Jaccard ≥ 0.45 — catches "vLLM Meetup - Mumbai" vs
+         "vLLM Meetup - Istanbul" (different city tail, shared stem).
+      2. Token Jaccard ≥ 0.50 — catches "KubeCon" vs "KubeCon
+         Conference 2027" (one is a strict subset of the other at
+         the word level).
+      3. Whole-name substring containment — catches the asymmetric
+         case where one normalized name is literally a substring of
+         the other after year/edition strip. Cheap belt-and-braces
+         against the long-name-vs-short-name false negative.
+    """
+    if not target or not past:
+        return False
+    if _similarity(target, past) >= _SIMILARITY_THRESHOLD:
+        return True
+    if _token_jaccard(target, past) >= _TOKEN_JACCARD_THRESHOLD:
+        return True
+    # Substring containment with a word-boundary check — "kube" in
+    # "kubernetes" should NOT match, but "kubecon" in "kubecon
+    # conference" should. Enforce by requiring the shorter side to
+    # be at least one full token.
+    shorter, longer = (target, past) if len(target) <= len(past) else (past, target)
+    if " " + shorter + " " in " " + longer + " ":
+        return True
+    return False
+
+
 async def load_attended_names(db: AsyncSession) -> tuple[str, ...]:
     """Return normalized names of past conferences the operator
     actually attended (attended_sme_ids non-empty).
@@ -88,26 +144,15 @@ async def load_attended_names(db: AsyncSession) -> tuple[str, ...]:
 
 
 def is_previously_attended(conference_name: str, attended_names: tuple[str, ...]) -> bool:
-    """Return True when any past-attended name shares enough trigrams
-    with ``conference_name`` to count as the same conference series.
-
-    Uses trigram Jaccard ≥ ``_SIMILARITY_THRESHOLD``. This catches:
-      - exact series matches across cities ("vLLM Meetup - Mumbai"
-        attended → "vLLM Meetup - Istanbul" upcoming)
-      - exact series matches across years ("ODSC East 2024" attended
-        → "ODSC East 2026" upcoming)
-      - close but not identical names where the operator clearly
-        means the same event
-    """
+    """Return True when any past-attended name passes ``_names_match``
+    against ``conference_name``. See ``_names_match`` for the full
+    matching policy — trigram OR token OR substring."""
     if not conference_name or not attended_names:
         return False
     target = _normalize(conference_name)
     if not target:
         return False
-    for name in attended_names:
-        if _similarity(target, name) >= _SIMILARITY_THRESHOLD:
-            return True
-    return False
+    return any(_names_match(target, past) for past in attended_names)
 
 
 async def conference_was_previously_attended(

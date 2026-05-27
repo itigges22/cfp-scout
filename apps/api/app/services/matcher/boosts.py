@@ -350,23 +350,41 @@ def _series_memory_from_ctx(conference: Conference, ctx: BoostContext) -> float:
     Operator intent (verdict) always wins over implicit signals when
     a verdict exists.
     """
-    # Path (1+2): past attendance with verdict — use trigram-style
-    # match against the pre-normalized name set.
+    # Path (1+2): past attendance with verdict — use the combined
+    # matcher (trigram OR token OR substring) so KubeCon (past) →
+    # KubeCon Conference 2027 (upcoming) catches even though the
+    # trigram alone falls below 0.45.
     target_name = conference.name or ""
     if target_name and ctx.attended_name_to_verdict:
         # Local import to avoid circular dep through past_attendance.
-        from app.services.past_attendance import _normalize, _similarity
+        from app.services.past_attendance import (
+            _names_match,
+            _normalize,
+            _similarity,
+            _token_jaccard,
+        )
 
         target_norm = _normalize(target_name)
         if target_norm:
+            # Score each past row's match strength + pick the strongest
+            # match (so the operator can have per-edition preferences
+            # like "vLLM Mumbai 👎 but vLLM Boston 👍" and the closer
+            # city wins). We rank matches by trigram similarity first,
+            # falling back to token Jaccard for the prefix case.
             best_verdict: str | None = None
-            best_sim = 0.0
+            best_score = 0.0
             for past_name, verdict in ctx.attended_name_to_verdict.items():
-                sim = _similarity(target_norm, past_name)
-                if sim > best_sim:
-                    best_sim = sim
+                if not _names_match(target_norm, past_name):
+                    continue
+                # Composite rank: take whichever signal is strongest.
+                score = max(
+                    _similarity(target_norm, past_name),
+                    _token_jaccard(target_norm, past_name),
+                )
+                if score > best_score:
+                    best_score = score
                     best_verdict = verdict
-            if best_verdict is not None and best_sim >= 0.45:
+            if best_verdict is not None:
                 if best_verdict == "would_attend":
                     return SERIES_MEMORY_BOOST_POSITIVE
                 if best_verdict == "would_not_attend":
