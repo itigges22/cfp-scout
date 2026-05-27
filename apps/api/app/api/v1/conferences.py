@@ -71,6 +71,10 @@ class ConferenceListItem(ConferenceRead):
     messaging_score: float | None = None
     pillar_score: float | None = None
     sme_score: float | None = None
+    # True when a normalized-name match exists in app.past_conferences
+    # where attended_sme_ids is non-empty — the operator's team
+    # already attended a past edition of this event series.
+    previously_attended: bool = False
 
 
 class ConferenceListResponse(BaseModel):
@@ -437,13 +441,35 @@ async def list_conferences(
     sort: Literal["score", "messaging", "pillar", "sme", "date", "name"] = Query(
         default="score",
     ),
+    attendance_filter: Literal["all", "new", "returning"] = Query(
+        default="all",
+        description=(
+            "Filter by past-attendance status: 'all' (default), 'new' "
+            "(conferences whose normalized name doesn't match any "
+            "past_conferences row the operator attended), 'returning' "
+            "(conferences whose normalized name DOES match a past-attended "
+            "edition)."
+        ),
+    ),
 ) -> ConferenceListResponse:
     """List conferences. Default excludes quarantined rows so the dashboard
     doesn't show them. Pass ``?status=quarantined`` (multi-OK) to opt in.
 
     LEFT JOINs the latest matches row (by algorithm_version) so the list
     can render scores without an N+1 round-trip.
+
+    Tags each item with ``previously_attended`` based on a normalized-name
+    match against ``app.past_conferences`` (where attended_sme_ids is
+    non-empty). The ``attendance_filter`` query parameter narrows the
+    result set by that flag.
     """
+    from app.services.past_attendance import (
+        is_previously_attended,
+        load_attended_names,
+    )
+
+    attended_names = await load_attended_names(db)
+
     stmt = select(Conference, Match).outerjoin(
         Match,
         (Match.conference_id == Conference.id) & (Match.algorithm_version == ALGORITHM_VERSION),
@@ -481,13 +507,21 @@ async def list_conferences(
     else:  # name
         stmt = stmt.order_by(Conference.name.asc())
 
-    # Count the conferences (not the joined rows).
-    count_stmt = select(func.count(Conference.id)).where(
-        Conference.status.in_(status_in) if status_in else Conference.status != "quarantined"
-    )
-    total = (await db.execute(count_stmt)).scalar_one()
-
-    rows = (await db.execute(stmt.offset((page - 1) * per_page).limit(per_page))).all()
+    # Past-attendance filtering happens in Python because the
+    # comparison key is a normalized name (year/edition stripped),
+    # not a column we can directly WHERE on. The candidate set is
+    # already small after status filter so over-fetch + filter
+    # in-app is fine. We still cap total to keep pagination math
+    # honest.
+    all_rows = (await db.execute(stmt)).all()
+    if attendance_filter != "all":
+        attended = attendance_filter == "returning"
+        all_rows = [
+            (c, m) for c, m in all_rows
+            if is_previously_attended(c.name, attended_names) == attended
+        ]
+    total = len(all_rows)
+    rows = all_rows[(page - 1) * per_page : page * per_page]
 
     items: list[ConferenceListItem] = []
     for conf, match in rows:
@@ -498,6 +532,7 @@ async def list_conferences(
             messaging_score=float(match.messaging_score) if match else None,
             pillar_score=float(match.pillar_score) if match else None,
             sme_score=float(match.sme_score) if match else None,
+            previously_attended=is_previously_attended(conf.name, attended_names),
         )
         items.append(item)
 

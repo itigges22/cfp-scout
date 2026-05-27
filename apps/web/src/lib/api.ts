@@ -302,6 +302,7 @@ type ConferenceListParams = {
   per_page?: number;
   status?: string | string[];
   sort?: "score" | "messaging" | "pillar" | "sme" | "date" | "name";
+  attendance_filter?: "all" | "new" | "returning";
 };
 
 export const conferencesApi = {

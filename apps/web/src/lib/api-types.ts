@@ -225,6 +225,7 @@ export interface ConferenceListItem extends ConferenceRead {
   messaging_score: number | null;
   pillar_score: number | null;
   sme_score: number | null;
+  previously_attended: boolean;
 }
 
 export interface ConferenceListResponse {

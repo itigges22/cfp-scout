@@ -255,27 +255,42 @@ def _flagship_event(conference: Conference, today: date) -> float:
 
 
 async def _series_memory(db: AsyncSession, conference: Conference) -> float:
-    """If the operator approved any other edition of this conference
-    series, give the current edition a +0.10 boost.
+    """+0.10 boost when the operator has a real prior connection to
+    this conference series — either:
 
-    Requires ``conference.series_id`` to be populated (plan 23). If
-    series is NULL or no past edition was approved, returns 0.0.
+      a) approved a past edition in Scout's decisions table (requires
+         ``conference.series_id`` to be linked, plan 23), OR
+      b) actually attended a past edition (any row in
+         ``app.past_conferences`` whose normalized name matches and
+         has non-empty ``attended_sme_ids``).
+
+    Path (b) is the practical workhorse — most operators have past
+    attendance imported from CSV but haven't built up a decision
+    history in Scout yet. Path (a) is for once the operator's
+    decision history accumulates.
     """
-    if conference.series_id is None:
-        return 0.0
-    # Look for any non-self conference in the same series with an
-    # approved decision.
-    exists = (
-        await db.execute(
-            select(Decision.id)
-            .join(Conference, Conference.id == Decision.conference_id)
-            .where(Conference.series_id == conference.series_id)
-            .where(Conference.id != conference.id)
-            .where(Decision.decision == "approved")
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    return SERIES_MEMORY_BOOST if exists is not None else 0.0
+    # Path (a): approved past edition via series_id linkage.
+    if conference.series_id is not None:
+        approved_exists = (
+            await db.execute(
+                select(Decision.id)
+                .join(Conference, Conference.id == Decision.conference_id)
+                .where(Conference.series_id == conference.series_id)
+                .where(Conference.id != conference.id)
+                .where(Decision.decision == "approved")
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if approved_exists is not None:
+            return SERIES_MEMORY_BOOST
+
+    # Path (b): operator actually attended a past edition. Local
+    # import to avoid a circular dep through services/past_attendance.
+    from app.services.past_attendance import conference_was_previously_attended
+
+    if await conference_was_previously_attended(db, conference):
+        return SERIES_MEMORY_BOOST
+    return 0.0
 
 
 def apply_boosts(base_score: float, boosts: BoostBreakdown) -> float:

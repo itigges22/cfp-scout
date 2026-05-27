@@ -51,9 +51,17 @@ const SORT_OPTS: { value: SortOpt; label: string }[] = [
   { value: "name", label: "Name" },
 ];
 
+type AttendanceFilter = "all" | "new" | "returning";
+const ATTENDANCE_OPTS: { value: AttendanceFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "new", label: "New only" },
+  { value: "returning", label: "Previously attended" },
+];
+
 function ConferencesPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [sort, setSort] = useState<SortOpt>("score");
+  const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>("all");
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [discoverResult, setDiscoverResult] = useState<{
     new_conferences: number;
@@ -89,14 +97,15 @@ function ConferencesPage() {
   });
 
   const queryKey = useMemo(
-    () => ["conferences", { status, sort }] as const,
-    [status, sort],
+    () => ["conferences", { status, sort, attendanceFilter }] as const,
+    [status, sort, attendanceFilter],
   );
   const { data, isLoading, error } = useQuery({
     queryKey,
     queryFn: () =>
       conferencesApi.list({
         sort,
+        attendance_filter: attendanceFilter,
         ...(status ? { status } : {}),
         per_page: 100,
       }),
@@ -143,6 +152,23 @@ function ConferencesPage() {
             </Button>
           ))}
         </div>
+      </div>
+
+      {/* Past-attendance filter row — separate from status/sort because
+          it's a different axis: "what fraction of the dataset" rather
+          than "which status bucket" or "how ranked". */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-fg-muted">Attendance:</span>
+        {ATTENDANCE_OPTS.map((opt) => (
+          <Button
+            key={opt.value}
+            variant={attendanceFilter === opt.value ? "default" : "outline"}
+            size="sm"
+            onClick={() => setAttendanceFilter(opt.value)}
+          >
+            {opt.label}
+          </Button>
+        ))}
       </div>
 
       {discoverResult ? (
@@ -276,6 +302,11 @@ function ConferenceRow({ c }: { c: import("@/lib/api-types").ConferenceListItem 
             <h2 className="truncate text-base font-medium text-fg">{c.name}</h2>
             <StatusPill status={c.status} />
             {c.is_virtual ? <Badge variant="muted">Virtual</Badge> : null}
+            {c.previously_attended ? (
+              <Badge variant="success" title="Your team has attended a past edition of this conference series">
+                Previously attended
+              </Badge>
+            ) : null}
           </div>
           <p className="mt-1 text-xs text-fg-muted">
             {c.start_date ?? "TBD"}
