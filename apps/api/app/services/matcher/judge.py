@@ -54,19 +54,47 @@ from app.services.matcher.calibration import (
 
 log = structlog.get_logger("scout.matcher.judge")
 
-PROMPT_VERSION = "judge.cross_encoder.v2"
+PROMPT_VERSION = "judge.cross_encoder.v3"
 
 _SYSTEM_PROMPT = """\
 You are scoring whether the operator should send a senior speaker /
 sponsor to a tech conference, given the organization's strategic
 messaging pillars.
 
-The question you are answering is NOT "how pillar-specific is this
-conference?" — it is "is this a strategically valuable event for
-this operator?" Those are different. A flagship industry event with
-thousands of attendees that covers ALL FOUR pillars at moderate
-depth is typically more valuable than a 50-person local meetup that
-laser-focuses on ONE pillar. Reach matters.
+THE OPERATOR PROFILE matters and is fixed:
+  The operator is a COMMERCIAL OPEN-SOURCE SOFTWARE VENDOR (think
+  Red Hat / SUSE / Canonical / VMware). Not a research lab, not
+  an academic institution, not a pure-play SaaS startup. Their
+  business model is selling enterprise subscriptions to open-
+  source platforms. They attend conferences to:
+    - Speak (demonstrate thought leadership to practitioners)
+    - Sponsor booths (lead generation from enterprise buyers)
+    - Recruit (find platform engineers + developers)
+    - Maintain open-source community presence
+
+  Their TARGET AUDIENCE at events is enterprise developers,
+  platform engineers, IT decision-makers, and open-source
+  contributors — NOT PhD students, ML researchers, or academic
+  faculty.
+
+This profile drives a sharp distinction in your scoring:
+  - INDUSTRY / DEVELOPER conferences (KubeCon, AWS re:Invent,
+    AI Engineer World Fair, Open Source Summit, DockerCon, GitHub
+    Universe, Microsoft Ignite, Conf42, Agentic AI Summit, AI
+    Infra Summit, MLOps World, Ray Summit, Cloud Native AI Day)
+    are HIGH value — score 70-100 depending on pillar relevance.
+  - PURELY ACADEMIC / RESEARCH conferences (NeurIPS, ICLR, ICML,
+    AAAI, EMNLP, ACL, CVPR, COLT) are LOW-MEDIUM strategic value
+    for a commercial vendor — score 25-45 ("adjacent"). They have
+    great content but the wrong audience for a sales / community
+    motion. A research-heavy team might send one person; the
+    operator is not going to put their main speaker presence there.
+  - ACADEMIC-INDUSTRY HYBRIDS (KDD, RecSys, CIKM, SIGIR) sit
+    between — score 40-60.
+
+The question is NOT "how pillar-specific is this conference?" —
+it is "is this where the operator should be putting speaker /
+sponsor / recruiting resources?"
 
 You will be shown:
   1. The organization's strategic pillars (each with a long-form
@@ -79,67 +107,86 @@ Output JSON with two fields and nothing else:
   "rationale": "<one sentence explaining the score>"
 }
 
-Scoring guide (calibrated to STRATEGIC VALUE, not pillar fit alone):
+Scoring guide (calibrated to STRATEGIC VALUE for a commercial
+open-source software vendor going to market to enterprise
+developers + platform engineers + IT decision-makers):
 
   90-100 — Must-attend
-    Flagship industry events deeply covering at least one pillar,
-    OR specifically-named pillar matches.
+    Flagship INDUSTRY / DEVELOPER conferences directly aligned
+    with the operator's pillars.
     Examples:
-      · NVIDIA GTC, KubeCon + CloudNativeCon, PyTorch Conference,
-        Ray Summit, Databricks Data+AI Summit, NeurIPS, ICML,
-        ICLR, AAAI, Open Source Summit, AWS re:Invent — these are
-        the global ML/AI/infra megaconferences every AI-strategy
-        team should consider, regardless of how "broad" they look
-        from the description alone.
-      · A "vLLM Meetup" or "Kubeflow Day" type event where the
-        pillar subject matter is named directly in the conference.
+      · KubeCon + CloudNativeCon — Kubernetes / cloud-native is
+        the operator's hybrid-cloud pillar; this is THE venue.
+      · AWS re:Invent, Google Cloud Next, Microsoft Ignite —
+        major hyperscaler conferences are where enterprise IT
+        buying decisions happen.
+      · NVIDIA GTC — GPU / inference is THE foundation of the
+        inferencing pillar.
+      · Open Source Summit (Linux Foundation) — community
+        positioning is core to a commercial open-source vendor.
+      · AI Engineer World Fair, AI Infra Summit, Cloud Native
+        AI & Inference Day — practitioner-focused AI events.
+      · A "vLLM Meetup" / "Kubeflow Day" / "PyTorch Conference"
+        where the pillar subject matter is named directly AND
+        the event draws practitioner attendance.
 
   70-89 — Strong fit
-    Real specialty events for a pillar (Agentic AI Summit, MLOps
-    World, Cloud Native AI & Inference Day, AI Infra Summit) OR
-    mid-size industry events with clear AI/infrastructure focus
-    (AI Engineer World Fair, KServe Day, KDD, RecSys).
+    Real specialty events for a pillar with practitioner audiences
+    — Agentic AI Summit, MLOps World, Ray Summit, Open Data
+    Science Conference (ODSC), AGNTCon, regional Cloud Native
+    Day, mid-size industry AI events.
 
   50-69 — Worth considering
-    Mid-size events broadly covering AI/ML/MLOps topics that touch
-    the pillars but aren't a top priority. Small regional meetups
-    on a pillar topic also belong here — they are real matches
-    but their audience size limits strategic value.
+    Mid-size industry events broadly covering AI/ML/MLOps topics
+    that touch the pillars but aren't a top priority. Small
+    regional / local meetups on a pillar topic also belong here
+    (real matches but limited reach). Academic-industry hybrid
+    venues (KDD, RecSys, CIKM, SIGIR) belong here too — meaningful
+    industry presence, but academic-trending audience.
     Examples: a small local AgentCon, generic "AI Conference 2026",
-    regional Cloud Native Day.
+    regional Cloud Native Day, KDD.
 
-  30-49 — Adjacent
-    Software / data / cloud events with only partial AI relevance.
-    Examples: a data engineering conference that's not specifically
-    AI-focused; Snowflake Summit if the org doesn't run on
-    Snowflake; a SQL-only Power BI event.
+  30-49 — Adjacent (includes pure academic ML venues)
+    Pure academic / research ML conferences — NeurIPS, ICLR,
+    ICML, AAAI, EMNLP, ACL, CVPR, COLT — score here. They have
+    excellent content but the wrong audience for a commercial
+    vendor's go-to-market motion. The operator might send one
+    research-leaning person for recruiting / scouting, but it is
+    NOT a primary speaking / sponsoring venue.
+    Also: software / data / cloud events with only partial AI
+    relevance (a data engineering conference not specifically AI-
+    focused; a Snowflake Summit if the org doesn't run on
+    Snowflake).
 
   0-29 — Off-topic
     Genuinely irrelevant — PHP conference, generic DevFest, a
     payments conference, a Power BI user group with no AI track.
-    Should also score here if the conference NAME contains no
-    AI/ML vocabulary AND the topics list doesn't match (regardless
-    of how AI-flavored the enriched description sounds, since
-    enrichment can over-AI-ify a generic event).
+    Score here when the conference NAME contains no AI/ML
+    vocabulary AND the topics list doesn't match (regardless of
+    how AI-flavored the enriched description sounds — enrichment
+    can over-AI-ify a generic event).
 
 CRITICAL RULES:
-- Flagship events (NVIDIA GTC, KubeCon + CloudNativeCon, PyTorch
-  Conference, Kubeflow events, NeurIPS, ICML, ICLR, AAAI, AI
+- INDUSTRY flagships (KubeCon, AWS re:Invent, NVIDIA GTC,
+  Microsoft Ignite, Google Cloud Next, Open Source Summit, AI
   Engineer World Fair, AI Infra Summit, Cloud Native AI Inference
-  Day, Open Source Summit, KDD, RecSys, AWS re:Invent) default to
-  80+ even when "broad" — they are where the industry shows up
-  and Red Hat / similar orgs need a presence.
+  Day, PyTorch Conference, Kubeflow events, Ray Summit, ODSC,
+  DockerCon, GitHub Universe) default to 80+ — these are where
+  the operator's target audience is.
+- ACADEMIC ML venues (NeurIPS, ICLR, ICML, AAAI, EMNLP, ACL,
+  CVPR, COLT) score 25-45 by default. Their famous reputation is
+  irrelevant — they are wrong-audience for a commercial vendor.
+  Do NOT score them 70+ even though they're "prestigious."
 - Local single-pillar meetups (AgentCon - Lincoln, AgentCamp
-  Lagos) should typically score 55-70 — they're real matches but
-  their audience size limits strategic value. Do not score them
-  90+ unless the location is itself strategic.
-- A conference name that mentions a specifically-named pillar
+  Lagos) score 55-70 — real matches but limited reach. Do not
+  score them 90+ unless the location is itself strategic.
+- A conference name mentioning a specifically-named pillar
   technology (vLLM, llm-d, Kubeflow, RAG, MCP, agentic) gets a
-  +10 bump within its bucket.
+  +10 bump within its bucket, IF the event is industry/
+  practitioner-oriented (not a paper-presentation venue).
 - Past-tense academic editions ("NeurIPS 2024", "ICLR 2024") that
-  have already happened still score well — the future editions
-  will be the same level of strategic event. Don't penalize a
-  conference for being last year's edition; future editions exist.
+  have already happened are still academic — still score 25-45.
+  Their future editions will be the same kind of event.
 
 Output the JSON object directly, no preamble, no markdown fences.
 

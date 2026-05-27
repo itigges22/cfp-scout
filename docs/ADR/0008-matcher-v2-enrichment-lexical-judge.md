@@ -3,6 +3,7 @@
 **Status:** Accepted · 2026-05-26
 **Updated:** 2026-05-26 (v2.1: few-shot calibration · judge cache · business-logic boosts · lexical corpus-size guard)
 **Updated:** 2026-05-26 (v2.2: judge prompt reframe for strategic value · flagship-event boost · weight rebalance)
+**Updated:** 2026-05-27 (v2.3: industry-vs-academic distinction — pure ML research venues are NOT strategic for a commercial vendor)
 **Supersedes:** ADR-0005 (Auto-run matcher on first view) — still in force but
 the matcher it triggers is now the v2 pipeline described here.
 
@@ -318,6 +319,73 @@ The Pydantic validator on `Settings` previously required
 pipeline, so it was relaxed to "weights non-negative and sum > 0."
 The matcher pipeline already renormalizes by `sum(weights)`
 internally.
+
+## v2.3 additions (2026-05-27)
+
+After v2.2 rolled out, the top 25 was led by **ICLR 2025 at #1**,
+**ICML 2026 at #4**, **NeurIPS 2026 at #17**. Those are world-class
+academic ML venues — but they are wrong-audience for the operator,
+who is a commercial open-source software vendor going to market to
+enterprise developers + platform engineers + IT decision-makers.
+
+Academic conferences:
+  - Audience: PhD students, researchers, professors
+  - Format: peer-reviewed paper presentations
+  - Output: citations, academic credibility
+  - Value to a commercial vendor: LOW. Maybe one research-leaning
+    employee attends for recruiting / scouting — not a primary
+    speaking / sponsoring venue.
+
+Industry / developer conferences (KubeCon, AWS re:Invent, AI
+Engineer World Fair, Open Source Summit, DockerCon):
+  - Audience: practitioners, decision-makers
+  - Output: leads, brand visibility, hiring
+  - Value to a commercial vendor: HIGH. This IS the go-to-market.
+
+v2.2's failure mode was treating "famous AI conference" as
+synonymous with "strategic value." Those are different concepts
+for a commercial vendor — fame in academia ≠ presence at the right
+audience.
+
+### 7.1 Stripped academic-only venues from the flagship list
+
+`_FLAGSHIP_PATTERNS` in `boosts.py` no longer includes NeurIPS,
+ICML, ICLR, AAAI, KDD, RecSys, EMNLP, ACL. Added in their place:
+DockerCon, GitHub Universe, OpenInfra Summit, Linux Foundation,
+DevOpsDays, All Things Open, Microsoft Build, ODSC (Open Data
+Science Conference — practitioner-oriented despite the "science"
+in the name). The list is now exclusively industry / developer
+venues that draw the operator's target audience.
+
+### 7.2 Judge prompt v3 — explicit operator profile
+
+The judge prompt now states the operator profile up-front: a
+commercial open-source software vendor (think Red Hat / SUSE /
+Canonical / VMware), and explicitly calls out that academic ML
+venues score 25-45 ("adjacent") despite their prestige, while
+INDUSTRY flagships default to 80+.
+
+Bumped `PROMPT_VERSION` v2 → v3. Cache invalidates so every
+conference re-judges with the new calibration.
+
+Smoke-test verified the recalibration on the same anchors as v2.2:
+
+| Conference | v2.2 judge | v2.3 judge | Delta |
+|------------|-----------:|-----------:|------:|
+| NVIDIA GTC | 0.95 | 0.90 | -0.05 (still flagship) |
+| KubeCon NA 2026 | 0.70 | 0.90 | +0.20 (industry flagship recognized) |
+| PyTorch Conference 2026 | 0.70 | 0.70 | unchanged |
+| **NeurIPS 2026** | **0.95** | **0.30** | **-0.65 (academic correctly demoted)** |
+| vLLM & llm-d Meetup London | 0.70 | 0.85 | +0.15 (peaked specialty rises) |
+| AgentCon - Lincoln | 0.60 | 0.60 | unchanged (local meetup) |
+| Devoxx Morocco | 0.30 | 0.00 | -0.30 (off-topic) |
+
+Note for future operator-types: if the matcher is ever adapted
+for a research-leaning organization (DeepMind, OpenAI Research,
+academic AI lab), the operator-profile paragraph in the judge
+system prompt — and the flagship list — need to be inverted.
+This would be a good case for a future `operator_profile` setting
+parameter feeding the prompt.
 
 ## Negative space
 

@@ -53,15 +53,23 @@ FLAGSHIP_EVENT_BOOST = 0.15
 CFP_URGENCY_DAYS = 30
 RECENCY_PENALTY_MONTHS = 12  # events further out than this get the penalty
 
-# Vendor-neutral flagship AI / ML / infrastructure conferences. A
-# future-dated edition whose name matches any of these gets a +0.15
-# bump. These are the global megaconferences any AI-strategy team
-# should consider regardless of how "pillar-specific" they look —
-# the matcher's other signals systematically undervalue them because
-# their content is broad (touches all pillars at moderate depth
-# rather than peaking on one), but their strategic value is the
-# OPPOSITE of that pattern: thousands of attendees, the industry's
-# center of gravity.
+# Flagship INDUSTRY / DEVELOPER conferences that a commercial
+# open-source software vendor (Red Hat, etc.) should default to
+# being present at. A future-dated edition whose name matches any
+# of these gets a +0.15 bump.
+#
+# Deliberately INDUSTRY-only:
+#   - Where developers + platform engineers + IT decision-makers go.
+#   - Where vendors speak, sponsor booths, and generate leads.
+#
+# Deliberately EXCLUDES pure academic ML venues (NeurIPS, ICLR,
+# ICML, AAAI, EMNLP, ACL, CVPR). Those are great events but their
+# audience is researchers / PhD students / professors — wrong
+# audience for a commercial-software-vendor go-to-market motion.
+# Academic-hybrid venues like KDD and RecSys have meaningful
+# industry presence but still trend academic; treated as mid-tier
+# (no flagship boost) and the judge prompt explicitly calibrates
+# them as "adjacent" for commercial vendors.
 #
 # Match is case-insensitive substring on conference.name. List
 # updated periodically; submit additions via a docs PR.
@@ -69,27 +77,17 @@ _FLAGSHIP_PATTERNS: tuple[str, ...] = (
     # GPU + inference / model serving
     "nvidia gtc",
     "ray summit",
-    # Kubernetes / cloud-native
+    # Kubernetes / cloud-native + Linux Foundation events
     "kubecon",
     "cloudnativecon",
     "open source summit",
+    "openinfra summit",
+    "linux foundation",
     "kubeflow",
-    # Frameworks
+    "dockercon",
+    # Frameworks (industry-facing)
     "pytorch conference",
-    "tensorflow",
-    # Academic ML
-    "neurips",
-    "icml ",
-    " icml",
-    "iclr",
-    "aaai",
-    "kdd ",
-    " kdd",
-    "recsys",
-    "emnlp",
-    "acl ",
-    " acl",
-    # Industry AI summits
+    # AI / ML practitioner conferences
     "ai engineer world fair",
     "ai engineer summit",
     "ai infra summit",
@@ -97,17 +95,22 @@ _FLAGSHIP_PATTERNS: tuple[str, ...] = (
     "mlops world",
     "mlops community",
     "cloud native ai",
-    # Data + AI platform megaconferences
-    "data + ai summit",
-    "databricks data + ai",
-    "snowflake summit",
+    "open data science conference",  # ODSC — practitioner-oriented
+    # Major cloud + enterprise platform conferences
     "aws re:invent",
     "google cloud next",
     "microsoft ignite",
-    # LLM / GenAI specialized but high-reach
-    "open data science conference",  # ODSC
-    "transform x",
+    "microsoft build",
+    "data + ai summit",
+    "databricks data + ai",
+    "snowflake summit",
+    # Developer + platform engineer events
+    "github universe",
+    "devopsdays",  # global series, all editions
+    "all things open",
+    # World-class industry AI summits
     "world summit ai",
+    "transform x",
 )
 
 
