@@ -92,7 +92,10 @@ async def _process_one(
             # Cache check: if the hash matches and we already have a
             # judge score, skip the LLM call entirely.
             new_hash = compute_judge_input_hash(
-                conference=conf, pillars=pillars, calibration=calibration
+                conference=conf,
+                pillars=pillars,
+                calibration=calibration,
+                operator_profile=settings.operator_profile,
             )
             judge_score = None
             judge_rationale = ""
@@ -110,6 +113,7 @@ async def _process_one(
                     conference=conf,
                     pillars=pillars,
                     calibration=calibration,
+                    operator_profile=settings.operator_profile,
                 )
                 if judge is None:
                     counters["llm_failed"] += 1

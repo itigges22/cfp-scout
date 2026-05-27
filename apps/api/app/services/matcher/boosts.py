@@ -106,11 +106,29 @@ _FLAGSHIP_PATTERNS: tuple[str, ...] = (
     "snowflake summit",
     # Developer + platform engineer events
     "github universe",
-    "devopsdays",  # global series, all editions
     "all things open",
+    # NOTE: DevOpsDays was removed — the brand is well-known but
+    # individual city editions are 50-200 person community meetups,
+    # not flagship-scale. They land in the matcher's regular tier
+    # via the messaging/judge stages just fine.
     # World-class industry AI summits
     "world summit ai",
     "transform x",
+)
+
+# Override the flagship boost when the conference name contains any
+# of these substrings — they indicate a community-satellite spinoff
+# of a flagship brand, not the main event itself. Microsoft Build
+# proper is a 5000-person Seattle conference; "Microsoft Build //
+# Localhost:Capetown" is a 50-person community watch party. We
+# want the boost on the former and not the latter.
+_FLAGSHIP_EXCLUSIONS: tuple[str, ...] = (
+    "//localhost",
+    ": localhost",
+    " localhost",
+    "community edition",
+    " watch party",
+    "viewing party",
 )
 
 
@@ -204,7 +222,8 @@ def _recency_penalty(conference: Conference, today: date) -> float:
 
 def _flagship_event(conference: Conference, today: date) -> float:
     """+0.15 if the conference's name matches a known flagship event
-    pattern AND the event is in the future.
+    pattern AND the event is in the future AND the name doesn't
+    contain a community-satellite exclusion marker.
 
     Past-dated flagships (NeurIPS 2024 etc.) are correctly handled
     elsewhere — they get archived / aged out. The boost only applies
@@ -212,13 +231,23 @@ def _flagship_event(conference: Conference, today: date) -> float:
 
     Match is case-insensitive substring on the conference name —
     cheap, deterministic, no LLM, no DB lookup. The pattern list
-    is curated and vendor-neutral; see ``_FLAGSHIP_PATTERNS``.
+    is curated and vendor-neutral (see ``_FLAGSHIP_PATTERNS``); the
+    exclusion list catches community-satellite spinoffs that share
+    the flagship's brand name but are 50-person local meetups, not
+    the actual flagship event (see ``_FLAGSHIP_EXCLUSIONS``).
     """
     if not conference.name:
         return 0.0
     if conference.start_date and conference.start_date < today:
         return 0.0
     name_lower = conference.name.lower()
+    # Community-satellite exclusions short-circuit before pattern
+    # matching — even if "microsoft build" matches, a name containing
+    # "//localhost" is the Cape Town community edition, not the
+    # actual Microsoft Build flagship.
+    for exclusion in _FLAGSHIP_EXCLUSIONS:
+        if exclusion in name_lower:
+            return 0.0
     for pattern in _FLAGSHIP_PATTERNS:
         if pattern in name_lower:
             return FLAGSHIP_EVENT_BOOST

@@ -191,6 +191,31 @@ class Settings(BaseSettings):
     enable_judge_few_shot: bool = Field(default=True)
     enable_judge_cache: bool = Field(default=True)
 
+    # The operator's organizational profile, injected into the judge
+    # prompt so the LLM understands what kind of org it's scoring
+    # conferences for. Drives the academic-vs-industry calibration.
+    # Default is for a commercial open-source software vendor (the
+    # primary use case this matcher was tuned against). Change this
+    # if running Scout for a different kind of organization — e.g.
+    # for a research lab, you'd want to invert the academic-vs-
+    # industry calibration in the judge prompt accordingly. The
+    # default text below is what the matcher v2.3 was tuned against.
+    operator_profile: str = Field(
+        default=(
+            "A commercial open-source software vendor (think Red Hat / "
+            "SUSE / Canonical / VMware) selling enterprise subscriptions "
+            "to open-source platforms. Not a research lab, not an "
+            "academic institution, not a pure-play SaaS startup. "
+            "Target audience at events: enterprise developers, platform "
+            "engineers, IT decision-makers, and open-source contributors "
+            "(NOT PhD students or academic faculty). Goes to conferences "
+            "to speak (thought leadership to practitioners), sponsor "
+            "booths (lead generation from enterprise buyers), recruit "
+            "(platform engineers + developers), and maintain open-source "
+            "community presence."
+        ),
+    )
+
     # Post-matcher score adjustments — see app/services/matcher/boosts.py.
     # Each one is small (+/- 0.10 max) so the semantic matcher
     # dominates; these just nudge actionable events up and unactionable

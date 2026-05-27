@@ -158,6 +158,7 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
             conference=conference,
             pillars=pillars_for_judge,
             calibration=calibration,
+            operator_profile=settings.operator_profile,
         )
 
         # Cache hit: reuse the previous match row's judge fields.
@@ -183,6 +184,7 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
                 conference=conference,
                 pillars=pillars_for_judge,
                 calibration=calibration,
+                operator_profile=settings.operator_profile,
             )
             if judge is not None:
                 judge_score = judge.score
