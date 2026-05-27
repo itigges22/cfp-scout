@@ -147,18 +147,53 @@ Stage D — LLM-as-judge (cross-encoder reranker)
 Post-matcher boosts
   Small additive nudges applied to overall_score AFTER the four
   stages produce their weighted blend. All toggleable individually.
-  Pure business logic — no LLM, no embeddings.
+  Pure business logic — no LLM, no embeddings. Computed LIVE on
+  every conferences-list render from operator state (verdicts,
+  decisions, calendar) — so operator edits reflect on the next
+  page load with no rescore.
   - CFP urgency (+0.10) if cfp_close_at in next 30 days
   - Recency penalty (-0.05) if start_date > 12 months out
-  - Series memory (+0.10) if any past edition was approved
+  - Series memory (SIGNED by operator's verdict on a past edition
+    of the same series — see "Verdict feedback loop" below):
+      · +0.10 when past edition's verdict is would_attend
+      · +0.05 when past edition's verdict is unsure (default)
+      · −0.10 when past edition's verdict is would_not_attend
+      · +0.10 (alt path) when any past edition was approved in
+        Scout's decisions table
   - Flagship event (+0.15) if name matches a curated list of
-    industry megaconferences (NVIDIA GTC, KubeCon, PyTorch
-    Conference, NeurIPS, ICML, AAAI, AI Engineer World Fair,
-    Open Source Summit, Ray Summit, AWS re:Invent, etc.) AND
-    the event is future-dated. Defense-in-depth against the
-    embedder + judge systematically undervaluing broad-but-
-    strategically-critical events. See boosts.py.
+    industry / developer megaconferences (KubeCon, AWS re:Invent,
+    NVIDIA GTC, Microsoft Ignite, Google Cloud Next, AI Engineer
+    World Fair, Open Source Summit, Ray Summit, etc.) AND the
+    event is future-dated AND the name doesn't contain a
+    community-satellite exclusion marker ("//localhost",
+    "Community Edition"). Defense-in-depth against the embedder
+    + judge systematically undervaluing broad-but-strategically-
+    critical events. See boosts.py.
 ```
+
+### Verdict feedback loop (operator → matcher learning, no rescore)
+
+The operator imports past events via CSV. Each row gets a 👍 / — / 👎
+picker on `/past-conferences`. The verdict drives the `series_memory`
+boost on similar upcoming events:
+
+- Operator clicks 👍/—/👎 → optimistic UI update → background PATCH
+  to `app.past_conferences.verdict` (~50ms commit, no LLM).
+- The next `/conferences` request loads a fresh `BoostContext`
+  (one query for verdicts, one for approved-series IDs) and
+  recomputes `overall_score` LIVE per conference using stored
+  stage scores + verdict-driven boosts.
+- Python-side sort by live overall produces the re-ordered list.
+
+Net effect: thumbing through 49 past-events takes ~90 seconds and
+shifts the upcoming-conferences rankings on every page load with
+zero LLM cost and zero rescore wait.
+
+Per-edition preferences work via trigram name matching (≥0.45
+Jaccard, year/edition stripped). Each upcoming event finds the
+BEST-matching past row, then uses that row's verdict. So an
+operator can express "we liked vLLM Meetup Boston, not Mumbai" and
+similar future events get scored against the closer match.
 
 Cosine alone is not enough for this corpus because
 ``nomic-embed-text-v1-5`` produces a narrow cosine band (p95 ≈ 0.05

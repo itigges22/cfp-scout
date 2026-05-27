@@ -4,6 +4,7 @@
 **Updated:** 2026-05-26 (v2.1: few-shot calibration · judge cache · business-logic boosts · lexical corpus-size guard)
 **Updated:** 2026-05-26 (v2.2: judge prompt reframe for strategic value · flagship-event boost · weight rebalance)
 **Updated:** 2026-05-27 (v2.3: industry-vs-academic distinction — pure ML research venues are NOT strategic for a commercial vendor)
+**Updated:** 2026-05-27 (v2.5: past-attendance verdict feedback loop — operator thumbs-up/down on past events drives series_memory boost LIVE with no rescore)
 **Supersedes:** ADR-0005 (Auto-run matcher on first view) — still in force but
 the matcher it triggers is now the v2 pipeline described here.
 
@@ -386,6 +387,92 @@ academic AI lab), the operator-profile paragraph in the judge
 system prompt — and the flagship list — need to be inverted.
 This would be a good case for a future `operator_profile` setting
 parameter feeding the prompt.
+
+## v2.5 additions (2026-05-27)
+
+Past-attendance feedback loop. The operator imports a CSV of past
+events the team attended; we add a per-row "would attend again?"
+verdict that drives the matcher's `series_memory` boost. Goal: the
+operator's feedback shapes future recommendations *instantly*, with
+zero LLM cost and zero rescore wait.
+
+### 8.1 Schema
+
+`app.past_conferences.verdict` (varchar(20), CHECK-constrained to
+``would_attend`` / ``unsure`` / ``would_not_attend``). Default
+``unsure`` so existing CSV-imported rows don't need backfill.
+
+A CHECK constraint rather than a Postgres ENUM because we may want
+to add finer-grained verdict values later without an ALTER TYPE
+migration (Postgres enums are notoriously rigid).
+
+### 8.2 Signed series_memory boost
+
+The boost was previously a flat +0.10 for any past attendance. Now
+it's verdict-signed:
+
+| Verdict | Boost |
+|---------|------:|
+| `would_attend` | **+0.10** |
+| `unsure` | **+0.05** |
+| `would_not_attend` | **−0.10** |
+
+Trigram name matching (≥0.45 Jaccard, year/edition-stripped) picks
+the **best-matching** past edition per upcoming event, then uses
+ITS verdict. So the operator can express per-edition preferences:
+"we liked vLLM Meetup Boston but not Mumbai" → similar future
+events get scored against the closer past match.
+
+### 8.3 Live boost recompute (the "no rescore" guarantee)
+
+The critical design constraint from the operator: thumbing up/down
+must NOT trigger a 22-minute rejudge. Solution:
+
+1. Verdict commits to ``past_conferences.verdict`` only — no
+   ``app.matches`` writes.
+2. ``GET /api/v1/conferences`` recomputes ``overall_score`` LIVE
+   per request using stored stage scores + live boost context.
+3. Sort by score happens in Python after live recompute.
+
+Net effect: verdict edits reflect in the upcoming-conferences
+ranking on the **next page load** with O(1) extra DB queries
+total (regardless of how many conferences are rendered) and zero
+LLM calls.
+
+### 8.4 BoostContext for batched recompute
+
+`boosts.py` ships a `BoostContext` dataclass + `load_boost_context()`
+helper that pre-fetches in two queries:
+
+- ``attended_name_to_verdict``: dict of normalized past-conf name → verdict
+- ``approved_series_ids``: frozenset of series IDs touched by approved
+  decisions
+
+The conferences-list endpoint loads context once, then computes
+boosts for all 577 rows in Python via `_series_memory_from_ctx`
+(no DB call per row). Latency overhead per list request: <100ms.
+
+### 8.5 What we deliberately did NOT do
+
+**Did not extend few-shot judge calibration with verdicts.**
+Why: the few-shot pool is part of `judge_input_hash`, so every
+verdict edit would invalidate the cache for all conferences →
+next bulk_judge is uncached → 22 min and $0.30. Directly violates
+the "no rescore on verdict change" requirement.
+
+Also: "would_not_attend" can encode logistics (wrong city, bad
+timing, speaker had a bad week) rather than strategic mismatch.
+Feeding those as negative examples to the judge would teach it
+the wrong lesson. The series_memory boost handles all "skip this
+specific series" cases identically, which is correct. The judge
+should only learn from explicit strategic signals (operator's
+approve/reject decisions on upcoming events, which already flow
+into the few-shot pool via `app.decisions`).
+
+If verdict-driven judge calibration becomes desirable later, the
+cleanest implementation would be a scheduled overnight cache
+invalidation rather than per-edit invalidation — see negative
+space.
 
 ## Negative space
 

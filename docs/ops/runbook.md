@@ -378,6 +378,32 @@ container after changing.
 | `enable_series_memory_boost` | `true` | +0.10 to overall if any past edition of the conference series was approved. |
 | `enable_flagship_event_boost` | `true` | +0.15 to overall for future-dated editions of curated industry megaconferences (NVIDIA GTC, KubeCon, PyTorch Conference, NeurIPS, etc.). See boosts.py for the full list. |
 | `primary_team_label` | `""` | Tag SMEs whose team doesn't match this as `is_external` for UI. Empty → all internal. |
+| `operator_profile` | (commercial open-source vendor) | Org description injected into the judge prompt; drives the industry-vs-academic calibration. Change this if running Scout for a different kind of organization (research lab, startup, etc.) — see ADR-0008 v2.4. |
+
+### Past-attendance verdicts (`/past-conferences` page)
+
+Each past-conferences row has a 👍 / — / 👎 picker. Verdicts feed
+the matcher's `series_memory` boost on the next `/conferences`
+render:
+
+| Verdict | Boost on similar upcoming events |
+|---------|---------------------------------:|
+| 👍 `would_attend` | **+0.10** |
+| — `unsure` (default) | **+0.05** |
+| 👎 `would_not_attend` | **−0.10** |
+
+Critically: clicking a thumb does NOT trigger a rescore. The
+boost is computed live on every conferences-list render from the
+current verdict state, so verdict edits reflect on the next page
+load with zero LLM cost. Operator can thumb through the entire
+past-events list in 90 seconds without the app blocking.
+
+Each upcoming conference picks the BEST trigram-name match
+(≥0.45 Jaccard, year/edition stripped) from past attended events
+and uses that past row's verdict. So per-edition preferences work:
+"we liked vLLM Meetup Boston but not Mumbai" → upcoming vLLM
+events get scored against whichever past edition is the closer
+name match.
 
 ### Why is pillar score 100% for everyone?
 

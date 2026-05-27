@@ -132,7 +132,7 @@ Subject-matter experts — your team members and external collaborators.
 | `is_active` | bool | |
 
 #### `past_conferences`
-History of who attended what. Powers the past-attendance signal in the SME matcher.
+History of who attended what. Powers the past-attendance signal in the SME matcher AND the operator's verdict-driven feedback loop (ADR-0008 v2.5).
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -144,6 +144,7 @@ History of who attended what. Powers the past-attendance signal in the SME match
 | `session_type` | enum nullable | `keynote`/`talk`/`panel`/`workshop`/`poster` |
 | `notes` | text nullable | ≤500 chars |
 | `imported_from` | text nullable | Provenance (CSV name, workbook upload tag) |
+| `verdict` | varchar(20) CHECK | `would_attend`/`unsure` (default)/`would_not_attend`. Drives the matcher's signed `series_memory` boost: trigram-matched upcoming events get +0.10 / +0.05 / −0.10 based on this verdict. The matcher reads it LIVE on every conferences-list render (no rescore needed, no LLM cost, no cache invalidation). Set via `PATCH /api/v1/past-conferences/{id}/verdict` from the 👍/—/👎 picker on the /past-conferences page. |
 
 ### 2. Discovered data (`app` schema)
 
