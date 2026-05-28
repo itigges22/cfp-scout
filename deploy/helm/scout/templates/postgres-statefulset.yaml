@@ -51,6 +51,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.database.name }}
                   key: {{ .Values.secrets.database.passwordField }}
+            # Read by 03-set-app-password.sh during first-boot initdb to
+            # ALTER the placeholder password baked into 02-roles-and-schemas.sql.
+            - name: APP_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.database.name }}
+                  key: {{ .Values.secrets.database.appPasswordField }}
             # Pin the data subdir so the volume root's lost+found
             # doesn't confuse Postgres on first init.
             - name: PGDATA
@@ -71,6 +78,16 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            # Bootstrap scripts the Postgres image runs ONCE on first
+            # boot of an empty PGDATA. Mount path is fixed by the
+            # upstream image. See postgres-init-configmap.yaml.
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: {{ include "scout.fullname" . }}-postgres-init
+            defaultMode: 0755   # 03-set-app-password.sh needs to be executable
   volumeClaimTemplates:
     - metadata:
         name: data

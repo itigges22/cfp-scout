@@ -31,6 +31,15 @@ data:
   LLM_MAX_CONCURRENT_CALLS: {{ .Values.config.llmMaxConcurrentCalls | quote }}
   SCRAPER_USER_AGENT: {{ .Values.config.scraperUserAgent | quote }}
   SCRAPER_DEFAULT_POLITENESS_SECONDS: {{ .Values.config.scraperDefaultPolitenessSeconds | quote }}
+  # OpenShift assigns a random UID to every container in a project
+  # (restricted-v2 SCC). The image's bundled HOME (/home/scout)
+  # belongs to a different UID, so asyncpg's libpq-spec SSL file
+  # discovery — which stats ``~/.postgresql/postgresql.key`` even
+  # when SSL is disabled — fails with PermissionError on the parent
+  # directory. Forcing HOME to /tmp (writable for any UID) sidesteps
+  # the lookup entirely. Affects every container that uses
+  # ``commonEnvFrom`` (api / scheduler / wait-for-postgres / migrate).
+  HOME: "/tmp"
   # Postgres connection — host points at the in-cluster StatefulSet
   # headless service. Username + db name are non-secret (the password
   # is the secret part); kept here so they're discoverable in one place.

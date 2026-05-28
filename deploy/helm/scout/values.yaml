@@ -145,20 +145,13 @@ sharedStorage:
   storageClass: ""    # MUST be RWX-capable
   accessMode: ReadWriteMany
 
-# ---------------------------------------------------------------------------
-# Alembic migrations Job. Runs as a Helm pre-install/pre-upgrade hook
-# so the API never serves with a stale schema. Same image as the API,
-# different command.
-# ---------------------------------------------------------------------------
-migrations:
-  enabled: true
-  resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits:   { cpu: 500m, memory: 512Mi }
-  # Helm deletes successful migration jobs to keep the namespace clean.
-  # Failed jobs persist for debugging — `oc get jobs` will show them
-  # until you `helm uninstall` the release.
-  hookDeletePolicy: hook-succeeded
+# Alembic migrations run as the API Deployment's ``migrate`` init
+# container (see api-deployment.yaml). This is the modern alternative
+# to a pre-install Helm hook — every API replica's init container
+# runs ``alembic upgrade head``, and Alembic's Postgres advisory lock
+# serializes them so only one applies pending migrations. Eliminates
+# the hook-ordering brittleness that hits when the migrations Job
+# starts before the ConfigMap / ServiceAccount it depends on.
 
 # ---------------------------------------------------------------------------
 # OpenShift Route — external access for the API. TLS edge means the
@@ -233,13 +226,20 @@ monitoring:
     namespace: ""   # blank → install namespace
 
 # ---------------------------------------------------------------------------
-# Pod security. OpenShift's restricted SCC requires non-root + no
-# capabilities. The chart sets these by default; only override if your
-# cluster has a custom SCC mapping.
+# Pod security. OpenShift's restricted-v2 SCC auto-injects the UID,
+# GID, and fsGroup from each namespace's allocated range (typically
+# 1000000000+ per namespace). Hardcoding fsGroup: 1001 in the chart
+# would fail SCC admission with "1001 is not an allowed group" — so
+# we DON'T set it. The chart only asserts non-root (which is always
+# the case under restricted-v2) and the security baseline that every
+# OpenShift-friendly app respects.
+#
+# If you're deploying somewhere with a custom SCC that demands a
+# specific fsGroup, set it via --set podSecurityContext.fsGroup=<N>
+# at install time — values here are deliberately minimal.
 # ---------------------------------------------------------------------------
 podSecurityContext:
   runAsNonRoot: true
-  fsGroup: 1001
 containerSecurityContext:
   runAsNonRoot: true
   allowPrivilegeEscalation: false

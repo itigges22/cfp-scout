@@ -3,14 +3,15 @@ name: scout
 description: |
   Scout — local-install CFP discovery + AI conference matcher. Helm
   chart packages the API (FastAPI + bundled SPA), a standalone
-  scheduler, Postgres + pgvector, and the alembic migration Job
-  needed to bring up a fresh install on OpenShift.
+  scheduler, Postgres + pgvector with bootstrapped roles + schemas,
+  and alembic migrations that run as init containers on the API
+  pods. Built for OpenShift restricted-v2 SCC.
 type: application
 
 # Increment on chart-shape changes (templates, defaults, values
 # surface). Bump appVersion below independently when the image tag
 # moves but the chart shape is unchanged.
-version: 1.0.0
+version: 1.1.0
 
 # Tracks the matcher version. Update when shipping a new container
 # image. The default values.yaml references this as the image tag.

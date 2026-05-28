@@ -67,14 +67,17 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      # The API waits for the migrations Job before serving — Helm
-      # orders the hook before the Deployment, but if migrations stall
-      # the API pods would crashloop on the missing schema. The
-      # initContainer below is a belt-and-braces pg_isready probe so
-      # the API doesn't even try to start uvicorn until the DB is
-      # reachable. The schema-presence check is implicit: if alembic
-      # hasn't run, the API's first DB query errors and the readiness
-      # probe fails — Kubernetes won't route traffic there.
+      # Two init containers run before the API serves traffic:
+      #   1. wait-for-postgres: blocks until pg_isready succeeds. Cheap.
+      #   2. migrate: runs ``alembic upgrade head`` against the DB.
+      #      Idempotent — alembic uses Postgres advisory locks so
+      #      multiple replicas booting simultaneously serialize their
+      #      migration check; whichever replica wins the lock applies
+      #      pending migrations, the others see the schema current and
+      #      exit clean. This is the modern Helm pattern (each pod
+      #      ensures its own schema) — simpler than a separate
+      #      pre-install Hook Job because there's no hook-ordering
+      #      brittleness with ConfigMap / ServiceAccount / Secrets.
       initContainers:
         - name: wait-for-postgres
           image: {{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}
@@ -96,6 +99,17 @@ spec:
           resources:
             requests: { cpu: 10m, memory: 32Mi }
             limits:   { cpu: 100m, memory: 64Mi }
+        - name: migrate
+          image: {{ include "scout.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- include "scout.containerSecurityContext" . | nindent 10 }}
+          command: ["alembic", "upgrade", "head"]
+          {{- include "scout.commonEnvFrom" . | nindent 10 }}
+          env:
+            {{- include "scout.commonSecretEnv" . | nindent 12 }}
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
       containers:
         - name: api
           image: {{ include "scout.image" . }}

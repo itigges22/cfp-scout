@@ -1,0 +1,47 @@
+{{- /*
+Postgres initdb ConfigMap. The pgvector/postgres image runs every
+``*.sql`` and ``*.sh`` file in /docker-entrypoint-initdb.d/ ONCE on
+first boot of an empty data dir — alphabetical order — against the
+default database with superuser perms.
+
+Three scripts:
+  01-extensions.sql        Installs pgvector / pg_trgm / unaccent / pgcrypto.
+  02-roles-and-schemas.sql Creates the ``app`` role + four schemas + grants.
+  03-set-app-password.sh   Replaces the placeholder ``'app'`` password
+                           with whatever's in the Secret. Runs after the
+                           SQL files so the role exists. We do this in a
+                           separate step (instead of templating the SQL)
+                           because the SQL file is the source of truth in
+                           the source tree (infra/postgres/init/*) and we
+                           want to keep it portable across compose + helm.
+
+To re-run on an existing cluster: ``helm uninstall`` + delete the
+data-* PVCs + ``helm install``. The pgvector image only fires initdb
+on an EMPTY PGDATA. ALTER role passwords manually on an existing
+install with ``psql -c "ALTER ROLE app PASSWORD '...'"``.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "scout.fullname" . }}-postgres-init
+  labels:
+    {{- include "scout.componentLabels" (dict "ctx" . "component" "postgres") | nindent 4 }}
+data:
+  01-extensions.sql: |
+{{ .Files.Get "files/postgres-init/01-extensions.sql" | indent 4 }}
+  02-roles-and-schemas.sql: |
+{{ .Files.Get "files/postgres-init/02-roles-and-schemas.sql" | indent 4 }}
+  03-set-app-password.sh: |
+    #!/bin/bash
+    # Replaces the placeholder password from 02-roles-and-schemas.sql
+    # with the real value mounted from the scout-db Secret. Runs once
+    # on first-boot initdb, AFTER the SQL files have created the role.
+    set -euo pipefail
+    if [ -z "${APP_DB_PASSWORD:-}" ]; then
+      echo "APP_DB_PASSWORD env var not set — leaving placeholder password in place." >&2
+      exit 0
+    fi
+    psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-SQL
+      ALTER ROLE app PASSWORD '${APP_DB_PASSWORD}';
+    SQL
+    echo "app role password aligned with Secret."

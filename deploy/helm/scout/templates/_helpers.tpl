@@ -77,11 +77,13 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
 {{/* Database URL the API + scheduler use. asyncpg dialect because
-     the codebase is fully async. Password is injected via env var from
-     a Secret at runtime; this URL has a placeholder ${PGPASSWORD}
-     that the entrypoint substitutes — see api-deployment.yaml. */}}
+     the codebase is fully async. Connects as the restricted ``app``
+     role (NOT the superuser). The role is created by the Postgres
+     init script ``02-roles-and-schemas.sql`` and has its password
+     aligned to the Secret by ``03-set-app-password.sh`` on first boot.
+     Both scripts live in the postgres-init ConfigMap. */}}
 {{- define "scout.databaseUrl" -}}
-postgresql+asyncpg://{{ .Values.postgres.username }}:$(APP_DB_PASSWORD)@{{ include "scout.postgresHost" . }}:5432/{{ .Values.postgres.databaseName }}
+postgresql+asyncpg://app:$(APP_DB_PASSWORD)@{{ include "scout.postgresHost" . }}:5432/{{ .Values.postgres.databaseName }}
 {{- end -}}
 
 {{/* Common pod-spec snippets — pulled out so api/scheduler/migrations

@@ -10,10 +10,16 @@ with headroom to scale to a few hundred without re-architecting.
 |----------|------|-----------------:|---------|
 | `scout-api` | Deployment + HPA | 2 (HPA 2..5) | FastAPI + bundled SPA |
 | `scout-scheduler` | Deployment | 1 (singleton) | APScheduler against shared Postgres jobstore |
-| `scout-postgres` | StatefulSet | 1 | Postgres 15 + pgvector |
-| `scout-migrations` | Job (Helm hook) | runs once per release | `alembic upgrade head` |
+| `scout-postgres` | StatefulSet | 1 | Postgres 15 + pgvector. First-boot initdb runs the extensions / role / schema SQL scripts (see `files/postgres-init/`). |
 | `scout-api` | OpenShift Route | — | TLS-edge external entrypoint |
 | `scout-storage` | PVC (RWX) | — | shared `raw_pages` + uploaded PDFs |
+
+Alembic migrations are NOT a separate workload — they run as the
+`migrate` init container on every API pod. Alembic's Postgres advisory
+lock serialises concurrent applies, so multi-replica rollouts converge
+cleanly without a pre-install hook Job. This eliminates the
+hook-ordering brittleness (ConfigMap / ServiceAccount / Secret race)
+that a Helm pre-install Job hits on a fresh namespace.
 
 All four containerized workloads share a single image
 (`quay.io/<org>/scout-api:<tag>`); workload-specific entrypoints are
@@ -79,9 +85,26 @@ helm upgrade --install scout deploy/helm/scout \
   --set sharedStorage.storageClass=ocs-storagecluster-cephfs   # RWX
 ```
 
-The migrations Job runs first (Helm pre-install hook). Once it
-completes, the API + scheduler Deployments roll out. Total install
-time: ~2 min on a warm cluster.
+What happens, in order, on a fresh install:
+
+1. Postgres StatefulSet boots. On first-boot initdb it runs
+   `01-extensions.sql` → `02-roles-and-schemas.sql` →
+   `03-set-app-password.sh`. The shell script reads `APP_DB_PASSWORD`
+   from the `scout-db` Secret and ALTERs the placeholder `'app'`
+   password baked into the SQL script. Postgres becomes ready.
+2. API pods' `wait-for-postgres` init container blocks on
+   `pg_isready`, then the `migrate` init container runs
+   `alembic upgrade head`. The first replica to acquire Alembic's
+   advisory lock applies migrations; the others see the schema is
+   current and exit clean.
+3. API + scheduler containers start. Total install time on a warm
+   cluster: ~2 min including image pull.
+
+**IBM Cloud storage classes (gotcha worth knowing):**
+`ibmc-vpc-file-3000-iops` rejects small (≤16Gi) RWX requests with
+`shares_profile_capacity_iops_invalid` — IOPS-per-GB ratio too dense
+for the `dp2` profile. Use `ibmc-vpc-file-500-iops` for the default
+10Gi `sharedStorage.size`, or bump the size to ≥32Gi.
 
 ### Step 3 — verify
 
@@ -131,10 +154,14 @@ helm upgrade scout deploy/helm/scout \
 Order on `helm upgrade`:
 
 1. Render new manifests; diff applied
-2. Helm `pre-upgrade` hook fires the migrations Job
-3. Migrations run; if they fail, the upgrade aborts (no API pods touched)
-4. If migrations succeed, API rolling-update + scheduler Recreate-update fire
-5. Old pods drain; new ones serve
+2. New API ReplicaSet spins up; each new pod's `migrate` init
+   container runs `alembic upgrade head` (advisory-lock serialised)
+3. If migrations fail, the new pods crashloop — old pods keep
+   serving from the previous ReplicaSet. Roll back with
+   `helm rollback`
+4. If migrations succeed, the new pods become Ready; rolling-update
+   replaces old API pods one at a time. The scheduler does
+   Recreate-update (single instance)
 
 If you need to roll back:
 
@@ -197,16 +224,30 @@ behind your cluster's network policy / IP allowlist until SSO lands.
 
 ## Troubleshooting
 
-### Migrations Job stuck
+### Migrate init container failing
 
 ```bash
-oc logs job/scout-migrations
+oc logs deploy/scout-api -c migrate
 ```
 
-Common cause: Postgres pod not ready yet. The Job's init container
-runs `pg_isready` against the headless service before alembic
-fires — if it loops forever, check `oc describe statefulset
-scout-postgres` and the data PVC's binding.
+Common causes:
+- `schema "app" does not exist` — Postgres init scripts never ran.
+  Happens if you bind a pre-existing PVC: the upstream image only
+  runs `/docker-entrypoint-initdb.d/` on an EMPTY PGDATA. Either
+  `oc delete pvc data-scout-postgres-0` and let it reprovision, or
+  apply `infra/postgres/init/*.sql` manually with
+  `oc exec scout-postgres-0 -- psql -U scout -d scout -f -`.
+- `password authentication failed for user "app"` — `scout-db`
+  Secret's `app-password` field doesn't match the role's password.
+  Fix on a running install with
+  `oc exec scout-postgres-0 -- psql -U scout -c
+  "ALTER ROLE app PASSWORD '<value>'"` then `oc rollout restart`
+  the API + scheduler.
+- `PermissionError: /home/scout/.postgresql/postgresql.key` — `HOME`
+  not set to `/tmp`. The chart sets this via the ConfigMap so every
+  container inherits it; if you've stripped that override, asyncpg's
+  libpq-spec SSL file discovery crashes under OpenShift's UID
+  randomization.
 
 ### API pods CrashLoopBackOff
 
