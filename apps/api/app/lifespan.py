@@ -85,25 +85,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     register_versioning_listeners()
     log.info("scout.versioning.ready")
 
-    # Scheduler runs in-process. Start it AFTER the DB probe so a failed
-    # boot doesn't leave a half-started scheduler. If uvicorn spawns multiple
-    # worker processes (``--workers N``), each worker gets its own scheduler
-    # instance — APScheduler's Postgres jobstore + ``max_instances=1`` keeps
-    # them from double-firing the same job.
-    try:
-        start_scheduler()
-    except Exception as exc:
-        log.error("scout.scheduler_failed", error=str(exc))
-        # Don't block API startup on a scheduler-only failure — the manual
-        # routes still work without it, and operators can repair via
-        # ``/api/v1/admin/jobs``.
+    # Scheduler runs in-process by default. Started AFTER the DB probe
+    # so a failed boot doesn't leave a half-started scheduler.
+    #
+    # In HPA-scaled OpenShift deploys, set ``SCHEDULER_MODE=disabled``
+    # on the API pods so they don't all run their own schedulers (which
+    # would each contend for the same Postgres jobstore rows). A
+    # separate ``scout-scheduler`` Deployment runs the scheduler
+    # singleton with ``SCHEDULER_MODE=standalone`` via
+    # ``python -m app.scheduler_standalone``.
+    from app.settings import get_settings as _gs
+
+    mode = _gs().scheduler_mode
+    if mode == "disabled":
+        log.info("scout.scheduler_skipped", reason="SCHEDULER_MODE=disabled")
+    else:
+        try:
+            start_scheduler()
+        except Exception as exc:
+            log.error("scout.scheduler_failed", error=str(exc))
+            # Don't block API startup on a scheduler-only failure — the
+            # manual routes still work without it, and operators can
+            # repair via ``/api/v1/admin/jobs``.
 
     yield
 
     # Shutdown
     log.info("scout.shutting_down")
-    try:
-        stop_scheduler()
-    except Exception as exc:
-        log.warning("scout.scheduler_shutdown_failed", error=str(exc))
+    if mode != "disabled":
+        try:
+            stop_scheduler()
+        except Exception as exc:
+            log.warning("scout.scheduler_shutdown_failed", error=str(exc))
     await dispose_engine()

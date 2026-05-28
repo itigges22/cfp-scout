@@ -1,0 +1,27 @@
+{{- /*
+Shared PVC mounted at /var/lib/scout/storage in both the API and
+scheduler pods. Holds raw_pages snapshots and uploaded PDFs.
+
+MUST be ReadWriteMany (RWX) when api.replicas > 1 OR the scheduler
+Deployment is enabled — multiple pods need read+write access. On
+OpenShift this typically means an NFS-backed StorageClass; ask
+your cluster admin which class offers RWX.
+
+For single-replica installs with no scheduler split, RWO is fine
+and you can downgrade ``sharedStorage.accessMode`` to ReadWriteOnce.
+*/}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "scout.fullname" . }}-storage
+  labels:
+    {{- include "scout.componentLabels" (dict "ctx" . "component" "storage") | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.sharedStorage.accessMode }}
+  {{- if .Values.sharedStorage.storageClass }}
+  storageClassName: {{ .Values.sharedStorage.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.sharedStorage.size }}

@@ -1,0 +1,49 @@
+{{- /*
+ConfigMap — non-secret runtime config. The API + scheduler pods load
+this via envFrom, so every key becomes an UPPER_CASE env var on the
+container. Secrets (LLM_API_KEY, DB passwords) live in Secrets and
+are wired in separately via secretKeyRef.
+
+Note: DB-side overrides in app.app_setting_overrides take precedence
+at runtime — these are the BOOT defaults the app reads on first start.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "scout.fullname" . }}-config
+  labels:
+    {{- include "scout.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  ENV: {{ .Values.config.env | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  LOG_FORMAT: {{ .Values.config.logFormat | quote }}
+  SCHEDULER_TIMEZONE: {{ .Values.config.schedulerTimezone | quote }}
+  LLM_BASE_URL: {{ .Values.config.llmBaseUrl | quote }}
+  LLM_CHAT_MODEL: {{ .Values.config.llmChatModel | quote }}
+  LLM_EMBEDDING_MODEL: {{ .Values.config.llmEmbeddingModel | quote }}
+  LLM_EMBEDDING_BASE_URL: {{ .Values.config.llmEmbeddingBaseUrl | quote }}
+  LLM_DRY_RUN: {{ .Values.config.llmDryRun | quote }}
+  LLM_MONTHLY_BUDGET_USD: {{ .Values.config.llmMonthlyBudgetUsd | quote }}
+  LLM_MAX_CONCURRENT_CALLS: {{ .Values.config.llmMaxConcurrentCalls | quote }}
+  SCRAPER_USER_AGENT: {{ .Values.config.scraperUserAgent | quote }}
+  SCRAPER_DEFAULT_POLITENESS_SECONDS: {{ .Values.config.scraperDefaultPolitenessSeconds | quote }}
+  # Postgres connection — host points at the in-cluster StatefulSet
+  # headless service. Username + db name are non-secret (the password
+  # is the secret part); kept here so they're discoverable in one place.
+  POSTGRES_HOST: {{ include "scout.postgresHost" . | quote }}
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: {{ .Values.postgres.databaseName | quote }}
+  POSTGRES_USER: {{ .Values.postgres.username | quote }}
+  # CORS origins — auto-include the Route host when one is configured.
+  # Computed at render time and emitted as a single JSON-array string
+  # (Settings parses CORS_ORIGINS via pydantic JSON-list semantics).
+  {{- $origins := .Values.config.corsOrigins | default (list) }}
+  {{- if and .Values.route.enabled .Values.route.host }}
+  {{- $scheme := ternary "https" "http" .Values.route.tls.enabled }}
+  {{- $origins = append $origins (printf "%s://%s" $scheme .Values.route.host) }}
+  {{- end }}
+  CORS_ORIGINS: {{ $origins | toJson | quote }}

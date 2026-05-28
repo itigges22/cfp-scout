@@ -231,6 +231,20 @@ class Settings(BaseSettings):
     # the curated pattern list.
     enable_flagship_event_boost: bool = Field(default=True)
 
+    # APScheduler deployment mode. Drives the lifespan-hook behavior:
+    #   - ``embedded`` (default): API process also runs the scheduler.
+    #     Right for single-replica installs (dev, single-team prod).
+    #   - ``disabled``: API process skips scheduler startup entirely.
+    #     Use when scaling the API horizontally (HPA) — the scheduler
+    #     runs in a separate ``scout-scheduler`` Deployment to avoid
+    #     multiple scheduler instances competing for the same jobs.
+    #   - ``standalone``: this PROCESS is the scheduler-only worker
+    #     (no API routes). Started via ``python -m
+    #     app.scheduler_standalone``.
+    scheduler_mode: Literal["embedded", "disabled", "standalone"] = Field(
+        default="embedded"
+    )
+
     # SME narrative (plan 19). Hard cap on how many narratives we generate
     # per conference — cost = K LLM calls per conference. K=3 is the
     # plan's default + acceptance criterion.

@@ -1,0 +1,33 @@
+{{- /*
+OpenShift Route for the API. ``edge`` termination is the simplest
+TLS option — the Route certificates terminate at the OpenShift router
+and forward plain HTTP to the pod. Switch to ``reencrypt`` if you
+deploy a per-pod TLS cert (rare for internal-tool installs).
+
+If route.host is left blank, OpenShift auto-generates a host like
+``<release>-api-<namespace>.<wildcard-domain>``.
+*/}}
+{{- if .Values.route.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "scout.fullname" . }}
+  labels:
+    {{- include "scout.componentLabels" (dict "ctx" . "component" "api") | nindent 4 }}
+spec:
+  {{- if .Values.route.host }}
+  host: {{ .Values.route.host | quote }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "scout.fullname" . }}-api
+    weight: 100
+  port:
+    targetPort: http
+  {{- if .Values.route.tls.enabled }}
+  tls:
+    termination: {{ .Values.route.tls.termination }}
+    insecureEdgeTerminationPolicy: {{ .Values.route.tls.insecureEdgeTerminationPolicy }}
+  {{- end }}
+  wildcardPolicy: None
+{{- end }}

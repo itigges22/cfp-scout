@@ -1,0 +1,31 @@
+{{- if .Values.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "scout.fullname" . }}-api
+  labels:
+    {{- include "scout.componentLabels" (dict "ctx" . "component" "api") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "scout.fullname" . }}-api
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.targetCPUUtilizationPercentage }}
+  # Scale-down is intentionally slower than scale-up: if a burst of
+  # traffic forces us up to 5 replicas, we don't want to immediately
+  # drop back to 2 the moment CPU dips, only to scale up again on the
+  # next spike. 5-min stabilization smooths the bounce.
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 0
+{{- end }}

@@ -1,0 +1,87 @@
+{{- /*
+Postgres StatefulSet running the pgvector/pgvector:pg15 community
+image. StatefulSet (not Deployment) because the data PVC is
+strictly tied to one pod — the volumeClaimTemplates field gives us
+ordered pod-stable PVC naming.
+
+Single replica by default. For HA, the upgrade path is the CrunchyData
+Postgres Operator (separate from this chart). See README → "Production
+hardening" for the swap.
+*/}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "scout.fullname" . }}-postgres
+  labels:
+    {{- include "scout.componentLabels" (dict "ctx" . "component" "postgres") | nindent 4 }}
+spec:
+  serviceName: {{ include "scout.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "scout.componentSelectorLabels" (dict "ctx" . "component" "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "scout.componentSelectorLabels" (dict "ctx" . "component" "postgres") | nindent 8 }}
+    spec:
+      {{- include "scout.imagePullSecrets" . | nindent 6 }}
+      # Postgres image expects to write to /var/lib/postgresql/data
+      # which the PVC owns. fsGroup from podSecurityContext sets the
+      # group on volume mount so the postgres user inside the
+      # container can write — OpenShift's UID randomization plays
+      # nicely with this.
+      {{- include "scout.podSecurityContext" . | nindent 6 }}
+      containers:
+        - name: postgres
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
+          {{- include "scout.containerSecurityContext" . | nindent 10 }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgres.databaseName | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgres.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.database.name }}
+                  key: {{ .Values.secrets.database.passwordField }}
+            # Pin the data subdir so the volume root's lost+found
+            # doesn't confuse Postgres on first init.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "scout.componentLabels" (dict "ctx" . "component" "postgres") | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ .Values.postgres.storage.accessMode }}
+        {{- if .Values.postgres.storage.storageClass }}
+        storageClassName: {{ .Values.postgres.storage.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage.size }}

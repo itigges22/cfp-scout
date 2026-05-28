@@ -1,0 +1,87 @@
+{{- /*
+Standalone scheduler Deployment. Hardcoded to 1 replica because
+APScheduler isn't horizontally scalable — running two schedulers
+against the same jobstore would cause double-firing of the same
+jobs (APScheduler's max_instances=1 guard helps but doesn't fully
+prevent contention).
+
+Rendered only when scheduler.enabled is true. Disable for
+single-replica installs where the API runs the scheduler in-process
+(api.schedulerMode=embedded).
+*/}}
+{{- if .Values.scheduler.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scout.fullname" . }}-scheduler
+  labels:
+    {{- include "scout.componentLabels" (dict "ctx" . "component" "scheduler") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    # Recreate (not RollingUpdate): we never want two scheduler pods
+    # alive at the same time. The brief downtime during a roll is
+    # safe — APScheduler jobs missed during the gap pick back up on
+    # the next scheduled fire.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "scout.componentSelectorLabels" (dict "ctx" . "component" "scheduler") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "scout.componentSelectorLabels" (dict "ctx" . "component" "scheduler") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "scout.serviceAccountName" . }}
+      {{- include "scout.imagePullSecrets" . | nindent 6 }}
+      {{- include "scout.podSecurityContext" . | nindent 6 }}
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              until pg_isready -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER"; do
+                echo "waiting for postgres..."; sleep 2
+              done
+          {{- include "scout.containerSecurityContext" . | nindent 10 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "scout.fullname" . }}-config
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 100m, memory: 64Mi }
+      containers:
+        - name: scheduler
+          image: {{ include "scout.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- include "scout.containerSecurityContext" . | nindent 10 }}
+          # Standalone scheduler entrypoint — runs APScheduler against
+          # the same Postgres jobstore the API would, but with no HTTP
+          # routes. Blocks on SIGINT/SIGTERM for graceful shutdown.
+          command:
+            - python
+            - -m
+            - app.scheduler_standalone
+          {{- include "scout.commonEnvFrom" . | nindent 10 }}
+          env:
+            - name: SCHEDULER_MODE
+              value: {{ .Values.scheduler.mode | quote }}
+            {{- include "scout.commonSecretEnv" . | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.scheduler.livenessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          volumeMounts:
+            - name: shared-storage
+              mountPath: /var/lib/scout/storage
+      volumes:
+        - name: shared-storage
+          persistentVolumeClaim:
+            claimName: {{ include "scout.fullname" . }}-storage
+{{- end }}

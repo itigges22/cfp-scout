@@ -1,0 +1,253 @@
+# Scout Helm values — defaults tuned for an internal team of ~100
+# users on OpenShift. Override per-environment via:
+#
+#   helm upgrade --install scout deploy/helm/scout -f values-prod.yaml
+#
+# The chart deliberately runs two API replicas and a standalone
+# scheduler by default, because:
+#   - 2 API replicas survives a single pod restart without downtime.
+#   - HPA scales 2..5 on CPU; well above the load 100 humans generate
+#     in steady state, but cheap insurance.
+#   - APScheduler isn't horizontally scalable, so the scheduler is its
+#     own 1-replica Deployment with the API pods opting out via
+#     SCHEDULER_MODE=disabled.
+#
+# Tighten resources downward for smaller teams; loosen for larger.
+
+# ---------------------------------------------------------------------------
+# Image — single image used by api / scheduler / migrations workloads,
+# entrypoint overridden per workload.
+# ---------------------------------------------------------------------------
+image:
+  repository: quay.io/your-org/scout-api
+  tag: ""              # defaults to .Chart.appVersion when empty
+  pullPolicy: IfNotPresent
+  pullSecrets: []      # add when pulling from a private registry, e.g. [{name: quay-pull-secret}]
+
+# ---------------------------------------------------------------------------
+# Naming + labels. ``nameOverride`` shortens the resource name prefix
+# (default is the chart name "scout"); ``fullnameOverride`` replaces
+# the full name template entirely.
+# ---------------------------------------------------------------------------
+nameOverride: ""
+fullnameOverride: ""
+commonLabels: {}
+commonAnnotations: {}
+
+# ---------------------------------------------------------------------------
+# API workload — FastAPI + bundled SPA. 100-user-sized.
+# ---------------------------------------------------------------------------
+api:
+  replicas: 2
+  # Drives the env var SCHEDULER_MODE on the API pods. With ``disabled``,
+  # the API skips in-process scheduler init — required when there are
+  # multiple replicas, otherwise each replica's scheduler competes for
+  # the same job rows in the Postgres jobstore. Set to ``embedded`` only
+  # for single-replica installs where you don't want a separate
+  # scheduler Deployment.
+  schedulerMode: disabled
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # Liveness probe just needs to confirm uvicorn is alive — use the
+  # SPA-served /health endpoint which is a static FastAPI 200 OK.
+  livenessProbe:
+    httpGet: { path: /health, port: http }
+    initialDelaySeconds: 30
+    periodSeconds: 30
+  # Readiness needs DB connectivity + scheduler-jobstore reachability,
+  # so use /api/v1/healthz which exercises the engine pool.
+  readinessProbe:
+    httpGet: { path: /api/v1/healthz, port: http }
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Optional: spread API replicas across nodes for HA. Disabled by
+  # default to keep small clusters from getting stuck unschedulable.
+  podAntiAffinityPreferred: false
+
+# ---------------------------------------------------------------------------
+# Horizontal Pod Autoscaler for the API. Scales 2..5 on CPU; the
+# 100-user load almost certainly never triggers a scale-up but the
+# chart wires the spec so it's there when needed.
+# ---------------------------------------------------------------------------
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+# ---------------------------------------------------------------------------
+# Scheduler workload — runs ``python -m app.scheduler_standalone``.
+# Hardcoded to 1 replica because APScheduler with multiple instances
+# would race on the same jobstore rows. ``mode`` is the env var the
+# process reads (not the api.schedulerMode above).
+# ---------------------------------------------------------------------------
+scheduler:
+  enabled: true       # set to false if API uses schedulerMode=embedded
+  mode: standalone    # SCHEDULER_MODE env var on the scheduler pod
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  livenessProbe:
+    exec:
+      command: ["/bin/sh", "-c", "pgrep -f 'scheduler_standalone' > /dev/null"]
+    initialDelaySeconds: 30
+    periodSeconds: 60
+
+# ---------------------------------------------------------------------------
+# Postgres — vanilla StatefulSet with pgvector. Trade more sophisticated
+# operators (CrunchyData) for portability; document the upgrade path
+# in README.
+# ---------------------------------------------------------------------------
+postgres:
+  image:
+    repository: pgvector/pgvector
+    tag: "pg15"
+    pullPolicy: IfNotPresent
+  storage:
+    size: 20Gi
+    storageClass: ""    # empty → cluster default storage class
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  # Database name + user — override only if you have a naming policy.
+  databaseName: scout
+  username: scout
+
+# ---------------------------------------------------------------------------
+# Shared storage PVC mounted at /var/lib/scout/storage in both API
+# and scheduler pods (raw_pages, uploaded PDFs).
+#
+# Access mode MUST be RWX when api.replicas > 1 OR scheduler.enabled is
+# true (the scheduler needs to read scraper-fetched pages the API may
+# have written). On OpenShift this typically requires an NFS-backed
+# storage class — your cluster admin can tell you which storageClass
+# offers RWX.
+# ---------------------------------------------------------------------------
+sharedStorage:
+  size: 10Gi
+  storageClass: ""    # MUST be RWX-capable
+  accessMode: ReadWriteMany
+
+# ---------------------------------------------------------------------------
+# Alembic migrations Job. Runs as a Helm pre-install/pre-upgrade hook
+# so the API never serves with a stale schema. Same image as the API,
+# different command.
+# ---------------------------------------------------------------------------
+migrations:
+  enabled: true
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  # Helm deletes successful migration jobs to keep the namespace clean.
+  # Failed jobs persist for debugging — `oc get jobs` will show them
+  # until you `helm uninstall` the release.
+  hookDeletePolicy: hook-succeeded
+
+# ---------------------------------------------------------------------------
+# OpenShift Route — external access for the API. TLS edge means the
+# Route terminates TLS at the OpenShift router and forwards plain HTTP
+# to the pod. Change to ``reencrypt`` if you have an internal cert
+# inside the pod.
+# ---------------------------------------------------------------------------
+route:
+  enabled: true
+  host: ""            # empty → auto-generated like scout-<ns>.<wildcard-domain>
+  tls:
+    enabled: true
+    termination: edge   # edge | reencrypt | passthrough
+    insecureEdgeTerminationPolicy: Redirect
+
+# ---------------------------------------------------------------------------
+# Operator-tunable config. These map 1:1 to the env vars the API + scheduler
+# read at startup. DB-side overrides at ``app.app_setting_overrides``
+# still win at runtime — these are the BOOT defaults.
+# ---------------------------------------------------------------------------
+config:
+  env: prod
+  logLevel: INFO
+  logFormat: json
+  schedulerTimezone: UTC
+  # MaaS / LLM endpoint configuration. The API key + (optional) embedding
+  # key go in Secrets, not here.
+  llmBaseUrl: ""
+  llmChatModel: "llama-scout-17b"
+  llmEmbeddingModel: "nomic-embed-text-v1-5"
+  llmEmbeddingBaseUrl: ""   # blank → reuses llmBaseUrl
+  llmDryRun: "false"
+  llmMonthlyBudgetUsd: "1000"
+  llmMaxConcurrentCalls: "6"
+  scraperUserAgent: "Scout/1.0 (CFP Discovery)"
+  scraperDefaultPolitenessSeconds: "3"
+  # CORS origins — Route host gets auto-added if route.enabled and
+  # route.host non-empty.
+  corsOrigins: []
+
+# ---------------------------------------------------------------------------
+# Secret references. Operator creates these via `oc create secret`
+# OUTSIDE the chart (so cluster-secret values never live in git).
+# Chart references them by name; if you want, you can also let the
+# chart create empty placeholder Secrets and then `oc set data` them.
+# ---------------------------------------------------------------------------
+secrets:
+  llm:
+    # Set to true to have the chart create an empty Secret you patch
+    # later. Default false expects you to create it externally.
+    createPlaceholder: false
+    name: scout-llm
+    # Keys inside the Secret — env vars on the api/scheduler pods.
+    apiKeyField: api-key
+    embeddingApiKeyField: embedding-api-key  # optional; same value as api-key if not set
+  database:
+    createPlaceholder: false
+    name: scout-db
+    passwordField: password
+    appPasswordField: app-password   # used by the API to log in as the app role
+
+# ---------------------------------------------------------------------------
+# ServiceMonitor for Prometheus scraping. OpenShift includes a
+# user-workload-monitoring stack you can opt into; this resource lets
+# it discover the API's /metrics endpoint.
+# ---------------------------------------------------------------------------
+monitoring:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    namespace: ""   # blank → install namespace
+
+# ---------------------------------------------------------------------------
+# Pod security. OpenShift's restricted SCC requires non-root + no
+# capabilities. The chart sets these by default; only override if your
+# cluster has a custom SCC mapping.
+# ---------------------------------------------------------------------------
+podSecurityContext:
+  runAsNonRoot: true
+  fsGroup: 1001
+containerSecurityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: false   # FastAPI needs writable tmp; postgres handles its own
+
+serviceAccount:
+  create: true
+  name: ""        # blank → auto-generated like "scout"
+  annotations: {}

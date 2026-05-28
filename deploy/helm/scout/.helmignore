@@ -1,0 +1,14 @@
+# Standard helmignore — paths excluded from the chart package.
+.DS_Store
+.git/
+.gitignore
+.idea/
+.vscode/
+*.tgz
+*.tmproj
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+*.md

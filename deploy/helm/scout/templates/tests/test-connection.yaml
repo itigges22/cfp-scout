@@ -1,0 +1,27 @@
+{{- /*
+``helm test`` runs this pod against the deployed API to confirm
+basic connectivity. Useful as a smoke test after install. Hook
+"test" means it doesn't run unless you call ``helm test scout``.
+*/}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "scout.fullname" . }}-test-healthz
+  labels:
+    {{- include "scout.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: curl
+      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -eu
+          echo "Hitting /api/v1/healthz on {{ include "scout.fullname" . }}-api:8000..."
+          curl -fsS "http://{{ include "scout.fullname" . }}-api:8000/api/v1/healthz"
+          echo "OK"

@@ -1,0 +1,37 @@
+apiVersion: v2
+name: scout
+description: |
+  Scout — local-install CFP discovery + AI conference matcher. Helm
+  chart packages the API (FastAPI + bundled SPA), a standalone
+  scheduler, Postgres + pgvector, and the alembic migration Job
+  needed to bring up a fresh install on OpenShift.
+type: application
+
+# Increment on chart-shape changes (templates, defaults, values
+# surface). Bump appVersion below independently when the image tag
+# moves but the chart shape is unchanged.
+version: 1.0.0
+
+# Tracks the matcher version. Update when shipping a new container
+# image. The default values.yaml references this as the image tag.
+appVersion: "2.5.0"
+
+keywords:
+  - scout
+  - conference-matcher
+  - rag
+  - cross-encoder
+  - openshift
+
+maintainers:
+  - name: Scout maintainers
+    email: scout@example.invalid
+
+home: https://github.com/your-org/scout
+
+annotations:
+  # Cluster-feature requirements — kept informational, not enforced.
+  # Without RWX storage the chart can still install with replicas=1 and
+  # a ReadWriteOnce volume, but HPA-scaled multi-replica API needs RWX.
+  requires/openshift-routes: "true"
+  requires/storage-rwx: "recommended-when-api-replicas-gt-1"

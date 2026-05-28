@@ -1,0 +1,20 @@
+{{- /*
+Headless Service for the Postgres StatefulSet — clusterIP: None means
+DNS resolves directly to the pod IP, which is the StatefulSet pattern.
+The API + scheduler connect via this service name.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scout.postgresHost" . }}
+  labels:
+    {{- include "scout.componentLabels" (dict "ctx" . "component" "postgres") | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "scout.componentSelectorLabels" (dict "ctx" . "component" "postgres") | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
