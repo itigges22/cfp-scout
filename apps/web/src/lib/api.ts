@@ -18,6 +18,7 @@ import type {
   AudienceProfileCreate,
   AudienceProfileRead,
   AudienceProfileUpdate,
+  TalkUploadPreview,
   ConferenceBrief,
   ConferenceCreate,
   ConferenceCreateResponse,
@@ -33,6 +34,9 @@ import type {
   DiagnosticsResponse,
   DiagnosticsRetryResponse,
   GraphResponse,
+  GtmStrategyCreate,
+  GtmStrategyRead,
+  MessagingDocUploadPreview,
   MessagingDocumentCreate,
   MessagingDocumentRead,
   MessagingDocumentUpdate,
@@ -43,9 +47,27 @@ import type {
   PastConferenceImportResult,
   PastConferenceRead,
   PastConferenceUpdate,
+  PillarAudienceItem,
+  PillarConferenceItem,
+  PillarCreate,
+  PillarRead,
+  PillarTalkItem,
+  PillarUpdate,
+  ReuseCheckResult,
+  RoadmapEntryCreate,
+  RoadmapEntryRead,
+  RoadmapEntryUpdate,
   SmeCreate,
   SmeRead,
   SmeUpdate,
+  SmePillarLink,
+  SmePillarRead,
+  TalkCreate,
+  TalkRead,
+  TalkSubmissionCreate,
+  TalkSubmissionRead,
+  TalkTag,
+  TalkUpdate,
   TeamRecommendationsResponse,
   TopicCreate,
   TopicRead,
@@ -168,10 +190,11 @@ type ListParams = {
   per_page?: number;
   q?: string;
   is_active?: boolean | null;
+  pillar_id?: string | null;
 };
 
 export const messagingApi = {
-  list: (params: ListParams = {}) =>
+  list: (params: ListParams & { pillar_id?: string } = {}) =>
     request<Page<MessagingDocumentRead>>(`${BASE}/messaging-documents`, { query: params }),
   get: (id: string) => request<MessagingDocumentRead>(`${BASE}/messaging-documents/${id}`),
   create: (body: MessagingDocumentCreate, actor_label = "system") =>
@@ -191,6 +214,20 @@ export const messagingApi = {
       method: "DELETE",
       query: { actor_label },
     }),
+  uploadPreview: async (file: File, doc_kind: string): Promise<MessagingDocUploadPreview> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`${BASE}/messaging-documents/upload?doc_kind=${encodeURIComponent(doc_kind)}`, {
+      method: "POST",
+      body: fd,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const detail = (data as { detail?: string }).detail ?? `HTTP ${res.status}`;
+      throw new ApiError({ type: "about:blank", status: res.status, title: detail, detail });
+    }
+    return (await res.json()) as MessagingDocUploadPreview;
+  },
 };
 
 export const audiencesApi = {
@@ -496,4 +533,107 @@ export const discoveryApi = {
       `${BASE}/admin/discovery/run-now-async`,
       { method: "POST", body },
     ),
+};
+
+// ---------------------------------------------------------------------------
+// Pillars (v2)
+// ---------------------------------------------------------------------------
+export const pillarsApi = {
+  list: () => request<PillarRead[]>(`${BASE}/pillars`),
+  get: (id: string) => request<PillarRead>(`${BASE}/pillars/${id}`),
+  create: (body: PillarCreate) =>
+    request<PillarRead>(`${BASE}/pillars`, { method: "POST", body }),
+  update: (id: string, body: PillarUpdate) =>
+    request<PillarRead>(`${BASE}/pillars/${id}`, { method: "PUT", body }),
+  delete: (id: string) =>
+    request<void>(`${BASE}/pillars/${id}`, { method: "DELETE" }),
+
+  listSmes: (id: string) =>
+    request<SmePillarRead[]>(`${BASE}/pillars/${id}/smes`),
+  linkSme: (id: string, smeId: string, body: SmePillarLink) =>
+    request<SmePillarRead>(`${BASE}/pillars/${id}/smes/${smeId}`, { method: "POST", body }),
+  unlinkSme: (id: string, smeId: string) =>
+    request<void>(`${BASE}/pillars/${id}/smes/${smeId}`, { method: "DELETE" }),
+
+  listConferences: (id: string) =>
+    request<PillarConferenceItem[]>(`${BASE}/pillars/${id}/conferences`),
+  listTalks: (id: string) =>
+    request<PillarTalkItem[]>(`${BASE}/pillars/${id}/talks`),
+  listAudiences: (id: string) =>
+    request<PillarAudienceItem[]>(`${BASE}/pillars/${id}/audiences`),
+
+  listRoadmap: (id: string) =>
+    request<RoadmapEntryRead[]>(`${BASE}/pillars/${id}/content-roadmap`),
+  addRoadmap: (id: string, body: RoadmapEntryCreate) =>
+    request<RoadmapEntryRead>(`${BASE}/pillars/${id}/content-roadmap`, { method: "POST", body }),
+  updateRoadmap: (id: string, roadmapId: string, body: RoadmapEntryUpdate) =>
+    request<RoadmapEntryRead>(`${BASE}/pillars/${id}/content-roadmap/${roadmapId}`, {
+      method: "PUT",
+      body,
+    }),
+  deleteRoadmap: (id: string, roadmapId: string) =>
+    request<void>(`${BASE}/pillars/${id}/content-roadmap/${roadmapId}`, { method: "DELETE" }),
+
+  listGtm: (id: string) =>
+    request<GtmStrategyRead[]>(`${BASE}/pillars/${id}/gtm-strategy`),
+  createGtm: (id: string, body: GtmStrategyCreate) =>
+    request<GtmStrategyRead>(`${BASE}/pillars/${id}/gtm-strategy`, { method: "POST", body }),
+};
+
+// ---------------------------------------------------------------------------
+// Talks (v2)
+// ---------------------------------------------------------------------------
+export const talksApi = {
+  list: (params: {
+    page?: number;
+    per_page?: number;
+    pillar_id?: string;
+    tag_id?: string;
+    sme_id?: string;
+    review_status?: string;
+    is_active?: boolean;
+  } = {}) => {
+    const sp = new URLSearchParams();
+    if (params.page) sp.set("page", String(params.page));
+    if (params.per_page) sp.set("per_page", String(params.per_page));
+    if (params.pillar_id) sp.set("pillar_id", params.pillar_id);
+    if (params.tag_id) sp.set("tag_id", params.tag_id);
+    if (params.sme_id) sp.set("sme_id", params.sme_id);
+    if (params.review_status) sp.set("review_status", params.review_status);
+    if (params.is_active !== undefined) sp.set("is_active", String(params.is_active));
+    const qs = sp.toString();
+    return request<import("@/lib/api-types").Page<TalkRead>>(
+      `${BASE}/talks${qs ? `?${qs}` : ""}`,
+    );
+  },
+  get: (id: string) => request<TalkRead>(`${BASE}/talks/${id}`),
+  create: (body: TalkCreate) =>
+    request<TalkRead>(`${BASE}/talks`, { method: "POST", body }),
+  update: (id: string, body: TalkUpdate) =>
+    request<TalkRead>(`${BASE}/talks/${id}`, { method: "PUT", body }),
+  delete: (id: string) =>
+    request<void>(`${BASE}/talks/${id}`, { method: "DELETE" }),
+  upload: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<TalkUploadPreview>(`${BASE}/talks/upload`, { method: "POST", form });
+  },
+  submit: (talkId: string, body: TalkSubmissionCreate) =>
+    request<TalkSubmissionRead>(`${BASE}/talks/${talkId}/submit`, {
+      method: "POST",
+      body,
+    }),
+  reuseCheck: (id: string) =>
+    request<ReuseCheckResult>(`${BASE}/talks/${id}/reuse-check`),
+};
+
+// ---------------------------------------------------------------------------
+// Talk tags (v2)
+// ---------------------------------------------------------------------------
+export const talkTagsApi = {
+  list: () => request<TalkTag[]>(`${BASE}/talk-tags`),
+  create: (body: { name: string; color?: string | null }) =>
+    request<TalkTag>(`${BASE}/talk-tags`, { method: "POST", body }),
+  delete: (id: string) =>
+    request<void>(`${BASE}/talk-tags/${id}`, { method: "DELETE" }),
 };

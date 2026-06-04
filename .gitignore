@@ -114,8 +114,6 @@ rh-docs/
 /rh-docs/**
 
 # ---------------------------------------------------------------------------
-# Phase 1 implementation plans — local-only design notes. Scrubbed from
-# git history on 2026-05-23 so they don't ship with public clones.
+# Planning documents — local-only design notes, never commit to GitHub.
 # ---------------------------------------------------------------------------
-PLANS/
-/PLANS/**
+docs/planning/

@@ -66,12 +66,15 @@ async def list_audience_profiles(
     per_page: int = 20,
     q: str | None = None,
     is_active: bool | None = None,
+    pillar_id: UUID | None = None,
 ) -> Page[AudienceProfileRead]:
     stmt = select(AudienceProfile).order_by(AudienceProfile.name.asc())
     if q:
         stmt = stmt.where(AudienceProfile.name.ilike(f"%{q}%"))
     if is_active is not None:
         stmt = stmt.where(AudienceProfile.is_active.is_(is_active))
+    if pillar_id is not None:
+        stmt = stmt.where(AudienceProfile.pillar_id == pillar_id)
 
     rows, total = await paginate(db, stmt, page=page, per_page=per_page)
     return Page[AudienceProfileRead](

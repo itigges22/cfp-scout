@@ -167,3 +167,32 @@ async def teams_now_async(conference_id: UUID) -> dict:
         kwargs={"conference_id": str(conference_id)},
     )
     return {"queued_job_id": job_id, "conference_id": str(conference_id)}
+
+
+@router.post("/link-past-conference-series")
+async def link_past_conference_series(
+    db: DbSession,
+    link_threshold: float = Query(default=0.82, ge=0.5, le=1.0),
+    review_threshold: float = Query(default=0.65, ge=0.5, le=1.0),
+) -> dict:
+    """Fuzzy-match unlinked past_conferences to conference_series by name.
+
+    Uses pg_trgm similarity (same as the conference orphan linker).
+    Rows >= link_threshold get series_id set. Rows in [review_threshold,
+    link_threshold) are logged as needs_review without writing.
+    Returns: {linked, skipped, needs_review}.
+    """
+    from app.services.series.crud import link_past_conference_series_orphans
+
+    log.info(
+        "admin.matcher.link_past_conf_series",
+        link_threshold=link_threshold,
+        review_threshold=review_threshold,
+    )
+    result = await link_past_conference_series_orphans(
+        db,
+        link_threshold=link_threshold,
+        review_threshold=review_threshold,
+    )
+    await db.commit()
+    return result.to_dict()

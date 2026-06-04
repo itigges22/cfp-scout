@@ -382,9 +382,25 @@ async def _past_attendance(
 # Math
 # --------------------------------------------------------------------------
 def _cosine(a, b) -> float:
+    """Proper cosine similarity with magnitude normalization.
+
+    nomic-embed-text-v1-5 embeddings have magnitudes of 13–18, not 1.0,
+    so bare dot products return values like 200+ and clamp01 collapses
+    everything to 1.0 — making bio_similarity useless as a discriminator.
+    Fixed to match the identical correction in messaging.py and pillars.py.
+    """
     if a is None or b is None:
         return 0.0
-    s = 0.0
+    from math import sqrt
+
+    dot = 0.0
+    mag_a = 0.0
+    mag_b = 0.0
     for x, y in zip(a, b, strict=False):
-        s += float(x) * float(y)
-    return clamp01(s)
+        fx, fy = float(x), float(y)
+        dot += fx * fy
+        mag_a += fx * fx
+        mag_b += fy * fy
+    if mag_a <= 0 or mag_b <= 0:
+        return 0.0
+    return clamp01(dot / (sqrt(mag_a) * sqrt(mag_b)))

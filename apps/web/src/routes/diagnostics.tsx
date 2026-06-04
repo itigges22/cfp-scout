@@ -1,13 +1,13 @@
 /**
- * /diagnostics — operational dashboard (plan 26).
+ * /diagnostics — usage dashboard + system health.
  *
- * Six panels backed by a single denormalized GET /api/v1/diagnostics call
- * (30s server-side cache). Optional 30s auto-refresh, manual refresh
- * button, per-job retry buttons.
+ * Above the fold: big usage stats with a time-window filter.
+ * Below the fold: background system health panels.
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { cn } from "@/lib/utils";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -17,14 +17,21 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, diagnosticsApi } from "@/lib/api";
 import type { DiagnosticsResponse } from "@/lib/api-types";
-import { PageHeader } from "@/routes/dashboard";
 
 export const Route = createFileRoute("/diagnostics")({
   component: DiagnosticsPage,
 });
 
+type Window = "7d" | "30d" | "all";
+const WINDOWS: { key: Window; label: string }[] = [
+  { key: "7d",  label: "7 days"  },
+  { key: "30d", label: "30 days" },
+  { key: "all", label: "All time" },
+];
+
 function DiagnosticsPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [window, setWindow] = useState<Window>("30d");
   const queryClient = useQueryClient();
 
   const { data, isLoading, error, isFetching, refetch } = useQuery({
@@ -35,86 +42,176 @@ function DiagnosticsPage() {
 
   const refreshMut = useMutation({
     mutationFn: () => diagnosticsApi.refresh(),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["diagnostics"] });
-    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["diagnostics"] }),
   });
 
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-4">
-        <PageHeader
-          title="Diagnostics"
-          description="LLM spend, jobs, scraper, data, digest, system."
-        />
-        <Skeleton className="h-64 w-full" />
+      <div className="flex flex-col gap-6 p-6">
+        <Skeleton className="h-12 w-64" />
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-36" />)}
+        </div>
       </div>
     );
   }
+
   if (error || !data) {
     return (
-      <div className="flex flex-col gap-4">
-        <PageHeader title="Diagnostics" description="Could not load diagnostics." />
-        <Card>
-          <CardContent className="py-6 text-sm text-danger">
-            {error instanceof ApiError
-              ? error.problem.detail ?? error.problem.title
-              : String(error)}
-          </CardContent>
-        </Card>
+      <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
+        <p className="text-lg font-semibold text-danger">Could not load diagnostics</p>
+        <p className="text-sm text-fg-muted">
+          {error instanceof ApiError
+            ? error.problem.detail ?? error.problem.title
+            : String(error)}
+        </p>
+        <Button onClick={() => void refreshMut.mutate()}>Retry</Button>
       </div>
     );
   }
 
-  return (
-    <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Diagnostics"
-        description="LLM spend, jobs, scraper, data, digest, system. 30s server cache."
-      />
+  const u = data.usage;
+  const totalConfs = Object.values(u.conferences_by_status).reduce((a, b) => a + b, 0);
+  const approved = u.conferences_by_status["approved"] ?? 0;
+  const decisionCount = u.decisions[window];
+  const outcomeBreakdown = u.decisions_by_outcome[window];
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-fg-subtle">
-          Generated {new Date(data.generated_at).toLocaleString()}
-          {isFetching ? " · refreshing…" : ""}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto"
-          onClick={() => refreshMut.mutate()}
-          disabled={refreshMut.isPending}
-        >
-          {refreshMut.isPending ? "Refreshing…" : "Force refresh"}
-        </Button>
-        <label className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-1 text-xs">
-          <input
-            type="checkbox"
-            checked={autoRefresh}
-            onChange={(e) => setAutoRefresh(e.target.checked)}
+  return (
+    <div className="flex flex-col">
+      {/* ── Hero: Usage Dashboard ─────────────────────────────────────── */}
+      <div className="flex flex-col gap-6 p-6 pb-8">
+
+        {/* Title + controls row */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Diagnostics</h1>
+            <p className="mt-0.5 text-sm text-fg-muted">
+              App usage and system health
+              {isFetching ? " · refreshing…" : ""}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm">
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(e) => setAutoRefresh(e.target.checked)}
+              />
+              Auto-refresh
+            </label>
+            <Button
+              variant="outline"
+              onClick={() => refreshMut.mutate()}
+              disabled={refreshMut.isPending}
+            >
+              {refreshMut.isPending ? "Refreshing…" : "Force refresh"}
+            </Button>
+          </div>
+        </div>
+
+        {/* Time-window selector */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-fg-muted">Showing:</span>
+          <div className="flex rounded-lg border border-border bg-surface-2 p-0.5">
+            {WINDOWS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setWindow(key)}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                  window === key
+                    ? "bg-accent text-accent-fg"
+                    : "text-fg-muted hover:text-fg",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="text-sm text-fg-muted">
+            · Generated {new Date(data.generated_at).toLocaleString()}
+          </span>
+        </div>
+
+        {/* Big 4 stat cards (always all-time — these are current state) */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <HeroStat
+            label="Conferences Approved"
+            value={approved}
+            sub={`${totalConfs} total across all statuses`}
+            accent
           />
-          Auto-refresh (30s)
-        </label>
+          <HeroStat
+            label="Conferences Scored"
+            value={u.conferences_scored}
+            sub="have a match score"
+          />
+          <HeroStat
+            label="Past Events Uploaded"
+            value={u.past_conferences_total}
+            sub={`${u.past_conferences_scored} with verdict`}
+          />
+          <HeroStat
+            label="Talks Linked"
+            value={u.talk_submissions_total}
+            sub="submitted to conferences"
+          />
+        </div>
+
+        {/* Decision activity — filtered by window */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <HeroStat
+            label={`Decisions (${window === "all" ? "all time" : window})`}
+            value={decisionCount}
+          />
+          <div className="col-span-2 flex flex-col justify-center gap-3 rounded-xl border border-border bg-surface px-5 py-4">
+            <p className="text-sm font-medium text-fg-muted">
+              By outcome — {window === "all" ? "all time" : `last ${window}`}
+            </p>
+            {Object.keys(outcomeBreakdown).length === 0 ? (
+              <p className="text-sm text-fg-muted">No decisions recorded in this window.</p>
+            ) : (
+              <div className="flex flex-wrap gap-6">
+                {Object.entries(outcomeBreakdown).map(([outcome, n]) => (
+                  <div key={outcome} className="flex flex-col">
+                    <span className="text-3xl font-bold tabular-nums">{n}</span>
+                    <span className="text-sm capitalize text-fg-muted">
+                      {outcome.replace(/_/g, " ")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col justify-center rounded-xl border border-border bg-surface px-5 py-4">
+            <p className="text-sm font-medium text-fg-muted">Active SMEs</p>
+            <p className="mt-1 text-3xl font-bold">{u.smes_active}</p>
+          </div>
+        </div>
+
+        {/* CFP Digest — belongs in usage, not background systems */}
+        <DigestPanel d={data} />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <LlmPanel d={data} />
-        <JobsPanel
-          d={data}
-          onRetry={(id) => {
-            diagnosticsApi
-              .retryJob(id)
-              .then(() => {
-                void refetch();
-              })
-              .catch((err) => {
-                console.error("retry failed:", err);
-              });
-          }}
-        />
-        <ScraperPanel d={data} />
-        <DataPanel d={data} />
-        <DigestPanel d={data} />
+      {/* ── Divider ───────────────────────────────────────────────────── */}
+      <div className="border-t border-border" />
+
+      {/* ── Background system panels ──────────────────────────────────── */}
+      <div className="flex flex-col gap-6 p-6">
+        <h2 className="text-lg font-semibold text-fg-muted">Background Systems</h2>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <LlmActivityPanel d={data} window={window} />
+          <JobsPanel
+            d={data}
+            onRetry={(id) =>
+              diagnosticsApi.retryJob(id).then(() => void refetch()).catch(console.error)
+            }
+          />
+          <ScraperPanel d={data} />
+          <DataPanel d={data} />
+        </div>
+
         <SystemPanel d={data} />
       </div>
     </div>
@@ -122,83 +219,128 @@ function DiagnosticsPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Panels
+// Hero stat card
 // ---------------------------------------------------------------------------
-function LlmPanel({ d }: { d: DiagnosticsResponse }) {
-  const llm = d.llm;
-  const budget = llm.budget;
-  const pct =
-    budget.pct_used != null ? Math.min(1, Math.max(0, budget.pct_used)) : null;
+function HeroStat({
+  label, value, sub, accent,
+}: {
+  label: string; value: number; sub?: string; accent?: boolean;
+}) {
+  return (
+    <div className={cn(
+      "flex flex-col justify-between rounded-xl border px-5 py-4",
+      accent ? "border-accent/30 bg-accent/5" : "border-border bg-surface",
+    )}>
+      <p className="text-sm font-medium text-fg-muted">{label}</p>
+      <p className={cn("mt-2 text-5xl font-bold tabular-nums", accent ? "text-accent" : "text-fg")}>
+        {value.toLocaleString()}
+      </p>
+      {sub ? <p className="mt-1.5 text-sm text-fg-muted">{sub}</p> : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CFP Digest
+// ---------------------------------------------------------------------------
+function DigestPanel({ d }: { d: DiagnosticsResponse }) {
+  const latest = d.digest.latest;
+  if (!latest) return null;
   return (
     <Card>
       <CardHeader>
-        <CardTitle>LLM</CardTitle>
+        <CardTitle>CFP Digest</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <div className="grid grid-cols-3 gap-2 text-xs">
-          <Metric label="Calls (mtd)" value={llm.month_to_date.calls.toString()} />
-          <Metric
-            label="Tokens (mtd)"
-            value={llm.month_to_date.tokens.toLocaleString()}
-          />
-          <Metric
-            label="$ mtd"
-            value={`$${llm.month_to_date.cost_usd.toFixed(4)}`}
-          />
+      <CardContent className="flex flex-wrap items-center gap-6">
+        <div>
+          <p className="text-sm text-fg-muted">Generated</p>
+          <p className="mt-0.5 font-medium">
+            {new Date(latest.generated_at ?? latest.created_at).toLocaleString()}
+          </p>
         </div>
-        {budget.limit_usd ? (
-          <div>
-            <div className="mb-1 flex items-baseline justify-between text-xs">
-              <span className="text-fg-muted">
-                Budget ${budget.spent_usd.toFixed(2)} / ${budget.limit_usd.toFixed(2)}
-              </span>
-              <span
-                className={
-                  budget.threshold_warn ? "font-medium text-warning" : "text-fg-subtle"
-                }
-              >
-                {pct != null ? `${Math.round(pct * 100)}% used` : "—"}
-              </span>
+        <div>
+          <p className="text-sm text-fg-muted">Total entries</p>
+          <p className="mt-0.5 text-2xl font-bold tabular-nums">{latest.total_entries}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(latest.bucket_counts).map(([k, n]) => (
+            <Badge key={k} variant="muted" className="tabular-nums">{k}: {n}</Badge>
+          ))}
+        </div>
+        {latest.seen ? (
+          <Badge variant="muted">Seen</Badge>
+        ) : (
+          <Badge variant="success">Unread</Badge>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// LLM Activity — window-aware
+// ---------------------------------------------------------------------------
+function LlmActivityPanel({ d, window }: { d: DiagnosticsResponse; window: Window }) {
+  const llm = d.llm;
+  // Map the page window to the corresponding call count key
+  const windowCallKey = window === "7d" ? "7d" : window === "30d" ? "30d" : "all";
+  const highlightedCalls = llm.calls[windowCallKey];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>LLM Activity</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {/* Window-highlighted count */}
+        <div className="flex items-baseline gap-2">
+          <span className="text-4xl font-bold tabular-nums">{highlightedCalls.toLocaleString()}</span>
+          <span className="text-sm text-fg-muted">
+            calls — {window === "all" ? "all time" : `last ${window}`}
+          </span>
+        </div>
+
+        {/* All windows as secondary */}
+        <div className="grid grid-cols-4 gap-2">
+          {(["24h", "7d", "30d", "all"] as const).map((k) => (
+            <div key={k} className="flex flex-col gap-0.5 rounded-lg border border-border bg-surface-2 px-3 py-2">
+              <p className="text-sm text-fg-muted">{k === "all" ? "All time" : k}</p>
+              <p className="text-lg font-semibold tabular-nums">{llm.calls[k].toLocaleString()}</p>
             </div>
-            <Progress value={pct ?? 0} />
+          ))}
+        </div>
+
+        {llm.by_purpose_24h.length > 0 ? (
+          <div>
+            <p className="mb-2 text-sm font-medium text-fg-muted">By purpose (last 24h)</p>
+            <ul className="space-y-1.5">
+              {llm.by_purpose_24h.slice(0, 8).map((p) => (
+                <li key={p.purpose} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm text-fg-muted">{p.purpose}</span>
+                  <span className="text-sm font-medium tabular-nums">{p.calls}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
 
-        <div>
-          <p className="mb-1 text-[10px] uppercase tracking-wider text-fg-subtle">
-            Last 24h by purpose
-          </p>
-          {llm.by_purpose_24h.length === 0 ? (
-            <p className="text-xs text-fg-muted">No calls yet.</p>
-          ) : (
-            <ul className="space-y-1 text-xs">
-              {llm.by_purpose_24h.slice(0, 8).map((p) => (
-                <li
-                  key={p.purpose}
-                  className="flex items-baseline justify-between gap-2 tabular-nums"
-                >
-                  <span className="truncate text-fg-muted">{p.purpose}</span>
-                  <span className="text-fg">
-                    {p.calls} · {p.tokens.toLocaleString()}t · ${p.cost_usd.toFixed(4)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
         {llm.recent_errors.length > 0 ? (
           <div>
-            <p className="mb-1 text-[10px] uppercase tracking-wider text-fg-subtle">
-              Recent errors
-            </p>
-            <ul className="space-y-1 text-xs text-danger">
+            <p className="mb-2 text-sm font-medium text-fg-muted">Recent errors</p>
+            <TerminalBox>
               {llm.recent_errors.map((e, i) => (
-                <li key={i} className="truncate">
-                  {e.at ? new Date(e.at).toLocaleString() : "?"} · {e.purpose}: {e.error}
-                </li>
+                <div key={i} className="text-danger">
+                  <span className="text-fg-muted">
+                    {e.at ? new Date(e.at).toLocaleString() : "?"}
+                  </span>
+                  {" · "}
+                  <span className="text-warning">{e.purpose}</span>
+                  {"\n"}
+                  <span className="pl-2">{e.error}</span>
+                  {i < llm.recent_errors.length - 1 ? "\n" : ""}
+                </div>
               ))}
-            </ul>
+            </TerminalBox>
           </div>
         ) : null}
       </CardContent>
@@ -206,93 +348,95 @@ function LlmPanel({ d }: { d: DiagnosticsResponse }) {
   );
 }
 
-function JobsPanel({
-  d,
-  onRetry,
-}: {
-  d: DiagnosticsResponse;
-  onRetry: (job_id: string) => void;
-}) {
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+const STALE_THRESHOLD_SECONDS = 60 * 60 * 4; // 4h — beyond this is likely a zombie
+
+function JobsPanel({ d, onRetry }: { d: DiagnosticsResponse; onRetry: (id: string) => void }) {
   const j = d.jobs;
   return (
     <Card>
       <CardHeader>
         <CardTitle>Jobs</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+      <CardContent className="flex flex-col gap-4">
+
+        {/* Running */}
         <div>
-          <p className="mb-1 text-[10px] uppercase tracking-wider text-fg-subtle">
+          <p className="mb-2 text-sm font-medium text-fg-muted">
             Running ({j.running.length})
           </p>
           {j.running.length === 0 ? (
-            <p className="text-xs text-fg-muted">None.</p>
+            <p className="text-sm text-fg-muted">None.</p>
           ) : (
-            <ul className="space-y-1 text-xs">
-              {j.running.map((r) => (
-                <li key={r.id} className="flex items-baseline justify-between gap-2">
-                  <span className="text-fg-muted">{r.kind}</span>
-                  <span className="text-fg-subtle">
-                    {r.elapsed_seconds}s elapsed
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div>
-          <p className="mb-1 text-[10px] uppercase tracking-wider text-fg-subtle">
-            Failed (24h)
-          </p>
-          {j.failed_24h.length === 0 ? (
-            <p className="text-xs text-fg-muted">Clean.</p>
-          ) : (
-            <ul className="space-y-1.5 text-xs">
-              {j.failed_24h.slice(0, 5).map((f) => (
-                <li
-                  key={f.id}
-                  className="flex items-start justify-between gap-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <span className="font-medium text-fg">{f.kind}</span>{" "}
-                    <span className="text-fg-subtle">
-                      {f.started_at
-                        ? new Date(f.started_at).toLocaleString()
-                        : ""}
-                    </span>
-                    <p className="truncate text-danger">{f.error_preview}</p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onRetry(f.id)}
+            <TerminalBox>
+              {j.running.map((r, i) => {
+                const stale = (r.elapsed_seconds ?? 0) > STALE_THRESHOLD_SECONDS;
+                return (
+                  <div
+                    key={r.id}
+                    className={cn(
+                      "flex justify-between gap-4",
+                      stale ? "text-warning" : "text-fg",
+                    )}
                   >
-                    Retry
-                  </Button>
-                </li>
-              ))}
-            </ul>
+                    <span>{r.kind}</span>
+                    <span className="tabular-nums">
+                      {formatElapsed(r.elapsed_seconds)}
+                      {stale ? " ⚠ stale" : ""}
+                    </span>
+                    {i < j.running.length - 1 ? "\n" : ""}
+                  </div>
+                );
+              })}
+            </TerminalBox>
           )}
         </div>
 
+        {/* Failed */}
         <div>
-          <p className="mb-1 text-[10px] uppercase tracking-wider text-fg-subtle">
-            Next cron fires
-          </p>
-          {j.next_fires.length === 0 ? (
-            <p className="text-xs text-fg-muted">Scheduler idle.</p>
+          <p className="mb-2 text-sm font-medium text-fg-muted">Failed (24h)</p>
+          {j.failed_24h.length === 0 ? (
+            <p className="text-sm text-fg-muted">Clean.</p>
           ) : (
-            <ul className="space-y-1 text-xs">
+            <TerminalBox>
+              {j.failed_24h.slice(0, 10).map((f, i) => (
+                <div key={f.id}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-danger">{f.kind}</span>
+                    <button
+                      className="text-xs text-accent underline hover:no-underline"
+                      onClick={() => onRetry(f.id)}
+                    >
+                      retry
+                    </button>
+                  </div>
+                  <div className="text-fg-muted">
+                    {f.started_at ? new Date(f.started_at).toLocaleString() : ""}
+                  </div>
+                  {f.error_preview ? (
+                    <div className="text-danger">{f.error_preview}</div>
+                  ) : null}
+                  {i < j.failed_24h.length - 1 ? <div className="my-1 border-t border-border/40" /> : null}
+                </div>
+              ))}
+            </TerminalBox>
+          )}
+        </div>
+
+        {/* Next fires */}
+        <div>
+          <p className="mb-2 text-sm font-medium text-fg-muted">Next cron fires</p>
+          {j.next_fires.length === 0 ? (
+            <p className="text-sm text-fg-muted">Scheduler idle.</p>
+          ) : (
+            <ul className="space-y-1.5">
               {j.next_fires.map((n) => (
-                <li
-                  key={n.id}
-                  className="flex items-baseline justify-between gap-2"
-                >
-                  <span className="text-fg-muted">{n.id}</span>
-                  <span className="text-fg-subtle tabular-nums">
-                    {n.next_run_time
-                      ? new Date(n.next_run_time).toLocaleString()
-                      : "—"}
+                <li key={n.id} className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-fg-muted">{n.id}</span>
+                  <span className="text-sm tabular-nums">
+                    {n.next_run_time ? new Date(n.next_run_time).toLocaleString() : "—"}
                   </span>
                 </li>
               ))}
@@ -304,6 +448,9 @@ function JobsPanel({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Scraper
+// ---------------------------------------------------------------------------
 function ScraperPanel({ d }: { d: DiagnosticsResponse }) {
   const s = d.scraper;
   return (
@@ -311,39 +458,26 @@ function ScraperPanel({ d }: { d: DiagnosticsResponse }) {
       <CardHeader>
         <CardTitle>Scraper</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex flex-wrap gap-4 text-xs text-fg-muted">
-          <span>
-            <span className="font-medium text-fg">{s.sources.length}</span> sources
-          </span>
-          <span>
-            <span className="font-medium text-fg">{s.js_blocked_pages}</span> JS-blocked pages
-          </span>
-          <span>
-            <span className="font-medium text-fg">{s.disabled_sources.length}</span> disabled
-          </span>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-wrap gap-6 text-sm">
+          <span><span className="font-semibold">{s.sources.length}</span> <span className="text-fg-muted">sources</span></span>
+          <span><span className="font-semibold">{s.js_blocked_pages}</span> <span className="text-fg-muted">JS-blocked</span></span>
+          <span><span className="font-semibold">{s.disabled_sources.length}</span> <span className="text-fg-muted">disabled</span></span>
         </div>
         {s.sources.length === 0 ? (
-          <p className="text-xs text-fg-muted">No sources configured yet.</p>
+          <p className="text-sm text-fg-muted">No sources configured yet.</p>
         ) : (
-          <ul className="space-y-1.5 text-xs">
+          <ul className="space-y-2">
             {s.sources.slice(0, 10).map((src) => (
-              <li key={src.id} className="flex items-baseline justify-between gap-2">
-                <div className="min-w-0 flex-1 truncate">
-                  <span className="font-medium text-fg">{src.name}</span>{" "}
+              <li key={src.id} className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-1 items-center gap-2 truncate">
+                  <span className="font-medium">{src.name}</span>
                   <Badge variant="muted">{src.kind}</Badge>
-                  {!src.enabled ? (
-                    <Badge variant="danger" className="ml-1">disabled</Badge>
-                  ) : null}
-                  {!src.robots_allowed ? (
-                    <Badge variant="warning" className="ml-1">robots blocked</Badge>
-                  ) : null}
+                  {!src.enabled ? <Badge variant="danger">disabled</Badge> : null}
+                  {!src.robots_allowed ? <Badge variant="warning">robots blocked</Badge> : null}
                 </div>
-                <span className="shrink-0 text-fg-subtle tabular-nums">
-                  {src.pages_fetched} pages ·{" "}
-                  {src.last_crawled_at
-                    ? new Date(src.last_crawled_at).toLocaleString()
-                    : "never"}
+                <span className="shrink-0 text-sm text-fg-muted tabular-nums">
+                  {src.pages_fetched} pages · {src.last_crawled_at ? new Date(src.last_crawled_at).toLocaleString() : "never"}
                 </span>
               </li>
             ))}
@@ -354,72 +488,50 @@ function ScraperPanel({ d }: { d: DiagnosticsResponse }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Data catalog
+// ---------------------------------------------------------------------------
 function DataPanel({ d }: { d: DiagnosticsResponse }) {
   const data = d.data;
-  const totalConfs = Object.values(data.conferences_by_status).reduce(
-    (a, b) => a + b,
-    0,
-  );
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Data</CardTitle>
+        <CardTitle>Data Catalog</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex flex-wrap gap-2 text-xs">
-          <Pill label="Conferences" value={totalConfs.toString()} />
-          {Object.entries(data.conferences_by_status).map(([status, n]) => (
-            <Pill key={status} label={status} value={n.toString()} muted />
-          ))}
+      <CardContent className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3">
+          <MiniStat label="Active SMEs" value={data.smes.total_active} />
+          <MiniStat label="Active audiences" value={data.audiences_active} />
+          <MiniStat label="Active series" value={data.series.active_count} />
+          <MiniStat label="SMEs missing topics" value={data.smes.no_topics} warn={data.smes.no_topics > 0} />
         </div>
 
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <Metric label="Active SMEs" value={data.smes.total_active.toString()} />
-          <Metric
-            label="SMEs missing topics"
-            value={data.smes.no_topics.toString()}
-            warn={data.smes.no_topics > 0}
-          />
-          <Metric
-            label="Active audiences"
-            value={data.audiences_active.toString()}
-          />
-          <Metric
-            label="Active series"
-            value={data.series.active_count.toString()}
-          />
-        </div>
-
-        {data.pending_topics > 0 || data.series.unlinked_conferences > 0 ? (
-          <div className="flex flex-wrap gap-2 text-xs">
+        {(data.pending_topics > 0 || data.series.unlinked_conferences > 0) ? (
+          <div className="flex flex-wrap gap-2">
             {data.pending_topics > 0 ? (
               <Link
                 to="/topics"
-                className="rounded-md border border-warning/40 bg-warning/15 px-2 py-1 text-warning hover:bg-warning/25"
+                className="rounded-md border border-warning/40 bg-warning/15 px-3 py-1.5 text-sm text-warning hover:bg-warning/25"
               >
                 {data.pending_topics} pending topic{data.pending_topics === 1 ? "" : "s"} →
               </Link>
             ) : null}
             {data.series.unlinked_conferences > 0 ? (
-              <span className="rounded-md border border-border bg-surface-2 px-2 py-1 text-fg-muted">
-                {data.series.unlinked_conferences} unlinked conference
-                {data.series.unlinked_conferences === 1 ? "" : "s"} (see series suggestions)
+              <span className="rounded-md border border-border bg-surface-2 px-3 py-1.5 text-sm text-fg-muted">
+                {data.series.unlinked_conferences} unlinked conference{data.series.unlinked_conferences === 1 ? "" : "s"}
               </span>
             ) : null}
           </div>
         ) : null}
 
         {data.embedding_model ? (
-          <div className="text-xs text-fg-muted">
-            Embedding model:{" "}
-            <span className="text-fg">{data.embedding_model.name}</span> ·{" "}
-            <span className="tabular-nums">{data.embedding_model.dimension}d</span>{" "}
-            ({data.embedding_model.provider})
-          </div>
+          <p className="text-sm text-fg-muted">
+            Embedding: <span className="text-fg">{data.embedding_model.name}</span> · {data.embedding_model.dimension}d ({data.embedding_model.provider})
+          </p>
         ) : null}
 
         <div>
-          <p className="mb-1 text-[10px] uppercase tracking-wider text-fg-subtle">
+          <p className="mb-2 text-sm font-medium text-fg-muted">
             Conference freshness (decay {data.decay_enabled ? "on" : "off"})
           </p>
           <FreshnessHistogram counts={data.freshness_histogram.counts} />
@@ -432,7 +544,7 @@ function DataPanel({ d }: { d: DiagnosticsResponse }) {
 function FreshnessHistogram({ counts }: { counts: number[] }) {
   const max = Math.max(1, ...counts);
   return (
-    <div className="flex h-12 items-end gap-0.5">
+    <div className="flex h-14 items-end gap-0.5">
       {counts.map((n, i) => (
         <div
           key={i}
@@ -445,42 +557,9 @@ function FreshnessHistogram({ counts }: { counts: number[] }) {
   );
 }
 
-function DigestPanel({ d }: { d: DiagnosticsResponse }) {
-  const latest = d.digest.latest;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>CFP digest</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {!latest ? (
-          <p className="text-xs text-fg-muted">
-            No digest yet — daily 09:00 cron will populate when CFPs land.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2 text-xs">
-            <div>
-              Generated{" "}
-              {new Date(latest.generated_at ?? latest.created_at).toLocaleString()}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Pill label="Total" value={latest.total_entries.toString()} />
-              {Object.entries(latest.bucket_counts).map(([k, n]) => (
-                <Pill key={k} label={k} value={n.toString()} muted />
-              ))}
-            </div>
-            {latest.seen ? (
-              <Badge variant="muted">seen</Badge>
-            ) : (
-              <Badge variant="success">unread</Badge>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
+// ---------------------------------------------------------------------------
+// System
+// ---------------------------------------------------------------------------
 function SystemPanel({ d }: { d: DiagnosticsResponse }) {
   const s = d.system;
   return (
@@ -488,23 +567,19 @@ function SystemPanel({ d }: { d: DiagnosticsResponse }) {
       <CardHeader>
         <CardTitle>System</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 text-xs">
-        <Row k="Env" v={s.env} />
-        <Row k="Uptime" v={formatUptime(s.uptime_seconds)} />
-        <Row k="Postgres" v={shorten(s.postgres.version)} />
-        <Row k="DB size" v={s.postgres.db_size_pretty} />
-        <Row k="Storage path" v={s.storage_path} mono />
+      <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <InfoRow k="Env" v={s.env} />
+        <InfoRow k="Uptime" v={formatUptime(s.uptime_seconds)} />
+        <InfoRow k="Postgres" v={shorten(s.postgres.version)} />
+        <InfoRow k="DB size" v={s.postgres.db_size_pretty} />
+        <InfoRow k="Storage" v={s.storage_path} mono />
         {s.disk_usage ? (
-          <div>
-            <Row
+          <div className="sm:col-span-2">
+            <InfoRow
               k="Disk"
               v={`${formatBytes(s.disk_usage.used_bytes)} / ${formatBytes(s.disk_usage.total_bytes)}`}
             />
-            <Progress
-              value={s.disk_usage.used_bytes / s.disk_usage.total_bytes}
-              className="mt-1"
-              size="sm"
-            />
+            <Progress value={s.disk_usage.used_bytes / s.disk_usage.total_bytes} size="sm" className="mt-1.5" />
           </div>
         ) : null}
       </CardContent>
@@ -513,63 +588,49 @@ function SystemPanel({ d }: { d: DiagnosticsResponse }) {
 }
 
 // ---------------------------------------------------------------------------
-// Tiny presentational helpers
+// Shared small components
 // ---------------------------------------------------------------------------
-function Metric({
-  label,
-  value,
-  warn,
-}: {
-  label: string;
-  value: string;
-  warn?: boolean;
-}) {
+function TerminalBox({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border-subtle bg-surface-2 px-2 py-1.5">
-      <p className="text-[10px] uppercase tracking-wider text-fg-subtle">
-        {label}
-      </p>
-      <p
-        className={`text-sm font-semibold tabular-nums ${warn ? "text-warning" : "text-fg"}`}
-      >
-        {value}
+    <div className="max-h-52 overflow-y-auto rounded-md border border-border bg-canvas px-3 py-2.5 font-mono text-sm leading-relaxed">
+      {children}
+    </div>
+  );
+}
+
+function MiniStat({ label, value, warn }: { label: string; value: number; warn?: boolean }) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-lg border border-border bg-surface-2 px-3 py-2.5">
+      <p className="text-sm text-fg-muted">{label}</p>
+      <p className={cn("text-xl font-bold tabular-nums", warn ? "text-warning" : "text-fg")}>
+        {value.toLocaleString()}
       </p>
     </div>
   );
 }
 
-function Pill({
-  label,
-  value,
-  muted,
-}: {
-  label: string;
-  value: string;
-  muted?: boolean;
-}) {
+function InfoRow({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
-    <Badge variant={muted ? "muted" : "default"} className="tabular-nums">
-      {label}: <span className="ml-1 font-semibold">{value}</span>
-    </Badge>
+    <div className="flex flex-col gap-0.5">
+      <span className="text-sm text-fg-muted">{k}</span>
+      <span className={cn("text-sm font-medium", mono && "break-all font-mono")}>{v}</span>
+    </div>
   );
 }
 
-function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="text-fg-subtle">{k}</span>
-      <span className={`text-fg ${mono ? "font-mono text-[11px]" : ""}`}>{v}</span>
-    </div>
-  );
+// ---------------------------------------------------------------------------
+// Formatters
+// ---------------------------------------------------------------------------
+function formatElapsed(seconds: number | null): string {
+  if (seconds == null) return "?";
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+  return `${Math.floor(seconds / 86400)}d ${Math.floor((seconds % 86400) / 3600)}h`;
 }
 
 function formatUptime(seconds: number | null): string {
-  if (seconds == null) return "?";
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  if (seconds < 86400)
-    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-  return `${Math.floor(seconds / 86400)}d ${Math.floor((seconds % 86400) / 3600)}h`;
+  return formatElapsed(seconds);
 }
 
 function formatBytes(n: number): string {
@@ -584,7 +645,6 @@ function formatBytes(n: number): string {
 }
 
 function shorten(s: string): string {
-  // postgres version() returns a long string; grab "PostgreSQL X.Y" prefix.
   const m = s.match(/^(PostgreSQL\s+\d+\.\d+)/);
   return m ? m[1]! : s.slice(0, 60);
 }

@@ -14,10 +14,14 @@ from uuid import UUID
 
 import structlog
 from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy import text as sql_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.entities import Conference, ConferenceSeries
+from dataclasses import dataclass
+
+from app.db.models.entities import Conference, ConferenceSeries, PastConference
 from app.services._common import model_to_audit_dict, write_audit
 from app.services.graph import invalidate as invalidate_graph
 
@@ -224,6 +228,101 @@ async def unassign_conference_from_series(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+@dataclass(slots=True)
+class OrphanLinkResult:
+    linked: int
+    skipped: int
+    needs_review: int
+
+    def to_dict(self) -> dict:
+        return {"linked": self.linked, "skipped": self.skipped, "needs_review": self.needs_review}
+
+
+async def link_past_conference_series_orphans(
+    db: AsyncSession,
+    *,
+    link_threshold: float = 0.82,
+    review_threshold: float = 0.65,
+) -> OrphanLinkResult:
+    """Fuzzy-match unlinked past_conferences against conference_series by name.
+
+    Mirrors the conference orphan linker in detector.py, but for past_conferences.
+    Uses pg_trgm similarity() (same as the detector) after stripping year tokens.
+
+    Rows with similarity >= link_threshold get series_id set automatically.
+    Rows in [review_threshold, link_threshold) are logged as needs_review.
+    Caller commits.
+    """
+    from app.services.series.detector import strip_year_and_edition
+
+    orphans = (
+        (
+            await db.execute(
+                select(PastConference).where(PastConference.series_id.is_(None))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not orphans:
+        return OrphanLinkResult(linked=0, skipped=0, needs_review=0)
+
+    linked = 0
+    skipped = 0
+    needs_review = 0
+
+    for pc in orphans:
+        stripped = strip_year_and_edition(pc.name)
+        if not stripped:
+            skipped += 1
+            continue
+
+        rows = (
+            await db.execute(
+                sql_text(
+                    "SELECT id, canonical_name, "
+                    "similarity(canonical_name, :stripped) AS sim "
+                    "FROM app.conference_series "
+                    "WHERE is_active = true "
+                    "ORDER BY sim DESC LIMIT 1"
+                ),
+                {"stripped": stripped},
+            )
+        ).first()
+
+        if rows is None:
+            skipped += 1
+            continue
+
+        sid, canonical_name, sim = rows
+        sim = float(sim or 0.0)
+
+        if sim >= link_threshold:
+            pc.series_id = sid
+            await db.flush()
+            log.info(
+                "past_conf.series.linked",
+                past_conf_id=str(pc.id),
+                name=pc.name,
+                series=canonical_name,
+                similarity=round(sim, 3),
+            )
+            linked += 1
+        elif sim >= review_threshold:
+            log.info(
+                "past_conf.series.needs_review",
+                past_conf_id=str(pc.id),
+                name=pc.name,
+                candidate_series=canonical_name,
+                similarity=round(sim, 3),
+            )
+            needs_review += 1
+        else:
+            skipped += 1
+
+    return OrphanLinkResult(linked=linked, skipped=skipped, needs_review=needs_review)
+
+
 def _enqueue_matcher_recompute(conference_id: UUID) -> None:
     """Local-import the scheduler + task to avoid a top-level import cycle
     (scheduler -> tasks -> series_service -> scheduler)."""

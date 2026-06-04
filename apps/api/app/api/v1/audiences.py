@@ -25,9 +25,10 @@ async def list_(
     per_page: int = Query(20, ge=1, le=200),
     q: str | None = None,
     is_active: bool | None = None,
+    pillar_id: UUID | None = None,
 ) -> Page[AudienceProfileRead]:
     return await audience_service.list_audience_profiles(
-        db, page=page, per_page=per_page, q=q, is_active=is_active
+        db, page=page, per_page=per_page, q=q, is_active=is_active, pillar_id=pillar_id
     )
 
 

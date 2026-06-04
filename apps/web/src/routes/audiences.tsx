@@ -222,6 +222,7 @@ const EMPTY_AUDIENCE: AudienceProfileCreate = {
   key_messages: ["", ""],
   exclusion_criteria: [],
   is_active: true,
+  pillar_id: null,
 };
 
 function AudienceDialog({
@@ -255,6 +256,7 @@ function AudienceDialog({
         key_messages: pad(initial.key_messages),
         exclusion_criteria: initial.exclusion_criteria,
         is_active: initial.is_active,
+        pillar_id: initial.pillar_id,
       });
     } else {
       setForm(EMPTY_AUDIENCE);

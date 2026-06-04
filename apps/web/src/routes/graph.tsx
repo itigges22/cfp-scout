@@ -299,7 +299,7 @@ function FilterBar({
             </button>
           ))}
           {statusFilter.size === 0 ? (
-            <span className="text-[10px] text-fg-subtle">all open</span>
+            <span className="text-xs text-fg-subtle">all open</span>
           ) : null}
         </div>
 
@@ -545,7 +545,7 @@ function DetailDrawer({
       <CardContent className="flex flex-col gap-3 py-4">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-fg-subtle">
+            <p className="text-xs uppercase tracking-wider text-fg-subtle">
               {node.kind}
             </p>
             <h3 className="text-base font-medium">{node.label}</h3>
@@ -709,7 +709,7 @@ function Slider({
         onChange={(e) => onChange(Number(e.currentTarget.value))}
         className="w-full accent-accent"
       />
-      <p className="text-[10px] leading-snug text-fg-subtle">{hint}</p>
+      <p className="text-xs leading-snug text-fg-subtle">{hint}</p>
     </div>
   );
 }

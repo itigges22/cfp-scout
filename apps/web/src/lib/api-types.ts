@@ -12,6 +12,19 @@
  */
 
 // ---------------------------------------------------------------------------
+// Event kinds — single source of truth for the frontend
+// ---------------------------------------------------------------------------
+export const EVENT_KINDS = ["corporate", "grassroot", "developer_day", "research", "hackathon"] as const;
+export type EventKind = typeof EVENT_KINDS[number];
+export const EVENT_KIND_LABELS: Record<EventKind, string> = {
+  corporate:     "Corporate",
+  grassroot:     "Grassroot",
+  developer_day: "Developer Day",
+  research:      "Research",
+  hackathon:     "Hackathon",
+};
+
+// ---------------------------------------------------------------------------
 // Enums (mirror app/schemas/common.py)
 // ---------------------------------------------------------------------------
 export type RoleSeniority = "executive" | "director" | "manager" | "ic" | "mixed";
@@ -53,15 +66,19 @@ export interface ApiProblem {
 // ---------------------------------------------------------------------------
 // Messaging documents
 // ---------------------------------------------------------------------------
+export type DocKind = "gtm_strategy" | "content_roadmap" | "other";
+
 export interface MessagingDocumentBase {
   title: string;
   source_type: MessagingSourceType;
+  doc_kind: DocKind;
   elevator_pitch: string;
   target_personas: string[];
   key_themes: string[];
   talking_points: string[];
   differentiators: string[];
   competitive_position: string;
+  pillar_id: string | null;
   is_active: boolean;
 }
 
@@ -75,6 +92,17 @@ export interface MessagingDocumentRead extends MessagingDocumentBase {
   updated_at: string;
 }
 
+export interface MessagingDocUploadPreview {
+  doc_kind: DocKind;
+  title: string;
+  elevator_pitch: string;
+  target_personas: string[];
+  key_themes: string[];
+  talking_points: string[];
+  differentiators: string[];
+  competitive_position: string;
+}
+
 // ---------------------------------------------------------------------------
 // Audience profiles
 // ---------------------------------------------------------------------------
@@ -86,6 +114,7 @@ export interface AudienceProfileBase {
   primary_pain_points: string[];
   key_messages: string[];
   exclusion_criteria: string[];
+  pillar_id: string | null;
   is_active: boolean;
 }
 
@@ -94,8 +123,35 @@ export type AudienceProfileUpdate = AudienceProfileBase;
 
 export interface AudienceProfileRead extends AudienceProfileBase {
   id: string;
+  pillar_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Talk upload preview (v2)
+// ---------------------------------------------------------------------------
+export interface ExtractedTalk {
+  title: string;
+  abstract: string;
+  key_themes: string[];
+  suggested_topics: string[];
+  suggested_pillar_name: string | null;
+  target_audience_description: string | null;
+  suggested_duration_minutes: number | null;
+  talk_format: string | null;
+}
+
+export interface TopicMatch {
+  raw: string;
+  topic_id: string;
+  topic_name: string;
+  confidence: number;
+}
+
+export interface TalkUploadPreview {
+  extracted: ExtractedTalk;
+  suggested_topic_matches: TopicMatch[];
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +167,6 @@ export interface SmeBase {
   full_name: string;
   email: string | null;
   team: string;
-  expertise_areas: string[];
   primary_topics: string[]; // UUIDs
   audience_focus: string[];
   location_country: string;
@@ -149,6 +204,10 @@ export interface PastConferenceBase {
   /** Operator's retrospective: would the team attend a future
    * edition again? Drives the matcher's series_memory boost. */
   verdict: PastConferenceVerdict;
+  event_kind: string;
+  conference_url: string | null;
+  location_city: string | null;
+  location_country: string | null;
 }
 
 export type PastConferenceVerdict = "would_attend" | "unsure" | "would_not_attend";
@@ -208,6 +267,8 @@ export interface ConferenceRead {
   name: string;
   slug: string;
   status: string;
+  event_kind: string;
+  series_id: string | null;
   confidence_score: number | null;
   start_date: string | null;
   end_date: string | null;
@@ -396,21 +457,23 @@ export interface GraphResponse {
 export interface DiagnosticsResponse {
   generated_at: string;
   cache_ttl_seconds: number;
-  llm: {
-    month_to_date: { calls: number; tokens: number; cost_usd: number };
-    last_24h: { calls: number; tokens: number; cost_usd: number };
-    budget: {
-      limit_usd: number | null;
-      spent_usd: number;
-      pct_used: number | null;
-      threshold_warn: boolean;
+  usage: {
+    conferences_by_status: Record<string, number>;
+    conferences_scored: number;
+    decisions: { "7d": number; "30d": number; all: number };
+    decisions_by_outcome: {
+      "7d": Record<string, number>;
+      "30d": Record<string, number>;
+      all: Record<string, number>;
     };
-    by_purpose_24h: Array<{
-      purpose: string;
-      calls: number;
-      tokens: number;
-      cost_usd: number;
-    }>;
+    talk_submissions_total: number;
+    past_conferences_total: number;
+    past_conferences_scored: number;
+    smes_active: number;
+  };
+  llm: {
+    calls: { "24h": number; "7d": number; "30d": number; all: number };
+    by_purpose_24h: Array<{ purpose: string; calls: number }>;
     recent_errors: Array<{
       at: string | null;
       model: string;
@@ -693,7 +756,6 @@ export interface BriefAttendee {
   team: string;
   location_city: string | null;
   location_country: string | null;
-  expertise_areas: string[];
   bio: string;
   narrative: string;
 }
@@ -792,4 +854,188 @@ export interface ConferenceBrief {
     } | null;
     sources_count: number;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Strategic pillars (v2)
+// ---------------------------------------------------------------------------
+export interface PillarRead {
+  id: string;
+  name: string;
+  description: string;
+  enriched_description: string | null;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+  sme_count: number;
+  talk_count: number;
+  audience_count: number;
+  conference_count: number;
+}
+
+export interface PillarCreate {
+  name: string;
+  description: string;
+  display_order?: number | null;
+}
+
+export type PillarUpdate = Omit<PillarCreate, "display_order">;
+
+export interface SmePillarRead {
+  sme_id: string;
+  pillar_id: string;
+  is_primary: boolean;
+}
+
+export interface SmePillarLink {
+  is_primary: boolean;
+}
+
+export interface RoadmapEntryRead {
+  id: string;
+  pillar_id: string;
+  quarter: string;
+  goals: string[];
+  owner_label: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoadmapEntryCreate {
+  quarter: string;
+  goals: string[];
+  owner_label?: string | null;
+  notes?: string | null;
+}
+
+export interface RoadmapEntryUpdate {
+  quarter?: string | null;
+  goals?: string[] | null;
+  owner_label?: string | null;
+  notes?: string | null;
+}
+
+export interface GtmStrategyRead {
+  id: string;
+  pillar_id: string;
+  objective: string | null;
+  key_messages: string[];
+  target_audience_ids: string[];
+  notes: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GtmStrategyCreate {
+  objective?: string | null;
+  key_messages: string[];
+  target_audience_ids?: string[];
+  notes?: string | null;
+}
+
+export interface PillarConferenceItem {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  event_kind: string;
+}
+
+export interface PillarAudienceItem {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface PillarTalkItem {
+  id: string;
+  title: string;
+  review_status: TalkReviewStatus;
+}
+
+// ---------------------------------------------------------------------------
+// Talks library (v2)
+// ---------------------------------------------------------------------------
+export type TalkSourceType = "manual" | "uploaded";
+export type TalkReviewStatus = "draft" | "pending_review" | "approved";
+export type TalkFormat = "keynote" | "talk" | "panel" | "workshop" | "tutorial" | "other";
+export type TalkSubmissionOutcome = "submitted" | "accepted" | "rejected" | "withdrawn";
+
+export interface TalkTag {
+  id: string;
+  name: string;
+  color: string | null;
+  created_at: string;
+}
+
+export interface TalkSubmissionRead {
+  id: string;
+  talk_id: string;
+  conference_id: string;
+  submitted_by_sme_id: string | null;
+  submitted_at: string | null;
+  outcome: TalkSubmissionOutcome | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface TalkRead {
+  id: string;
+  title: string;
+  abstract: string | null;
+  full_content: string | null;
+  source_type: TalkSourceType;
+  file_path: string | null;
+  pillar_id: string | null;
+  primary_sme_id: string | null;
+  co_speaker_ids: string[];
+  talk_format: TalkFormat | null;
+  suggested_duration_minutes: number | null;
+  review_status: TalkReviewStatus;
+  is_active: boolean;
+  tags: TalkTag[];
+  topics: string[]; // UUIDs
+  submissions: TalkSubmissionRead[];
+  created_at: string;
+  updated_at: string;
+  /** Total number of conferences this talk has been applied to. */
+  times_applied: number;
+  /** True when times_applied >= the configured reuse flag threshold. */
+  is_flagged: boolean;
+}
+
+export interface TalkCreate {
+  title: string;
+  abstract?: string | null;
+  full_content?: string | null;
+  pillar_id?: string | null;
+  primary_sme_id?: string | null;
+  talk_format?: TalkFormat | null;
+  suggested_duration_minutes?: number | null;
+  review_status?: TalkReviewStatus;
+  is_active?: boolean;
+}
+
+export type TalkUpdate = TalkCreate;
+
+export interface TalkSubmissionCreate {
+  conference_id: string;
+  submitted_at?: string | null;
+  submitted_by_sme_id?: string | null;
+  outcome?: string | null;
+  notes?: string | null;
+}
+
+export interface ReuseCheckResult {
+  talk_id: string;
+  submission_count_12m: number;
+  series_reuse: Array<{
+    series_id: string;
+    series_name: string;
+    submission_count: number;
+  }>;
+  risk_level: "low" | "medium" | "high";
+  warning: string | null;
 }

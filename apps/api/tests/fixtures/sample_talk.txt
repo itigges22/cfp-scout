@@ -1,0 +1,25 @@
+Scaling Kubernetes at the Edge: Lessons from 1000 Nodes
+
+Abstract
+
+Running Kubernetes at the edge presents unique challenges that differ significantly from
+data center deployments. This talk shares lessons learned from deploying and operating
+a 1000-node Kubernetes cluster across distributed edge locations.
+
+We'll cover:
+- Managing cluster state across intermittent network connectivity
+- Reducing resource overhead for constrained edge hardware
+- GitOps workflows adapted for edge environments
+- Observability without centralized infrastructure
+
+Key Themes
+
+The audience will leave with practical techniques for adapting standard Kubernetes
+patterns to edge constraints, including node management, workload scheduling,
+and network policies that account for unreliable connectivity.
+
+Target Audience: Platform engineers and SREs managing distributed infrastructure
+
+Format: Talk (30 minutes)
+
+Topics: Kubernetes, Edge Computing, GitOps, Observability

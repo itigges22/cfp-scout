@@ -162,6 +162,11 @@ class Settings(BaseSettings):
     sme_w_location: float = 0.10
     sme_w_past: float = 0.05
 
+    # SME topic cap — maximum number of topics an SME may claim.
+    # Enforced at the Pydantic layer (SmeBase validator) + UI picker.
+    # Lower values improve Jaccard scoring precision (ADR-0009).
+    sme_max_topics: int = Field(default=5, ge=1, le=20)
+
     # Label of the "home" team — used purely for UI distinction
     # (an SME whose team field doesn't match this gets tagged
     # ``is_external=True``, which the frontend may surface as a small
@@ -249,6 +254,49 @@ class Settings(BaseSettings):
     # per conference — cost = K LLM calls per conference. K=3 is the
     # plan's default + acceptance criterion.
     sme_narrative_top_k: int = Field(default=3, ge=1, le=10)
+
+    # ------------------------------------------------------------------
+    # Talks library
+    # ------------------------------------------------------------------
+    # Number of distinct conferences a talk must be applied to before
+    # Scout flags it as high-reuse. Flagged talks show a warning badge
+    # and require confirmation before a new submission is added.
+    talk_reuse_flag_threshold: int = Field(default=3, ge=1, le=20)
+
+    # ------------------------------------------------------------------
+    # Topic auto-approval
+    # ------------------------------------------------------------------
+    # Topics extracted by the LLM are auto-approved unless their
+    # normalized name contains one of these substrings (case-insensitive).
+    # Pure logistics terms that appear on every conference page but carry
+    # no semantic signal for matching. Editable in /settings/tunables.
+    topic_noise_blocklist: list[str] = Field(
+        default_factory=lambda: [
+            "registration", "networking", "lunch", "breakfast", "dinner",
+            "coffee", "coffee break", "refreshments", "cocktail", "reception",
+            "happy hour", "party", "exhibition", "exhibitor", "booth",
+            "sponsor", "sponsorship", "welcome", "opening ceremony",
+            "closing ceremony", "q&a", "q & a", "icebreaker",
+            "check-in", "check in", "sign-in", "badge pickup",
+            "social event", "social hour", "city tour",
+        ]
+    )
+
+    # ------------------------------------------------------------------
+    # Conferences
+    # ------------------------------------------------------------------
+    # The allowed event_kind values for new conferences. Removing a kind
+    # does not retroactively change existing rows. 'grassroot' is special:
+    # those events are auto-approved and excluded from the matcher.
+    valid_event_kinds: list[str] = Field(
+        default_factory=lambda: [
+            "corporate",
+            "grassroot",
+            "developer_day",
+            "research",
+            "hackathon",
+        ]
+    )
 
     # Multi-SME team recommendations (plan 32). Pure-algorithmic team
     # scoring with no LLM cost. Knobs are env-tunable per plan-spec.

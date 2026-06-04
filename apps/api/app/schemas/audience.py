@@ -44,6 +44,8 @@ class AudienceProfileBase(StrictBase):
     key_messages: Annotated[list[ListItem], Field(min_length=2, max_length=8)]
     exclusion_criteria: Annotated[list[ListItem], Field(max_length=5)] = []
 
+    pillar_id: UUID | None = None
+
     is_active: bool = True
 
 
@@ -59,5 +61,6 @@ class AudienceProfileRead(AudienceProfileBase):
     model_config = READ_CONFIG
 
     id: UUID
+    pillar_id: UUID | None = None
     created_at: datetime
     updated_at: datetime

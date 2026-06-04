@@ -1,14 +1,21 @@
-"""Topic normalization (plan 15).
+"""Topic normalization and auto-approval (plan 15, updated).
 
-LLM-extracted ``topics`` come as free text. We match each item against the
-controlled ``app.topics`` vocabulary (case-insensitive, accent-stripped,
-matched against ``name`` + ``aliases``). Matched topics flow through to
-``conferences.topics`` as the canonical name; unmatched ones get inserted
-with ``pending_review=true, is_active=false`` so they don't influence
-matching until an admin promotes them in ``/settings/topics`` (plan 09).
+LLM-extracted ``topics`` come as free text. Each candidate is:
 
-The pipeline calls :func:`normalize_topics` with the LLM's free-text list
-and gets back ``(canonical_names_for_storage, newly_pending_topic_names)``.
+  1. Noise-filtered — terms whose normalized name contains any substring from
+     ``topic_noise_blocklist`` (settings-configurable) are dropped silently.
+     This removes logistics entries (registration, networking, lunch, etc.)
+     that appear on every conference page but carry no semantic signal.
+
+  2. Matched against the existing ``app.topics`` vocabulary. Already-active
+     topics flow through unchanged. Existing-but-pending topics skip until
+     they are deactivated or cleared manually.
+
+  3. Auto-approved — new topics that pass the noise filter are inserted
+     directly as ``is_active=True, pending_review=False``. No human queue.
+
+The pipeline calls :func:`normalize_topics` and gets back
+``(canonical_names, newly_added_names, matched_topic_rows)``.
 """
 
 from __future__ import annotations
@@ -21,37 +28,48 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import Topic
+from app.settings import get_settings
 
 log = structlog.get_logger("scout.extraction.topics")
 
 
 def _normalize_key(s: str) -> str:
-    """Case-insensitive, accent-stripped match key.
-
-    Mirrors Postgres' ``lower(unaccent(...))`` so future plans can move the
-    match into SQL with confidence the keys agree.
-    """
+    """Case-insensitive, accent-stripped match key."""
     s = unicodedata.normalize("NFKD", s)
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
     return s.strip().lower()
 
 
+def _is_noise(name: str, blocklist: list[str]) -> bool:
+    """Return True if this topic should be silently dropped.
+
+    Checks:
+    - Too short (≤ 2 chars after normalization)
+    - Too long (> 80 chars — probably a sentence fragment, not a topic)
+    - Contains any blocklist substring (case-insensitive normalized match)
+    """
+    key = _normalize_key(name)
+    if len(key) <= 2 or len(name) > 80:
+        return True
+    return any(_normalize_key(term) in key for term in blocklist)
+
+
 async def normalize_topics(
     db: AsyncSession, candidates: list[str]
 ) -> tuple[list[str], list[str], list[Topic]]:
-    """Match free-text topics to ``app.topics``.
+    """Match free-text topics to ``app.topics``, auto-approving new ones.
 
-    Returns ``(canonical_names, newly_pending_names, matched_topic_rows)``:
-      * ``canonical_names`` — names to store in ``conferences.topics``
-        (deduplicated, in source order).
-      * ``newly_pending_names`` — names that didn't match any active topic
-        and were inserted with ``pending_review=true, is_active=false``.
-      * ``matched_topic_rows`` — the actual active Topic ORM rows we
-        matched; the pipeline uses these to insert ``conference_topics``
-        junction rows so plan 16's graph sees the Conference-Topic edges.
+    Returns ``(canonical_names, newly_added_names, matched_topic_rows)``:
+      * ``canonical_names`` — names to store in ``conferences.topics``.
+      * ``newly_added_names`` — names that were inserted as active topics
+        (passed the noise filter and weren't in the vocabulary yet).
+      * ``matched_topic_rows`` — active Topic ORM rows; the pipeline uses
+        these to insert ``conference_topics`` junction rows.
     """
     if not candidates:
         return [], [], []
+
+    blocklist = get_settings().topic_noise_blocklist
 
     # Single-pass index of existing topics by every name + alias key.
     result = await db.execute(select(Topic))
@@ -62,7 +80,7 @@ async def normalize_topics(
             by_key[_normalize_key(alias)] = t
 
     canonical: list[str] = []
-    pending_new: list[str] = []
+    newly_added: list[str] = []
     matched: list[Topic] = []
     seen_keys: set[str] = set()
 
@@ -72,30 +90,34 @@ async def normalize_topics(
             continue
         seen_keys.add(key)
 
-        match = by_key.get(key)
-        if match is not None:
-            if match.is_active:
-                canonical.append(match.name)
-                matched.append(match)
-            # pending-but-existing matches: don't surface yet; admin needs to
-            # approve them first.
+        # Drop logistics / noise terms.
+        if _is_noise(raw, blocklist):
+            log.debug("extraction.topics.noise_dropped", name=raw)
             continue
 
-        # Not seen before — insert as pending-review.
+        existing = by_key.get(key)
+        if existing is not None:
+            if existing.is_active:
+                canonical.append(existing.name)
+                matched.append(existing)
+            # pending-but-existing: leave it; operator can deactivate via UI.
+            continue
+
+        # New topic — auto-approve directly.
         new_topic = Topic(
             name=raw[:60],
             slug=slugify(raw, max_length=80, lowercase=True),
             aliases=[],
-            is_active=False,
-            pending_review=True,
+            is_active=True,
+            pending_review=False,
         )
         db.add(new_topic)
-        pending_new.append(new_topic.name)
-        # Cache in the local map so subsequent candidates with the same key
-        # hit the in-flight insert instead of duplicating.
+        canonical.append(new_topic.name)
+        matched.append(new_topic)
+        newly_added.append(new_topic.name)
         by_key[key] = new_topic
 
-    if pending_new:
-        log.info("extraction.topics.pending_inserted", names=pending_new)
+    if newly_added:
+        log.info("extraction.topics.auto_approved", names=newly_added)
 
-    return canonical, pending_new, matched
+    return canonical, newly_added, matched

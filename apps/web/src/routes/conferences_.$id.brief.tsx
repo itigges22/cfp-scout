@@ -206,18 +206,6 @@ function Attendees({
                     {m.narrative}
                   </p>
                 )}
-                {m.expertise_areas.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {m.expertise_areas.map((e) => (
-                      <span
-                        key={e}
-                        className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700"
-                      >
-                        {e}
-                      </span>
-                    ))}
-                  </div>
-                )}
               </li>
             ))}
           </ul>

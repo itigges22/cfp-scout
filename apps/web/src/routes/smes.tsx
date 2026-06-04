@@ -141,8 +141,9 @@ function SmesPage() {
                       <Badge variant={s.team === "team" ? "accent" : "muted"}>{s.team}</Badge>
                     </TableCell>
                     <TableCell className="text-fg-muted">
-                      {s.expertise_areas.slice(0, 3).join(" · ")}
-                      {s.expertise_areas.length > 3 ? "…" : null}
+                      {s.primary_topics.length > 0
+                        ? `${s.primary_topics.length} topic${s.primary_topics.length !== 1 ? "s" : ""}`
+                        : "—"}
                     </TableCell>
                     <TableCell className="text-fg-muted">
                       {[s.location_city, s.location_country].filter(Boolean).join(", ") ||

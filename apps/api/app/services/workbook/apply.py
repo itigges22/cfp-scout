@@ -310,7 +310,6 @@ async def _apply_sme(
             full_name=plan.values["full_name"],
             email=plan.values.get("email"),
             team=plan.values["team"],
-            expertise_areas=plan.values["expertise_areas"],
             primary_topics=primary_topic_ids,
             audience_focus=audience_ids,
             location_country=plan.values["location_country"],
@@ -337,7 +336,6 @@ async def _apply_sme(
     row.full_name = plan.values["full_name"]
     row.email = plan.values.get("email")
     row.team = plan.values["team"]
-    row.expertise_areas = plan.values["expertise_areas"]
     row.primary_topics = primary_topic_ids
     row.audience_focus = audience_ids
     row.location_country = plan.values["location_country"]

@@ -16,9 +16,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, audiencesApi, smesApi, topicsApi } from "@/lib/api";
-import type { SmeCreate, SmeRead } from "@/lib/api-types";
-import { ErrorBox, Field, ListField } from "@/routes/audiences";
+import { ApiError, audiencesApi, pillarsApi, smesApi, topicsApi } from "@/lib/api";
+import type { AudienceProfileRead, PillarRead, SmeCreate, SmeRead } from "@/lib/api-types";
+import { ErrorBox, Field } from "@/routes/audiences";
 
 interface Props {
   open: boolean;
@@ -27,11 +27,12 @@ interface Props {
   initial?: SmeRead | null;
 }
 
+const SME_MAX_TOPICS = 5;
+
 const EMPTY_FORM: SmeCreate = {
   full_name: "",
   email: null,
   team: "Engineering",
-  expertise_areas: ["", ""],
   primary_topics: [],
   audience_focus: [],
   location_country: "US",
@@ -56,17 +57,13 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
         full_name: initial.full_name,
         email: initial.email,
         team: initial.team,
-        expertise_areas:
-          initial.expertise_areas.length >= 2
-            ? initial.expertise_areas
-            : [...initial.expertise_areas, ...Array(2 - initial.expertise_areas.length).fill("")],
         primary_topics: initial.primary_topics,
         audience_focus: initial.audience_focus,
         location_country: initial.location_country,
         location_city: initial.location_city,
         bio: initial.bio,
         languages: initial.languages,
-        external_links: initial.external_links,
+        external_links: initial.external_links ?? {},
         is_active: initial.is_active,
       });
     } else {
@@ -88,11 +85,16 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
     enabled: open,
   });
 
+  const pillarsQuery = useQuery({
+    queryKey: ["pillars"],
+    queryFn: () => pillarsApi.list(),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const mutate = useMutation({
     mutationFn: (body: SmeCreate) => {
       const cleaned = {
         ...body,
-        expertise_areas: body.expertise_areas.filter((s) => s.trim().length > 0),
         email: body.email?.trim() ? body.email : null,
         location_city: body.location_city?.trim() ? body.location_city : null,
       };
@@ -158,40 +160,28 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
 
           {/* ----- Expertise ----- */}
           <Section title="Expertise & focus">
-            <ListField
-              label="Expertise areas"
-              hint="2–10 items"
-              values={form.expertise_areas}
-              error={fieldErrors.expertise_areas}
-              onChange={(i, v) => {
-                const next = [...form.expertise_areas];
-                next[i] = v;
-                setForm({ ...form, expertise_areas: next });
-              }}
-              onAdd={() =>
-                setForm({ ...form, expertise_areas: [...form.expertise_areas, ""] })
-              }
-            />
-
             <Field label="Primary topics" error={fieldErrors.primary_topics}>
-              <PickerHint hint="Pick 2–15 active topics. Approve pending topics in /topics first if needed." />
+              <PickerHint
+                hint={`Select up to ${SME_MAX_TOPICS} topics (${form.primary_topics.length}/${SME_MAX_TOPICS} selected). Approve pending topics in /topics first.`}
+              />
               <Picker
                 query={topicsQuery}
                 renderLabel={(t) => t.name}
                 selected={form.primary_topics}
+                maxSelect={SME_MAX_TOPICS}
                 onChange={(ids) => setForm({ ...form, primary_topics: ids })}
-                emptyMessage="No active topics yet. Approve them in /topics or seed via the workbook (plan 31)."
+                emptyMessage="No active topics yet. Approve them in /topics or seed via the workbook."
               />
             </Field>
 
             <Field label="Audiences they speak to well" error={fieldErrors.audience_focus}>
-              <PickerHint hint="Pick 1–8 active audiences." />
-              <Picker
-                query={audiencesQuery}
-                renderLabel={(a) => a.name}
+              <PickerHint hint="Pick 1–8 active audiences. Audiences are created under each pillar's Audiences tab." />
+              <GroupedAudiencePicker
+                audiences={audiencesQuery.data?.items ?? []}
+                pillars={pillarsQuery.data ?? []}
+                loading={audiencesQuery.isLoading}
                 selected={form.audience_focus}
                 onChange={(ids) => setForm({ ...form, audience_focus: ids })}
-                emptyMessage="No audiences yet. Create one on /audiences first."
               />
             </Field>
           </Section>
@@ -255,54 +245,6 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
             </Field>
           </Section>
 
-          {/* ----- Links ----- */}
-          <Section title="External links (optional)">
-            <div className="grid grid-cols-3 gap-4">
-              <Field label="LinkedIn URL">
-                <Input
-                  value={form.external_links.linkedin ?? ""}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      external_links: {
-                        ...form.external_links,
-                        linkedin: e.currentTarget.value || null,
-                      },
-                    })
-                  }
-                />
-              </Field>
-              <Field label="GitHub URL">
-                <Input
-                  value={form.external_links.github ?? ""}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      external_links: {
-                        ...form.external_links,
-                        github: e.currentTarget.value || null,
-                      },
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Website URL">
-                <Input
-                  value={form.external_links.website ?? ""}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      external_links: {
-                        ...form.external_links,
-                        website: e.currentTarget.value || null,
-                      },
-                    })
-                  }
-                />
-              </Field>
-            </div>
-          </Section>
-
           {mutate.isError && Object.keys(fieldErrors).length === 0 ? (
             <ErrorBox error={mutate.error} />
           ) : null}
@@ -318,7 +260,7 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
           </Button>
           <Button
             onClick={() => mutate.mutate(form)}
-            disabled={mutate.isPending || !bioOk || form.expertise_areas.filter((s) => s.trim()).length < 2}
+            disabled={mutate.isPending || !bioOk}
           >
             {mutate.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
             {isEdit ? "Save changes" : "Create SME"}
@@ -336,6 +278,87 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
         {title}
       </h3>
       {children}
+    </div>
+  );
+}
+
+function GroupedAudiencePicker({
+  audiences,
+  pillars,
+  loading,
+  selected,
+  onChange,
+}: {
+  audiences: AudienceProfileRead[];
+  pillars: PillarRead[];
+  loading: boolean;
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  if (loading) return <Skeleton className="h-20 w-full" />;
+
+  if (audiences.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed border-border-strong bg-surface-2 p-3 text-xs text-fg-muted">
+        No audiences yet. Create them under a pillar's <strong>Audiences</strong> tab.
+      </div>
+    );
+  }
+
+  // Build pillar lookup for labels
+  const pillarById = new Map(pillars.map((p) => [p.id, p.name]));
+
+  // Group audiences by pillar_id; null → "Unassigned"
+  const groups = new Map<string | null, AudienceProfileRead[]>();
+  for (const a of audiences) {
+    const key = a.pillar_id ?? null;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(a);
+  }
+
+  // Order: pillar groups (by display order from pillars list), then unassigned last
+  const orderedKeys: (string | null)[] = [
+    ...pillars.map((p) => p.id).filter((id) => groups.has(id)),
+    ...(groups.has(null) ? [null] : []),
+  ];
+
+  const toggle = (id: string) => {
+    if (selected.includes(id)) onChange(selected.filter((x) => x !== id));
+    else if (selected.length < 8) onChange([...selected, id]);
+  };
+
+  return (
+    <div className="flex max-h-52 flex-col gap-3 overflow-y-auto rounded-md border border-border bg-surface p-3">
+      {orderedKeys.map((key) => {
+        const items = groups.get(key) ?? [];
+        const groupLabel = key ? (pillarById.get(key) ?? "Unknown pillar") : "Unassigned";
+        return (
+          <div key={key ?? "unassigned"}>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-fg-subtle">
+              {groupLabel}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {items.map((a) => {
+                const on = selected.includes(a.id);
+                const atCap = !on && selected.length >= 8;
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => toggle(a.id)}
+                    disabled={atCap}
+                    className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Badge variant={on ? "accent" : "muted"} className="cursor-pointer">
+                      {a.name}
+                    </Badge>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -367,6 +390,7 @@ interface PickerProps<T extends PickerItem> {
   };
   renderLabel: (item: T) => string;
   selected: string[];
+  maxSelect?: number;
   onChange: (ids: string[]) => void;
   emptyMessage: string;
 }
@@ -375,6 +399,7 @@ function Picker<T extends PickerItem>({
   query,
   renderLabel,
   selected,
+  maxSelect,
   onChange,
   emptyMessage,
 }: PickerProps<T>) {
@@ -397,9 +422,10 @@ function Picker<T extends PickerItem>({
   }
 
   const isSelected = (id: string) => selected.includes(id);
+  const atCap = maxSelect !== undefined && selected.length >= maxSelect;
   const toggle = (id: string) => {
     if (isSelected(id)) onChange(selected.filter((x) => x !== id));
-    else onChange([...selected, id]);
+    else if (!atCap) onChange([...selected, id]);
   };
 
   return (
@@ -411,7 +437,8 @@ function Picker<T extends PickerItem>({
             key={item.id}
             type="button"
             onClick={() => toggle(item.id)}
-            className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            disabled={!on && atCap}
+            className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Badge variant={on ? "accent" : "muted"} className="cursor-pointer">
               {renderLabel(item)}

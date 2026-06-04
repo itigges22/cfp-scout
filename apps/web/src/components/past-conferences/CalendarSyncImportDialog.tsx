@@ -304,14 +304,14 @@ function DecisionGroup({
                 <span className="truncate text-sm font-medium">{d.name}</span>
                 <Badge
                   variant={d.action === "insert" ? "success" : d.action === "update" ? "accent" : "muted"}
-                  className="text-[10px]"
+                  className="text-xs"
                 >
                   {d.action}
                 </Badge>
               </div>
               <p className="truncate text-xs text-fg-muted">{d.summary}</p>
               {d.warnings.length > 0 && (
-                <p className="text-[10px] text-warning">⚠ {d.warnings.join("; ")}</p>
+                <p className="text-xs text-warning">⚠ {d.warnings.join("; ")}</p>
               )}
             </li>
           ))}

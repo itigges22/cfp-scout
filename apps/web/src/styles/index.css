@@ -24,8 +24,8 @@
 
   /* Foreground */
   --color-fg: #f0f0f0;            /* primary text */
-  --color-fg-muted: #a1a1aa;      /* secondary text */
-  --color-fg-subtle: #71717a;     /* tertiary / placeholders */
+  --color-fg-muted: #ccccd4;      /* secondary text */
+  --color-fg-subtle: #9898a8;     /* tertiary / placeholders */
 
   /* Accent — red */
   --color-accent: #ee0000;        /* primary action */
@@ -49,6 +49,10 @@
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, "Consolas", monospace;
 
+  /* Font-size scale — pushed up one step for readability */
+  --text-xs: 0.8rem;
+  --text-sm: 0.9rem;
+
   /* Radius */
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
@@ -69,6 +73,10 @@
   body,
   #root {
     height: 100%;
+  }
+
+  html {
+    font-size: 110%;
   }
 
   body {

@@ -34,6 +34,7 @@ import type {
   PastConferenceRole,
   PastConferenceSessionType,
 } from "@/lib/api-types";
+import { EVENT_KINDS, EVENT_KIND_LABELS } from "@/lib/api-types";
 
 const ROLES: PastConferenceRole[] = ["attendee", "speaker", "sponsor", "organizer"];
 const SESSION_TYPES: PastConferenceSessionType[] = [
@@ -57,15 +58,21 @@ const EMPTY: PastConferenceCreate = {
   notes: "",
   imported_from: null,
   verdict: "unsure",
+  event_kind: "corporate",
+  conference_url: null,
+  location_city: null,
+  location_country: null,
 };
 
 interface Props {
   open: boolean;
   initial: PastConferenceRead | null;
+  /** Pre-fill fields when opening in create mode (initial=null). Ignored when editing. */
+  prefill?: Partial<PastConferenceCreate>;
   onOpenChange: (open: boolean) => void;
 }
 
-export function PastConferenceEditDialog({ open, initial, onOpenChange }: Props) {
+export function PastConferenceEditDialog({ open, initial, prefill, onOpenChange }: Props) {
   const qc = useQueryClient();
   const isEdit = initial !== null;
   const [form, setForm] = useState<PastConferenceCreate>(EMPTY);
@@ -92,12 +99,16 @@ export function PastConferenceEditDialog({ open, initial, onOpenChange }: Props)
         notes: initial.notes ?? "",
         imported_from: initial.imported_from,
         verdict: initial.verdict,
+        event_kind: initial.event_kind ?? "corporate",
+        conference_url: initial.conference_url ?? null,
+        location_city: initial.location_city ?? null,
+        location_country: initial.location_country ?? null,
       });
     } else {
-      setForm(EMPTY);
+      setForm({ ...EMPTY, ...(prefill ?? {}) });
     }
     setFieldErrors({});
-  }, [open, initial]);
+  }, [open, initial, prefill]);
 
   const saveMut = useMutation({
     mutationFn: (body: PastConferenceCreate) =>
@@ -161,6 +172,46 @@ export function PastConferenceEditDialog({ open, initial, onOpenChange }: Props)
               />
             </Field>
           </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Event type" error={fieldErrors.event_kind}>
+              <select
+                value={form.event_kind}
+                onChange={(e) => setForm({ ...form, event_kind: e.currentTarget.value })}
+                className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm"
+              >
+                {EVENT_KINDS.map((k) => (
+                  <option key={k} value={k}>{EVENT_KIND_LABELS[k] ?? k}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="City (optional)" error={fieldErrors.location_city}>
+              <Input
+                value={form.location_city ?? ""}
+                onChange={(e) => setForm({ ...form, location_city: e.currentTarget.value || null })}
+                placeholder="San Francisco"
+              />
+            </Field>
+            <Field label="Country (ISO-3166)" error={fieldErrors.location_country}>
+              <Input
+                value={form.location_country ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, location_country: e.currentTarget.value.toUpperCase() || null })
+                }
+                placeholder="US"
+                maxLength={2}
+              />
+            </Field>
+          </div>
+
+          <Field label="Website URL (optional)" error={fieldErrors.conference_url}>
+            <Input
+              type="url"
+              value={form.conference_url ?? ""}
+              onChange={(e) => setForm({ ...form, conference_url: e.currentTarget.value || null })}
+              placeholder="https://example.com"
+            />
+          </Field>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Role" error={fieldErrors.role}>

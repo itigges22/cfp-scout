@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PageHeader } from "@/routes/dashboard";
+import { PageBanner, PageHeader } from "@/routes/dashboard";
 
 export const Route = createFileRoute("/settings_/tunables")({
   component: TunablesPage,
@@ -32,7 +32,7 @@ export const Route = createFileRoute("/settings_/tunables")({
 type SettingSpec = {
   name: string;
   kind: "int" | "float" | "bool" | "str" | "secret" | "list_str";
-  group: "llm" | "matcher" | "sme" | "team" | "decay" | "scraper" | "logging";
+  group: "llm" | "matcher" | "sme" | "team" | "decay" | "scraper" | "logging" | "talks";
   label: string;
   description: string;
   restart_required: boolean;
@@ -58,6 +58,7 @@ const GROUP_ORDER: SettingSpec["group"][] = [
   "sme",
   "team",
   "decay",
+  "talks",
   "scraper",
   "logging",
 ];
@@ -68,13 +69,20 @@ const GROUP_TITLE: Record<SettingSpec["group"], string> = {
   sme: "SME ranker weights",
   team: "Team recommendations",
   decay: "Decay",
+  talks: "Talks library",
   scraper: "Scraper",
   logging: "Logging",
 };
 
 const GROUP_NOTE: Partial<Record<SettingSpec["group"], string>> = {
-  matcher: "Weights must sum to 1.0. The save button enforces this.",
-  sme: "Weights must sum to 1.0. The save button enforces this.",
+  talks: "Controls the talks library reuse-detection system and the topic auto-approval filter. The flag threshold is the number of distinct conferences a talk must be applied to before it turns red and requires a confirmation step. The noise blocklist is a list of substrings (one per line) — any topic whose name contains one of these is silently dropped instead of being added to the vocabulary. Add logistics terms that keep slipping through.",
+  llm: "The API key is masked after saving. To rotate it, paste the new value and save. Budget limit cuts off LLM calls for the billing period — set to 0 to disable the cap.",
+  matcher: "Gates (M/P/S) are the minimum score a conference must reach before advancing to the next stage — below the gate it gets a 'needs review' status instead of 'approved'. Weights control how much each stage contributes to the final overall score; the pipeline normalizes them so they don't need to sum to 1.0.",
+  sme: "The five dimensions that produce each SME's composite score. Must sum to exactly 1.0. Topic and bio are the strongest signals; location and past attendance are secondary nudges.",
+  team: "Controls the multi-SME team recommendation engine that picks complementary groups of 1, 2, or 3 speakers per conference.",
+  decay: "Applies a freshness penalty to older embedding chunks so stale conference descriptions influence scores less over time. Disable if you want raw cosine scores with no time weighting.",
+  scraper: "Controls how aggressively the conference discovery scraper runs. Politeness delay limits how fast it hits external sites — lower values are faster but risk rate-limiting or bans.",
+  logging: "Structured log level for the API process. 'info' is the production default. 'debug' logs every DB query and LLM prompt — very noisy but useful when diagnosing a specific issue.",
 };
 
 function TunablesPage() {
@@ -91,8 +99,16 @@ function TunablesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Tunables & API keys"
-        description="Every runtime knob in app/settings.py exposed for editing. Overrides land in app.app_setting_overrides and stick across restarts."
+        description="Adjust how the matcher, scraper, and LLM pipeline behave — no restart needed for most changes."
       />
+      <PageBanner>
+        Each section has its own <strong>Save</strong> button so unrelated edits don't bundle
+        together. Values shown with a <em>default</em> pill are inherited from the environment
+        and not yet overridden — saving a value locks it into the database and it will survive
+        restarts. Settings marked <strong>⚠ restart required</strong> only take effect when
+        the API container restarts. After changing gates or weights, go to{" "}
+        <strong>Settings → Maintenance → Rescore everything</strong> to apply them.
+      </PageBanner>
       <Link to="/settings" className="text-sm text-accent hover:underline">
         ← Back to settings
       </Link>

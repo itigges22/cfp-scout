@@ -40,6 +40,8 @@ def fake_chat(req: ChatRequest) -> ChatResponse:
     fingerprint = _hash_messages(req.messages)
     if req.purpose == "extract:conference":
         content = _canned_extract_conference(req, fingerprint)
+    elif req.purpose == "extract:talk":
+        content = _canned_extract_talk(req, fingerprint)
     elif req.purpose == "rationale:match":
         content = _canned_match_rationale(req, fingerprint)
     elif req.purpose == "sme_fit_narrative":
@@ -183,6 +185,30 @@ def _canned_extract_conference(req: ChatRequest, fingerprint: str) -> str:
         "acceptance_rate_percent": 22,
         "estimated_cost_usd": 1200,
         "confidence": 0.78,
+    }
+    return json.dumps(payload)
+
+
+def _canned_extract_talk(req: ChatRequest, fingerprint: str) -> str:
+    """Deterministic talk extraction for extract:talk purpose in dry-run mode.
+
+    Returns a valid ExtractedTalk JSON envelope derived from the fingerprint
+    so different texts produce different titles without a real LLM.
+    """
+    slug = fingerprint[:12]
+    payload = {
+        "title": f"[dry-run] Talk {slug.upper()}",
+        "abstract": (
+            "This is a dry-run abstract. The talk explores key concepts in "
+            "cloud-native infrastructure and developer productivity. "
+            "Real extraction lands when LLM_DRY_RUN=false."
+        ),
+        "key_themes": ["cloud-native", "developer experience", "automation"],
+        "suggested_topics": ["Kubernetes", "CI/CD", "DevOps"],
+        "suggested_pillar_name": None,
+        "target_audience_description": "Platform engineers and SREs",
+        "suggested_duration_minutes": 30,
+        "talk_format": "talk",
     }
     return json.dumps(payload)
 

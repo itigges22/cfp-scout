@@ -57,6 +57,11 @@ class PastConferenceBase(StrictBase):
     imported_from: Annotated[str | None, Field(default=None, max_length=120)] = None
     verdict: PastConferenceVerdict = "unsure"
 
+    event_kind: Annotated[str, Field(default="corporate", max_length=20)] = "corporate"
+    conference_url: Annotated[str | None, Field(default=None, max_length=500)] = None
+    location_city: Annotated[str | None, Field(default=None, max_length=100)] = None
+    location_country: Annotated[str | None, Field(default=None, max_length=2)] = None
+
     @field_validator("year")
     @classmethod
     def _year_not_in_future(cls, value: int) -> int:

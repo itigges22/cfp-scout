@@ -430,6 +430,23 @@ export function PageHeader({ title, description }: { title: string; description:
   );
 }
 
+/**
+ * Soft info banner for settings pages. Appears just below PageHeader.
+ * Gives a "what is this page, what should I do here" explainer without
+ * being a full tutorial section.
+ */
+export function PageBanner({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-accent/20 bg-accent/5 px-4 py-3 text-sm leading-relaxed text-fg-muted">
+      {children}
+    </div>
+  );
+}
+
 export function EmptyState({ message }: { message: string }) {
   return (
     <div className="flex items-center justify-center rounded-md border border-dashed border-border-strong bg-surface-2 py-10">

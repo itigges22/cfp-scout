@@ -1,5 +1,12 @@
 import { useMutation } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
+import {
+  Activity,
+  BookOpen,
+  MessageSquare,
+  Sliders,
+  Tag,
+} from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,39 +23,78 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
+const NAV_LINKS = [
+  {
+    to: "/settings/tutorial",
+    Icon: BookOpen,
+    title: "Tutorial & docs",
+    description: "End-to-end guide: matching pipeline, pillars, SME ranking, score boosts, tunables.",
+  },
+  {
+    to: "/settings/tunables",
+    Icon: Sliders,
+    title: "Tunables & API keys",
+    description: "Matcher gates, scoring weights, decay, scraper politeness, LLM API key.",
+  },
+  {
+    to: "/topics",
+    Icon: Tag,
+    title: "Topic vocabulary",
+    description: "Review & deactivate auto-extracted conference topics used in SME matching.",
+  },
+  {
+    to: "/diagnostics",
+    Icon: Activity,
+    title: "Diagnostics",
+    description: "Live health snapshot: jobs, scraper, LLM activity, data freshness.",
+  },
+  {
+    to: "/agent",
+    Icon: MessageSquare,
+    title: "Agent chat",
+    description: "Free-form Q&A over seeded data.",
+  },
+] as const;
+
 function SettingsPage() {
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Settings"
-        description="Operational tunables, reference data, and workbook import/export."
+        description="Admin control center — tunables, data import, and system actions."
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <SettingsLink
-          to="/settings/tunables"
-          title="Tunables & API keys"
-          description="LLM API key + budget, matcher gates and weights, SME and team scoring weights, decay, discovery, scraper politeness, logging."
-        />
-        <SettingsLink
-          to="/topics"
-          title="Topic review"
-          description="LLM-discovered topics pending admin approval. Approve to add to the active vocabulary; reject to deactivate."
-        />
-        <SettingsLink
-          to="/diagnostics"
-          title="Diagnostics"
-          description="Operational health: jobs, scraper runs, LLM cost / errors, freshness histogram. The page admins check first when something feels off."
-        />
-        <SettingsLink
-          to="/agent"
-          title="Agent chat"
-          description="Free-form Q&A over your seeded data. Not the main entry point — most questions are easier to answer by clicking the relevant conference or SME."
-        />
-      </div>
+      {/* ── Quick-nav tiles ── */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-muted">Pages</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {NAV_LINKS.map(({ to, Icon, title, description }) => (
+            <Link key={to} to={to} className="group block">
+              <div className="flex h-full gap-4 rounded-xl border border-border bg-surface p-4 transition-colors group-hover:border-border-strong group-hover:bg-surface-2">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-2 text-accent group-hover:bg-surface-3">
+                  <Icon className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold leading-snug">{title}</p>
+                  <p className="mt-0.5 text-sm text-fg-muted">{description}</p>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
 
-      <WorkbookCard />
-      <MaintenanceCard />
+      {/* ── Data actions ── */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-muted">Data</h2>
+        <WorkbookCard />
+      </section>
+
+      {/* ── Maintenance actions ── */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-muted">Maintenance</h2>
+        <MaintenanceCard />
+      </section>
     </div>
   );
 }
@@ -94,43 +140,49 @@ function MaintenanceCard() {
       setResult({ kind: "error", text: `Geocode failed: ${(err as Error).message}` }),
   });
 
+  const actions = [
+    {
+      label: "Rescore everything",
+      pendingLabel: "Queuing…",
+      variant: "default" as const,
+      note: "Fires recompute_all_matches — one run per non-quarantined conference. Async, ~1–2 min.",
+      isPending: rescoreMut.isPending,
+      onClick: () => rescoreMut.mutate(),
+    },
+    {
+      label: "Backfill missing coordinates",
+      pendingLabel: "Geocoding…",
+      variant: "outline" as const,
+      note: "Resolves city → lat/lng for conferences without coordinates. Rate-limited, ~1 min per 60 rows.",
+      isPending: geocodeMut.isPending,
+      onClick: () => geocodeMut.mutate(),
+    },
+  ];
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Maintenance</CardTitle>
         <CardDescription>
-          One-shot operator actions. Imports auto-trigger a rescore — you only
-          need the button below when scoring drifts (model swap, weight tweak,
-          or a hand-edit that bypassed the import path).
+          One-shot operator actions. Imports auto-trigger a rescore — only use these when scoring drifts after a manual change.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={() => rescoreMut.mutate()} disabled={rescoreMut.isPending}>
-            {rescoreMut.isPending ? "Queuing…" : "Rescore everything"}
-          </Button>
-          <span className="text-xs text-fg-muted">
-            Fires <code>recompute_all_matches</code> — one matcher run per
-            non-quarantined conference. Async; ~1-2 min for a few hundred rows.
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={() => geocodeMut.mutate()}
-            disabled={geocodeMut.isPending}
-          >
-            {geocodeMut.isPending ? "Geocoding…" : "Backfill missing coordinates"}
-          </Button>
-          <span className="text-xs text-fg-muted">
-            Resolves city → lat/lng for any conference without coordinates.
-            Rate-limited by Nominatim's 1 req/sec policy, so ~1 min per 60 rows.
-          </span>
-        </div>
+        {actions.map((a) => (
+          <div key={a.label} className="flex items-start gap-4 rounded-lg border border-border bg-surface-2 p-4">
+            <div className="flex-1">
+              <p className="font-medium">{a.label}</p>
+              <p className="mt-0.5 text-sm text-fg-muted">{a.note}</p>
+            </div>
+            <Button variant={a.variant} onClick={a.onClick} disabled={a.isPending} className="shrink-0">
+              {a.isPending ? a.pendingLabel : a.label}
+            </Button>
+          </div>
+        ))}
         {result && (
           <div
             className={[
-              "rounded border p-2 text-xs",
+              "rounded-lg border p-3 text-sm",
               result.kind === "success"
                 ? "border-success/40 bg-success/10 text-success"
                 : "border-danger/40 bg-danger/10 text-danger",
@@ -141,27 +193,6 @@ function MaintenanceCard() {
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function SettingsLink({
-  to,
-  title,
-  description,
-}: {
-  to: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link to={to} className="block">
-      <Card className="transition-colors hover:border-border-strong hover:bg-surface-2">
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
-        </CardHeader>
-      </Card>
-    </Link>
   );
 }
 
@@ -254,9 +285,7 @@ function WorkbookCard() {
       <CardHeader>
         <CardTitle>Workbook import / export</CardTitle>
         <CardDescription>
-          Round-trip the team's reference data (pillars, audiences, SMEs,
-          topics, series) via XLSX. Round-trip identity: export → re-import
-          without edits is a no-op.
+          Bulk-manage pillars, audiences, SMEs, topics, and series via XLSX. Export → re-import without edits is a no-op.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">

@@ -1,16 +1,15 @@
 /**
- * Top bar with env badge, cost meter, and notification bell (plan 24).
+ * Top bar: env badge + notification bell.
  *
- * The bell shows the unread count for `cfp_digest` notifications and
- * opens a dropdown rendering the latest digest grouped by close-window
- * bucket. Each entry links to the conference detail page; a
- * copy-to-clipboard button serializes the digest as Markdown for paste
- * into Slack / email.
+ * The bell shows the unread count for `cfp_digest` notifications and opens
+ * a dropdown rendering the latest digest grouped by close-window bucket.
+ * Each entry links to the conference detail page; a copy-to-clipboard
+ * button serializes the digest as Markdown for paste into Slack / email.
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Bell, DollarSign } from "lucide-react";
+import { Bell } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -29,7 +28,6 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
-        <CostMeter />
         <NotificationBell />
       </div>
     </header>
@@ -44,16 +42,6 @@ function EnvBadge() {
       aria-label={`environment: ${env}`}
     >
       {env}
-    </span>
-  );
-}
-
-function CostMeter() {
-  // Real value lands with plan 26's /diagnostics aggregator.
-  return (
-    <span className="flex items-center gap-1 rounded-md bg-surface-2 px-2 py-1 text-xs text-fg-muted">
-      <DollarSign className="size-3" />
-      <span aria-label="month-to-date LLM spend">$0.00 mtd</span>
     </span>
   );
 }
@@ -111,7 +99,7 @@ function NotificationBell() {
       >
         <Bell className="size-4" />
         {count > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-fg">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-xs font-semibold text-accent-fg">
             {count > 9 ? "9+" : count}
           </span>
         ) : null}
@@ -271,7 +259,7 @@ function DigestEntryRow({ e }: { e: CfpDigestEntry }) {
           {scoreOutOf100 !== null ? (
             <div className="flex shrink-0 items-baseline gap-1 tabular-nums">
               <span className="text-sm font-semibold">{scoreOutOf100}</span>
-              <span className="text-[10px] text-fg-subtle">/100</span>
+              <span className="text-xs text-fg-subtle">/100</span>
             </div>
           ) : null}
         </div>

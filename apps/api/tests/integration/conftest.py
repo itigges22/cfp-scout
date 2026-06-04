@@ -1,0 +1,228 @@
+"""Integration test fixtures.
+
+Spins up a real Postgres 16 + pgvector container via testcontainers,
+runs Alembic migrations once per session, then yields httpx.AsyncClient
+instances wired to the FastAPI app using the test DB.
+
+Design:
+  - One Postgres container for the whole test session (slow to start)
+  - Alembic migrations run once per session via subprocess
+  - Each test gets its own async engine + session (function-scoped)
+  - clean_db fixture truncates tables before each test that needs it
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import AsyncGenerator, Generator
+from typing import Any
+
+import psycopg2  # type: ignore[import-untyped]
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from testcontainers.postgres import PostgresContainer
+
+POSTGRES_IMAGE = "pgvector/pgvector:pg16"
+
+# ---------------------------------------------------------------------------
+# One container for the whole test session
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def pg_container() -> Generator[PostgresContainer, None, None]:
+    with PostgresContainer(
+        image=POSTGRES_IMAGE,
+        username="scout",
+        password="scoutdev",
+        dbname="scout_test",
+    ) as container:
+        yield container
+
+
+@pytest.fixture(scope="session")
+def pg_sync_url(pg_container: PostgresContainer) -> str:
+    """psycopg2 DSN."""
+    raw = pg_container.get_connection_url()
+    return raw.replace("postgresql+psycopg2://", "postgresql://")
+
+
+@pytest.fixture(scope="session")
+def pg_async_url(pg_container: PostgresContainer) -> str:
+    """asyncpg DSN."""
+    raw = pg_container.get_connection_url()
+    return (
+        raw.replace("postgresql+psycopg2://", "postgresql+asyncpg://")
+        .replace("postgresql://", "postgresql+asyncpg://")
+    )
+
+
+# ---------------------------------------------------------------------------
+# Schema bootstrap + Alembic migrations (once per session)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session", autouse=True)
+def run_migrations(pg_container: PostgresContainer, pg_sync_url: str) -> None:
+    """Create extensions + schemas + roles, then run alembic upgrade head."""
+    import subprocess
+    import sys
+
+    # Bootstrap: replicate infra/postgres/init/01-extensions.sql + 02-roles-and-schemas.sql
+    conn = psycopg2.connect(pg_sync_url)
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+    cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+    cur.execute("CREATE SCHEMA IF NOT EXISTS app;")
+    cur.execute("CREATE SCHEMA IF NOT EXISTS vectors;")
+    cur.execute("CREATE SCHEMA IF NOT EXISTS audit;")
+    cur.execute("CREATE SCHEMA IF NOT EXISTS jobs;")
+    cur.execute(
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='app') THEN "
+        "CREATE ROLE app LOGIN PASSWORD 'app'; END IF; END$$;"
+    )
+    cur.execute("GRANT USAGE ON SCHEMA app, vectors, jobs, audit TO app;")
+    cur.execute("GRANT CREATE ON SCHEMA jobs TO app;")
+    cur.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA app "
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app;"
+    )
+    cur.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA vectors "
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app;"
+    )
+    cur.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA jobs "
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app;"
+    )
+    cur.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA audit GRANT SELECT, INSERT ON TABLES TO app;"
+    )
+    cur.close()
+    conn.close()
+
+    # Inject env vars so alembic env.py + app.settings can read them
+    host = pg_container.get_container_host_ip()
+    port = str(pg_container.get_exposed_port(5432))
+    os.environ["POSTGRES_USER"] = "scout"
+    os.environ["POSTGRES_PASSWORD"] = "scoutdev"
+    os.environ["POSTGRES_DB"] = "scout_test"
+    os.environ["POSTGRES_HOST"] = host
+    os.environ["POSTGRES_PORT"] = port
+    os.environ["DATABASE_URL"] = (
+        f"postgresql+asyncpg://scout:scoutdev@{host}:{port}/scout_test"
+    )
+
+    api_dir = "/Users/itigges/Desktop/SCOUT/apps/api"
+    env = {**os.environ, "PYTHONPATH": api_dir}
+
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=api_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Alembic migration failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Sync psycopg2 connection fixture (for migration/constraint tests)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def pg_conn(pg_sync_url: str, run_migrations: None):  # type: ignore[misc]
+    """A synchronous psycopg2 connection for direct SQL in migration tests."""
+    conn = psycopg2.connect(pg_sync_url)
+    conn.autocommit = True
+    yield conn
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Async engine (function-scoped to avoid event loop sharing issues)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+async def test_engine(pg_async_url: str, run_migrations: None) -> AsyncGenerator[Any, None]:  # type: ignore[misc]
+    """Function-scoped async engine — fresh event loop per test."""
+    engine = create_async_engine(pg_async_url, echo=False, future=True)
+    yield engine
+    await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Per-test async_client
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+async def async_client(  # type: ignore[misc]
+    pg_async_url: str,
+    run_migrations: None,
+) -> AsyncGenerator[AsyncClient, None]:
+    """httpx.AsyncClient pointing at FastAPI with the test DB."""
+    from app.db.session import get_db
+    from app.main import app
+
+    engine = create_async_engine(pg_async_url, echo=False, future=True)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+
+    async def _override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        async with session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+
+    app.dependency_overrides[get_db] = _override_get_db
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        yield client
+
+    app.dependency_overrides.pop(get_db, None)
+    await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Truncation helper — wipes test data after each test
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+async def clean_db(pg_async_url: str, run_migrations: None) -> AsyncGenerator[None, None]:  # type: ignore[misc]
+    """Truncate all app.* tables after the test to leave a clean slate."""
+    yield
+    engine = create_async_engine(pg_async_url, echo=False, future=True)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "TRUNCATE "
+                "app.talk_submissions, app.talk_tag_assignments, "
+                "app.talk_topics, app.talk_tags, app.talks, "
+                "app.pillar_gtm_strategy, app.pillar_content_roadmap, "
+                "app.sme_pillars, app.sme_topics, app.sme_audiences, "
+                "app.conference_topics, app.conference_pillars, "
+                "app.conference_smes, app.conference_audiences, "
+                "app.conference_sources, app.messaging_pillars, "
+                "app.decisions, app.matches, "
+                "app.conferences, app.audience_profiles, app.smes, "
+                "app.topics, app.strategic_pillars, app.conference_series, "
+                "app.past_conferences, app.messaging_documents "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
+    await engine.dispose()

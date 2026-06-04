@@ -3,21 +3,18 @@
 A messaging document captures the product's positioning text the matcher
 scores conferences against. Two source kinds:
 
-  ``structured``  — every field is required and typed; the recommended path.
-  ``pdf``         — the metadata fields below are STILL required; the PDF
-                    contributes raw text for embedding, but it never replaces
-                    structured input.
-
-See ``PLANS/phase-1/05-data-input-guardrails.md`` for the rules.
+  ``structured``  — fields entered manually.
+  ``pdf``         — fields extracted from an uploaded PDF via LLM, then
+                    reviewed and saved by the operator.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID as UUIDType
 
-from pydantic import Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.common import (
     READ_CONFIG,
@@ -30,12 +27,15 @@ from app.schemas.common import (
     TalkingPoint,
 )
 
+DOC_KIND_VALUES = ("gtm_strategy", "content_roadmap", "other")
+
 
 class MessagingDocumentBase(StrictBase):
     """Fields common to create + update."""
 
     title: ShortTitle
     source_type: MessagingSourceType
+    doc_kind: Annotated[str, Field(default="other", max_length=30)] = "other"
 
     elevator_pitch: ElevatorPitch
     target_personas: Annotated[list[ListItem], Field(min_length=1, max_length=8)]
@@ -45,28 +45,16 @@ class MessagingDocumentBase(StrictBase):
     differentiators: Annotated[list[ListItem], Field(max_length=8)] = []
     competitive_position: Annotated[ShortNote, Field(default="")] = ""
 
+    pillar_id: UUIDType | None = None
     is_active: bool = True
 
     @model_validator(mode="after")
     def _check_source_type_consistency(self) -> MessagingDocumentBase:
-        # `file_path` is set by the PDF upload flow (plan 12), not by this
-        # schema. We just make sure the source_type matches what callers can
-        # legitimately set here. PDF uploads go through a different endpoint.
         return self
 
 
 class MessagingDocumentCreate(MessagingDocumentBase):
-    """POST body. The api enforces source_type='structured' on this path —
-    PDF source rows are created via the upload endpoint in plan 12."""
-
-    @model_validator(mode="after")
-    def _require_structured_on_create(self) -> MessagingDocumentCreate:
-        if self.source_type is not MessagingSourceType.STRUCTURED:
-            raise ValueError(
-                "Use POST /api/v1/uploads/pdf to create PDF-source messaging documents. "
-                "This endpoint is for structured entries only."
-            )
-        return self
+    """POST body. Accepts both structured and pdf source types."""
 
 
 class MessagingDocumentUpdate(MessagingDocumentBase):
@@ -79,7 +67,26 @@ class MessagingDocumentRead(MessagingDocumentBase):
 
     model_config = READ_CONFIG
 
-    id: UUID
+    id: UUIDType
     file_path: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class MessagingDocUploadPreview(BaseModel):
+    """Relaxed preview returned by the PDF upload endpoint.
+
+    No min_length constraints — the LLM may not extract every field perfectly.
+    The operator reviews and edits before saving via the normal create endpoint.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_kind: str = "other"
+    title: str = ""
+    elevator_pitch: str = ""
+    target_personas: list[str] = []
+    key_themes: list[str] = []
+    talking_points: list[str] = []
+    differentiators: list[str] = []
+    competitive_position: str = ""

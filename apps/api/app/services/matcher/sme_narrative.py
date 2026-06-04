@@ -279,7 +279,6 @@ def _build_user_prompt(
     dims = breakdown.dimensions
     topic_list = ", ".join(conference.topics or []) or "(none yet)"
     cfp_topics = ", ".join(conference.cfp_topics_of_interest or [])
-    expertise = ", ".join(sme.expertise_areas or [])
     parts = [
         f"Conference: {conference.name}",
         f"  Start: {conference.start_date.isoformat() if conference.start_date else '(unknown)'}",
@@ -293,7 +292,6 @@ def _build_user_prompt(
         "</conference_text>",
         "",
         f"SME: {sme.full_name} (team {sme.team})",
-        f"  Expertise: {expertise}",
         f"  Location: {sme.location_country}{', ' + sme.location_city if sme.location_city else ''}",
         "",
         "<sme_bio>",
@@ -350,7 +348,6 @@ def _inputs_blob(*, conference: Conference, sme: Sme, bio: str) -> str:
             conference.venue or "",
             sme.full_name,
             sme.team,
-            ", ".join(sme.expertise_areas or []),
             bio,
         ]
     )

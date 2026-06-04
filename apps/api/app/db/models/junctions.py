@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, ForeignKey
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Numeric
 
 from app.db.base import Base
 
@@ -142,3 +143,59 @@ class MessagingPillar(Base):
         primary_key=True,
     )
     weight: Mapped[float] = mapped_column(default=1.0, nullable=False)
+
+
+class SmePillar(Base):
+    """Junction: SME ↔ pillar (many-to-many). Migration C."""
+
+    __tablename__ = "sme_pillars"
+    __table_args__ = {"schema": "app"}
+
+    sme_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.smes.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    pillar_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.strategic_pillars.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class TalkTagAssignment(Base):
+    """Junction: talk ↔ tag. Migration E."""
+
+    __tablename__ = "talk_tag_assignments"
+    __table_args__ = {"schema": "app"}
+
+    talk_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.talks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.talk_tags.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+
+class TalkTopic(Base):
+    """Junction: talk ↔ topic (used by matcher). Migration F."""
+
+    __tablename__ = "talk_topics"
+    __table_args__ = {"schema": "app"}
+
+    talk_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.talks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    topic_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.topics.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    weight: Mapped[float] = mapped_column(Numeric, nullable=False, default=1.0)

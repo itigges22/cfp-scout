@@ -33,7 +33,7 @@ router = APIRouter(prefix="/api/v1/admin/settings", tags=["admin.settings"])
 
 
 SettingKind = Literal["int", "float", "bool", "str", "secret", "list_str"]
-SettingGroup = Literal["llm", "matcher", "sme", "team", "decay", "discovery", "scraper", "logging"]
+SettingGroup = Literal["llm", "matcher", "sme", "team", "decay", "discovery", "scraper", "logging", "talks", "conferences"]
 
 
 class SettingSpec(BaseModel):
@@ -397,6 +397,36 @@ SPECS: list[SettingSpec] = [
         description="When discovery crawls an aggregator (aideadlin.es, papercall.io, …) it follows outbound conference-looking links one level deep. This cap is per-seed — bounds the worst-case crawl + LLM cost of a single discovery run.",
         min_value=0,
         max_value=200,
+    ),
+    # Talks library -----------------------------------------------------
+    SettingSpec(
+        name="talk_reuse_flag_threshold",
+        kind="int",
+        group="talks",
+        label="Talk reuse flag threshold",
+        description="Number of distinct conferences a talk must be applied to before it is flagged as high-reuse. Flagged talks show a warning badge and require confirmation before another submission can be added. Default is 3.",
+        min_value=1,
+        max_value=20,
+    ),
+    SettingSpec(
+        name="topic_noise_blocklist",
+        kind="list_str",
+        group="talks",
+        label="Topic noise blocklist",
+        description="Topics extracted by the LLM are auto-approved unless their name contains one of these substrings (case-insensitive). Add logistics terms that keep slipping through — registration, networking breaks, sponsor sessions, etc. One entry per line.",
+    ),
+    # Conferences -------------------------------------------------------
+    SettingSpec(
+        name="valid_event_kinds",
+        kind="list_str",
+        group="conferences",
+        label="Valid event kinds",
+        description=(
+            "Allowed values for the event_kind field on conferences and past conferences. "
+            "One per line. 'grassroot' is special: those events are auto-approved and "
+            "excluded from the conference finder and matcher. Removing a kind does not "
+            "retroactively retag existing rows."
+        ),
     ),
     # Scraper -----------------------------------------------------------
     SettingSpec(

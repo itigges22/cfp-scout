@@ -77,12 +77,15 @@ async def list_messaging_documents(
     per_page: int = 20,
     q: str | None = None,
     is_active: bool | None = None,
+    pillar_id: UUID | None = None,
 ) -> Page[MessagingDocumentRead]:
     stmt = select(MessagingDocument).order_by(MessagingDocument.updated_at.desc())
     if q:
         stmt = stmt.where(MessagingDocument.title.ilike(f"%{q}%"))
     if is_active is not None:
         stmt = stmt.where(MessagingDocument.is_active.is_(is_active))
+    if pillar_id is not None:
+        stmt = stmt.where(MessagingDocument.pillar_id == pillar_id)
 
     rows, total = await paginate(db, stmt, page=page, per_page=per_page)
     return Page[MessagingDocumentRead](

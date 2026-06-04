@@ -80,9 +80,9 @@ export function MessagingForm({
     }
     onSubmit({
       title: title.trim(),
-      // Edit keeps the original source_type; new docs are always "structured"
-      // because this form is the structured-entry path.
       source_type: initial?.source_type ?? "structured",
+      doc_kind: initial?.doc_kind ?? "other",
+      pillar_id: initial?.pillar_id ?? null,
       elevator_pitch: elevatorPitch.trim(),
       target_personas: splitLines(personas),
       key_themes: splitLines(keyThemes),

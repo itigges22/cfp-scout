@@ -124,7 +124,7 @@ export function AgentChatPanel({
       <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold">{title}</h3>
-          <Badge variant="muted" className="text-[10px]">
+          <Badge variant="muted" className="text-xs">
             grounded in your data
           </Badge>
         </div>
@@ -195,7 +195,7 @@ export function AgentChatPanel({
             )}
           </Button>
         </div>
-        <p className="mt-1 flex items-center justify-between text-[10px] text-fg-subtle">
+        <p className="mt-1 flex items-center justify-between text-xs text-fg-subtle">
           <span>Enter to send · Shift+Enter for newline</span>
           {showCost && totalCost > 0 ? (
             <span className="font-medium text-fg-muted tabular-nums">
@@ -265,7 +265,7 @@ function CitationChip({ c }: { c: AgentCitation }) {
   return (
     <Badge
       variant="muted"
-      className="text-[10px]"
+      className="text-xs"
       title={`${c.label} (similarity ${(c.similarity ?? 0).toFixed(2)})`}
     >
       [{c.index}] {c.label}

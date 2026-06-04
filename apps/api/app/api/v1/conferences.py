@@ -18,6 +18,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.db.models.entities import Conference, ConferenceSource, RawPage
 from app.db.models.matching import Decision, Match, MatchTeamRecommendation
@@ -47,6 +48,9 @@ class ConferenceRead(BaseModel):
     name: str
     slug: str
     status: str
+    event_kind: str = "corporate"
+    series_id: UUID | None = None
+    assigned_pillar_id: UUID | None = None
     confidence_score: float | None = None
     start_date: str | None = None
     end_date: str | None = None
@@ -84,12 +88,20 @@ class ConferenceListResponse(BaseModel):
     per_page: int
 
 
+# Grassroot events (vLLM meetups, owned community events, etc.) are
+# auto-approved and excluded from the matcher — we don't need to score
+# events we already own and run.
+_GRASSROOT_KINDS = frozenset(["grassroot"])
+
+
 class ConferenceCreate(BaseModel):
     """POST /conferences payload. Slug is server-derived from name+year."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str = Field(min_length=2, max_length=200)
+    event_kind: str = Field(default="corporate")
+    assigned_pillar_id: UUID | None = None
     start_date: date | None = None
     end_date: date | None = None
     location_city: str | None = Field(default=None, max_length=120)
@@ -356,6 +368,14 @@ async def create_conference(
     populated; the caller can re-run the matcher later via
     ``POST /admin/matcher/run-now/{id}``.
     """
+    _valid_kinds = frozenset(get_settings().valid_event_kinds)
+    if payload.event_kind not in _valid_kinds:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"invalid event_kind '{payload.event_kind}'; "
+            f"must be one of {sorted(_valid_kinds)}",
+        )
+
     slug = build_slug(payload.name, year_for(payload.start_date))
     existing = await find_duplicate(db, slug=slug)
     if existing is not None:
@@ -367,9 +387,14 @@ async def create_conference(
             ),
         )
 
+    # Grassroot events are immediately approved; skip matcher gates
+    initial_status = "approved" if payload.event_kind in _GRASSROOT_KINDS else "discovered"
+
     conf = Conference(
         name=payload.name,
         slug=slug,
+        event_kind=payload.event_kind,
+        assigned_pillar_id=payload.assigned_pillar_id,
         start_date=payload.start_date,
         end_date=payload.end_date,
         location_city=payload.location_city,
@@ -386,10 +411,17 @@ async def create_conference(
         acceptance_rate_percent=payload.acceptance_rate_percent,
         estimated_cost_usd=payload.estimated_cost_usd,
         confidence_score=1.0,
-        status="discovered",
+        status=initial_status,
     )
     db.add(conf)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Constraint violation: {exc.orig}",
+        ) from exc
 
     await write_audit(
         db,
@@ -438,24 +470,27 @@ async def create_conference(
     )
 
     # Auto-run the matcher; best-effort — surface failure without rolling
-    # back the conference create.
+    # back the conference create. Grassroot events bypass all matcher stages.
     match_dict: dict | None = None
     match_error: str | None = None
-    try:
-        result = await run_fit_match(db, conf.id)
-        await db.commit()
-        match_dict = result.to_stats()
-    except ConferenceQuarantinedError as exc:
-        match_error = f"matcher skipped: {exc}"
-    except ConferenceNotFoundError as exc:  # pragma: no cover — we just inserted it
-        match_error = f"conference vanished mid-request: {exc}"
-    except Exception as exc:
-        log.warning(
-            "conference.manual_create.matcher_failed",
-            conference_id=str(conf.id),
-            error=str(exc),
-        )
-        match_error = f"matcher failed: {exc}"
+    if payload.event_kind in _GRASSROOT_KINDS:
+        match_error = "skipped: grassroot events do not require matcher scoring"
+    else:
+        try:
+            result = await run_fit_match(db, conf.id)
+            await db.commit()
+            match_dict = result.to_stats()
+        except ConferenceQuarantinedError as exc:
+            match_error = f"matcher skipped: {exc}"
+        except ConferenceNotFoundError as exc:  # pragma: no cover — we just inserted it
+            match_error = f"conference vanished mid-request: {exc}"
+        except Exception as exc:
+            log.warning(
+                "conference.manual_create.matcher_failed",
+                conference_id=str(conf.id),
+                error=str(exc),
+            )
+            match_error = f"matcher failed: {exc}"
 
     # Refresh so the response reflects any status update the matcher made.
     await db.refresh(conf)
@@ -485,6 +520,11 @@ async def list_conferences(
             "edition)."
         ),
     ),
+    exclude_grassroot: bool = Query(
+        default=True,
+        description="Exclude grassroot/owned events from the finder. Default true.",
+    ),
+    event_kind: list[str] | None = Query(default=None),
 ) -> ConferenceListResponse:
     """List conferences. Default excludes quarantined rows so the dashboard
     doesn't show them. Pass ``?status=quarantined`` (multi-OK) to opt in.
@@ -523,6 +563,11 @@ async def list_conferences(
         stmt = stmt.where(Conference.status.in_(status_in))
     else:
         stmt = stmt.where(Conference.status != "quarantined")
+
+    if exclude_grassroot:
+        stmt = stmt.where(Conference.event_kind.not_in(_GRASSROOT_KINDS))
+    if event_kind:
+        stmt = stmt.where(Conference.event_kind.in_(event_kind))
 
     # SQL-level sort kicks in below ONLY for non-overall sorts.
     # ``score`` sort uses live-computed overall (so verdict changes
@@ -1003,6 +1048,9 @@ def _to_read(row: Conference) -> ConferenceRead:
         name=row.name,
         slug=row.slug,
         status=row.status,
+        event_kind=row.event_kind,
+        series_id=row.series_id,
+        assigned_pillar_id=row.assigned_pillar_id,
         confidence_score=row.confidence_score,
         start_date=row.start_date.isoformat() if row.start_date else None,
         end_date=row.end_date.isoformat() if row.end_date else None,

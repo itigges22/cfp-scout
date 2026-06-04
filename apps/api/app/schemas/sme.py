@@ -15,13 +15,12 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import EmailStr, Field, field_validator
+from pydantic import EmailStr, Field, field_validator, model_validator
 
 from app.schemas.common import (
     READ_CONFIG,
     CountryCode,
     LanguageCode,
-    ListItem,
     ShortName,
     SmeBio,
     StrictBase,
@@ -51,11 +50,11 @@ class SmeBase(StrictBase):
     # iteration could enum-ify this once we know the closed set.
     team: Annotated[str, Field(min_length=2, max_length=60)]
 
-    expertise_areas: Annotated[list[ListItem], Field(min_length=2, max_length=10)]
+    # expertise_areas removed (Migration J) — sme_topics junction is authoritative.
 
     # Schema only validates the UUID format; FK existence checked by the
     # service layer that has DB access.
-    primary_topics: Annotated[list[UUID], Field(min_length=2, max_length=15)]
+    primary_topics: Annotated[list[UUID], Field(min_length=0, max_length=20)]
     audience_focus: Annotated[list[UUID], Field(min_length=1, max_length=8)]
 
     location_country: CountryCode
@@ -79,6 +78,17 @@ class SmeBase(StrictBase):
     @classmethod
     def _validate_languages(cls, value: list[str]) -> list[str]:
         return [validate_language_code(code) for code in value]
+
+    @model_validator(mode="after")
+    def _check_topic_cap(self) -> "SmeBase":
+        from app.settings import get_settings
+        max_topics = get_settings().sme_max_topics
+        if len(self.primary_topics) > max_topics:
+            raise ValueError(
+                f"SMEs may have at most {max_topics} topics (SME_MAX_TOPICS setting). "
+                f"Got {len(self.primary_topics)}."
+            )
+        return self
 
 
 class SmeCreate(SmeBase):
@@ -104,7 +114,6 @@ class SmeRead(SmeBase):
 
     model_config = READ_CONFIG
 
-    expertise_areas: list[str] = []
     primary_topics: list[UUID] = []
     audience_focus: list[UUID] = []
     bio: Annotated[str, Field(max_length=2000)] = ""

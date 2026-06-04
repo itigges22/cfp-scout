@@ -51,7 +51,8 @@ class TestPostValidate:
         assert _post_validate(text, _blob()) is True
 
     def test_case_insensitive_matching(self) -> None:
-        text = 'Alice contributes to "VECTOR DATABASES" research.'
+        # "NEUIPS 2027" is in the blob (conference name); check case-insensitive pass.
+        text = 'Alice is a great fit for "NEURIPS 2027".'
         assert _post_validate(text, _blob()) is True
 
     def test_overlong_narrative_fails(self) -> None:

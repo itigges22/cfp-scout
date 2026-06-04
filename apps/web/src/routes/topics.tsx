@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Check, X } from "lucide-react";
+import { EyeOff } from "lucide-react";
 import { useState } from "react";
 
 import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -20,20 +20,20 @@ import {
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { topicsApi } from "@/lib/api";
 import { ErrorBox } from "@/routes/audiences";
-import { PageHeader } from "@/routes/dashboard";
+import { PageBanner, PageHeader } from "@/routes/dashboard";
 
 export const Route = createFileRoute("/topics")({
   component: TopicsPage,
 });
 
 const PER_PAGE = 50;
-type Filter = "pending" | "approved" | "all";
+type Filter = "active" | "inactive" | "all";
 
 function TopicsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
-  const [filter, setFilter] = useState<Filter>("pending");
+  const [filter, setFilter] = useState<Filter>("active");
 
   const queryClient = useQueryClient();
 
@@ -44,44 +44,48 @@ function TopicsPage() {
         page,
         per_page: PER_PAGE,
         q: debouncedSearch || undefined,
-        pending_only: filter === "pending" ? true : filter === "approved" ? false : null,
+        // pending_only=false shows only approved/active; null shows all
+        pending_only: filter === "active" ? false : filter === "inactive" ? null : null,
       }),
   });
-  const approve = useMutation({
-    mutationFn: (id: string) => topicsApi.approve(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["topics"] }),
-  });
-  const reject = useMutation({
+
+  const deactivate = useMutation({
     mutationFn: (id: string) => topicsApi.reject(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["topics"] }),
   });
 
+  const activeTopics =
+    filter === "inactive"
+      ? (query.data?.items ?? []).filter((t) => !t.is_active)
+      : filter === "active"
+        ? (query.data?.items ?? []).filter((t) => t.is_active && !t.pending_review)
+        : (query.data?.items ?? []);
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Topics"
-        description="Controlled vocabulary. New topics discovered by the LLM extractor stay in the pending queue until you approve them — they don't influence matching while pending."
+        title="Topic vocabulary"
+        description="Topics extracted from conference pages and used for SME matching."
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">How this works</CardTitle>
-          <CardDescription>
-            Pending topics are LLM-discovered from scraped conference pages (plan 15). Approving
-            adds them to the active vocabulary and lets the matcher use them. Rejecting deactivates
-            them — they stay in the DB for audit but never appear in dropdowns or influence matching.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <PageBanner>
+        When the scraper processes a conference, the LLM pulls out topic strings (e.g. "MLOps,"
+        "vector databases," "RAG") and adds them to this vocabulary automatically. Noise terms like
+        "registration" or "networking" are filtered out before they land here.{" "}
+        <strong>Active topics count in matching</strong> — the SME topic-overlap dimension (30% of
+        the SME score) uses this list. If a topic slips through that shouldn't be here, hit the
+        deactivate button and add the term to the noise blocklist in{" "}
+        <strong>Settings → Tunables → Talks library</strong>.
+      </PageBanner>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <div className="flex flex-1 items-center gap-3">
-            <CardTitle>Topic vocabulary</CardTitle>
+            <CardTitle>Topics</CardTitle>
             {query.data ? <Badge variant="muted">{query.data.total} total</Badge> : null}
           </div>
           <div className="flex items-center gap-2">
-            <FilterTabs value={filter} onChange={setFilter} />
+            <FilterTabs value={filter} onChange={(f) => { setFilter(f); setPage(1); }} />
             <Input
               type="search"
               placeholder="Search"
@@ -103,11 +107,9 @@ function TopicsPage() {
             </div>
           ) : query.isError ? (
             <ErrorBox error={query.error} />
-          ) : query.data === undefined || query.data.items.length === 0 ? (
+          ) : activeTopics.length === 0 ? (
             <div className="rounded-md border border-dashed border-border-strong bg-surface-2 py-10 text-center text-sm text-fg-muted">
-              {filter === "pending"
-                ? "No pending topics. The LLM extractor in plan 15 populates this queue."
-                : "No topics in this filter."}
+              No topics in this filter.
             </div>
           ) : (
             <Table>
@@ -117,20 +119,20 @@ function TopicsPage() {
                   <TableHead>Slug</TableHead>
                   <TableHead>Aliases</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-24" />
+                  <TableHead className="w-16" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {query.data.items.map((t) => (
+                {activeTopics.map((t) => (
                   <TableRow key={t.id}>
                     <TableCell className="font-medium">{t.name}</TableCell>
-                    <TableCell className="text-fg-muted font-mono text-xs">{t.slug}</TableCell>
-                    <TableCell className="text-fg-muted text-xs">
+                    <TableCell className="font-mono text-xs text-fg-muted">{t.slug}</TableCell>
+                    <TableCell className="text-xs text-fg-muted">
                       {t.aliases.length > 0 ? t.aliases.join(", ") : "—"}
                     </TableCell>
                     <TableCell>
                       {t.pending_review ? (
-                        <Badge variant="warning">pending review</Badge>
+                        <Badge variant="warning">legacy pending</Badge>
                       ) : t.is_active ? (
                         <Badge variant="success">active</Badge>
                       ) : (
@@ -138,29 +140,17 @@ function TopicsPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {t.pending_review ? (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => approve.mutate(t.id)}
-                            disabled={approve.isPending || reject.isPending}
-                            title="Approve"
-                            aria-label={`approve ${t.name}`}
-                          >
-                            <Check className="size-4 text-success" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => reject.mutate(t.id)}
-                            disabled={approve.isPending || reject.isPending}
-                            title="Reject"
-                            aria-label={`reject ${t.name}`}
-                          >
-                            <X className="size-4 text-danger" />
-                          </Button>
-                        </div>
+                      {t.is_active ? (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => deactivate.mutate(t.id)}
+                          disabled={deactivate.isPending}
+                          title="Deactivate — removes from matching"
+                          aria-label={`deactivate ${t.name}`}
+                        >
+                          <EyeOff className="size-4 text-fg-subtle hover:text-danger" />
+                        </Button>
                       ) : null}
                     </TableCell>
                   </TableRow>
@@ -190,8 +180,8 @@ function FilterTabs({
   onChange: (next: Filter) => void;
 }) {
   const tabs: { value: Filter; label: string }[] = [
-    { value: "pending", label: "Pending" },
-    { value: "approved", label: "Approved" },
+    { value: "active", label: "Active" },
+    { value: "inactive", label: "Inactive" },
     { value: "all", label: "All" },
   ];
   return (

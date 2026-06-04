@@ -147,9 +147,6 @@ SMES = SheetSpec(
         ColumnSpec("email", "text", max_len=200),
         ColumnSpec("team", "text", required=True, max_len=60, note="e.g. Marketing, Platform, Edge."),
         ColumnSpec(
-            "expertise_areas", "list_text", required=True, note="Semicolon-separated; 1-12 items."
-        ),
-        ColumnSpec(
             "primary_topics",
             "list_text",
             required=False,

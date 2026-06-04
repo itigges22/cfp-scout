@@ -154,7 +154,6 @@ async def _rows_for_sheet(
                     "full_name": fmt_str(r.full_name),
                     "email": fmt_str(r.email),
                     "team": fmt_str(r.team),
-                    "expertise_areas": fmt_list_text(r.expertise_areas),
                     "primary_topics": fmt_list_text(primary_topic_names),
                     "audience_focus": fmt_list_text(audience_names),
                     "location_country": fmt_str(r.location_country),

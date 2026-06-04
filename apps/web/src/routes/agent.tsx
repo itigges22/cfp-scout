@@ -26,7 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, agentApi } from "@/lib/api";
 import type { AgentCitation, AgentMessage } from "@/lib/api-types";
-import { PageHeader } from "@/routes/dashboard";
+import { PageBanner, PageHeader } from "@/routes/dashboard";
 
 export const Route = createFileRoute("/agent")({
   component: AgentPage,
@@ -71,9 +71,17 @@ function AgentPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title="Agent"
-        description="Read-only RAG over Scout's data. Every claim is cited; no autonomous actions."
+        title="Agent chat"
+        description="Ask questions about SCOUT's data in plain English."
       />
+
+      <PageBanner>
+        The agent searches across conferences, SMEs, matches, and past events to answer your
+        question — and cites exactly where each fact came from. Use it for one-off lookups like
+        "which conferences in Europe match our AI pillar?" or "which SMEs have spoken at KubeCon?"
+        Everything here is <strong>read-only</strong>; no changes are made to the database.
+        For bulk changes, use the Workbook import in Settings.
+      </PageBanner>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr]">
         <SessionSidebar

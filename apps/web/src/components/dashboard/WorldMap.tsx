@@ -287,7 +287,7 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
             ))}
           </ul>
           {activeCluster.conferences.length > 25 && (
-            <p className="mt-1 text-[10px] italic text-fg-subtle">
+            <p className="mt-1 text-xs italic text-fg-subtle">
               + {activeCluster.conferences.length - 25} more — open /conferences and filter by city.
             </p>
           )}
@@ -297,7 +297,7 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
           text. Counts come from the cluster set so the user sees the
           relative breadth of each bucket at a glance. */}
       <div className="absolute bottom-3 left-3 rounded-md border border-border-strong bg-surface-2/95 px-3 py-2 text-xs text-fg shadow backdrop-blur">
-        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
+        <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-muted">
           Attendance
         </div>
         <ul className="space-y-0.5">
@@ -323,7 +323,7 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
           })}
         </ul>
       </div>
-      <div className="pointer-events-none absolute bottom-2 right-3 text-[10px] uppercase tracking-wider text-fg-subtle">
+      <div className="pointer-events-none absolute bottom-2 right-3 text-xs uppercase tracking-wider text-fg-subtle">
         Drag to pan · scroll to zoom · click a dot to pin · click a name to open
       </div>
     </div>

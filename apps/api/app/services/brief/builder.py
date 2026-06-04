@@ -375,7 +375,6 @@ async def _attendees(
                 "team": s.team,
                 "location_city": s.location_city,
                 "location_country": s.location_country,
-                "expertise_areas": s.expertise_areas,
                 "bio": s.bio,
                 "narrative": narratives.get(str(s.id)) or narratives.get(s.id) or "",
             }

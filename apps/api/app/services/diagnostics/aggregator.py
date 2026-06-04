@@ -28,11 +28,14 @@ from app.db.models.entities import (
     AudienceProfile,
     Conference,
     ConferenceSeries,
+    PastConference,
     RawPage,
     Sme,
     Source,
+    TalkSubmission,
     Topic,
 )
+from app.db.models.matching import Decision, Match
 from app.db.models.ops import IngestJob, LLMCall, Notification
 from app.db.models.vectors import EmbeddingModel
 from app.settings import get_settings
@@ -90,15 +93,12 @@ async def build_diagnostics(db: AsyncSession, *, force: bool = False) -> dict[st
 # Builder
 # ---------------------------------------------------------------------------
 async def _build(db: AsyncSession) -> dict[str, Any]:
-    """Run the six panel queries concurrently where possible."""
+    """Run the panel queries."""
     settings = get_settings()
     now = datetime.now(tz=UTC)
 
-    # Run independent queries in parallel via asyncio.gather. SQLAlchemy
-    # async sessions serialize within a single session, so each panel
-    # opens its own light queries off the same session — total wall-clock
-    # is dominated by the slowest panel (system disk usage).
-    llm_panel = await _llm_panel(db, now=now, settings=settings)
+    usage_panel = await _usage_panel(db, now=now)
+    llm_panel = await _llm_panel(db, now=now)
     jobs_panel = await _jobs_panel(db, now=now)
     scraper_panel = await _scraper_panel(db)
     data_panel = await _data_panel(db, settings=settings)
@@ -108,6 +108,7 @@ async def _build(db: AsyncSession) -> dict[str, Any]:
     return {
         "generated_at": now.isoformat(),
         "cache_ttl_seconds": CACHE_TTL_SECONDS,
+        "usage": usage_panel,
         "llm": llm_panel,
         "jobs": jobs_panel,
         "scraper": scraper_panel,
@@ -120,55 +121,137 @@ async def _build(db: AsyncSession) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Panels
 # ---------------------------------------------------------------------------
-async def _llm_panel(db: AsyncSession, *, now: datetime, settings) -> dict:
-    """Month-to-date + last-24h spend + top purposes + recent errors."""
-    month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
-    day_start = now - timedelta(hours=24)
+async def _usage_panel(db: AsyncSession, *, now: datetime) -> dict:
+    """Key app-usage metrics: approvals, talks linked, past events, scoring."""
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
 
-    async def _agg(since: datetime) -> dict:
-        row = (
-            await db.execute(
-                select(
-                    func.count(LLMCall.id),
-                    func.coalesce(func.sum(LLMCall.prompt_tokens + LLMCall.completion_tokens), 0),
-                    func.coalesce(func.sum(LLMCall.cost_usd), 0),
-                ).where(LLMCall.created_at >= since)
-            )
-        ).one()
-        return {
-            "calls": int(row[0]),
-            "tokens": int(row[1]),
-            "cost_usd": float(row[2]),
-        }
-
-    mtd = await _agg(month_start)
-    today = await _agg(day_start)
-
-    # Last 24h by purpose.
-    by_purpose_rows = (
+    # Conferences by status.
+    conf_status_rows = (
         await db.execute(
-            select(
-                LLMCall.purpose,
-                func.count(LLMCall.id),
-                func.coalesce(func.sum(LLMCall.prompt_tokens + LLMCall.completion_tokens), 0),
-                func.coalesce(func.sum(LLMCall.cost_usd), 0),
-            )
-            .where(LLMCall.created_at >= day_start)
-            .group_by(LLMCall.purpose)
-            .order_by(func.sum(LLMCall.cost_usd).desc())
+            select(Conference.status, func.count(Conference.id)).group_by(Conference.status)
         )
     ).all()
-    by_purpose = [
-        {
-            "purpose": p,
-            "calls": int(n),
-            "tokens": int(t),
-            "cost_usd": float(c),
-        }
-        for p, n, t, c in by_purpose_rows
-    ]
+    conferences_by_status = {s: int(n) for s, n in conf_status_rows}
 
-    # Recent errors (any non-null `error` text).
+    # Conferences that have been scored (have at least one match row).
+    conferences_scored = int(
+        (
+            await db.execute(
+                select(func.count(func.distinct(Match.conference_id)))
+            )
+        ).scalar_one()
+    )
+
+    # Decisions — counts by time window.
+    decisions_7d = int(
+        (
+            await db.execute(
+                select(func.count(Decision.id)).where(Decision.decided_at >= week_ago)
+            )
+        ).scalar_one()
+    )
+    decisions_30d = int(
+        (
+            await db.execute(
+                select(func.count(Decision.id)).where(Decision.decided_at >= month_ago)
+            )
+        ).scalar_one()
+    )
+    decisions_all_time = int(
+        (await db.execute(select(func.count(Decision.id)))).scalar_one()
+    )
+
+    # Decisions by outcome — for each window.
+    async def _outcome_breakdown(since: datetime | None) -> dict[str, int]:
+        q = select(Decision.decision, func.count(Decision.id)).group_by(Decision.decision)
+        if since is not None:
+            q = q.where(Decision.decided_at >= since)
+        rows = (await db.execute(q)).all()
+        return {d: int(n) for d, n in rows}
+
+    decisions_by_outcome_7d = await _outcome_breakdown(week_ago)
+    decisions_by_outcome_30d = await _outcome_breakdown(month_ago)
+    decisions_by_outcome_all = await _outcome_breakdown(None)
+
+    # Talk submissions (talks linked to conferences).
+    talk_submissions_total = int(
+        (await db.execute(select(func.count(TalkSubmission.id)))).scalar_one()
+    )
+
+    # Past conferences.
+    past_conferences_total = int(
+        (await db.execute(select(func.count(PastConference.id)))).scalar_one()
+    )
+
+    # Past conferences with a non-neutral verdict (attended / declined_invite).
+    past_conferences_scored = int(
+        (
+            await db.execute(
+                select(func.count(PastConference.id)).where(
+                    PastConference.verdict.not_in(["unsure"])
+                )
+            )
+        ).scalar_one()
+    )
+
+    # Active SMEs.
+    smes_active = int(
+        (
+            await db.execute(select(func.count(Sme.id)).where(Sme.is_active.is_(True)))
+        ).scalar_one()
+    )
+
+    return {
+        "conferences_by_status": conferences_by_status,
+        "conferences_scored": conferences_scored,
+        "decisions": {
+            "7d": decisions_7d,
+            "30d": decisions_30d,
+            "all": decisions_all_time,
+        },
+        "decisions_by_outcome": {
+            "7d": decisions_by_outcome_7d,
+            "30d": decisions_by_outcome_30d,
+            "all": decisions_by_outcome_all,
+        },
+        "talk_submissions_total": talk_submissions_total,
+        "past_conferences_total": past_conferences_total,
+        "past_conferences_scored": past_conferences_scored,
+        "smes_active": smes_active,
+    }
+
+
+async def _llm_panel(db: AsyncSession, *, now: datetime) -> dict:
+    """LLM call activity — counts only, no cost data."""
+    month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
+    day_start = now - timedelta(hours=24)
+    week_start = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+
+    async def _call_count(since: datetime | None) -> int:
+        q = select(func.count(LLMCall.id))
+        if since is not None:
+            q = q.where(LLMCall.created_at >= since)
+        return int((await db.execute(q)).scalar_one())
+
+    calls_24h = await _call_count(day_start)
+    calls_7d = await _call_count(week_start)
+    calls_30d = await _call_count(month_ago)
+    calls_all = await _call_count(None)
+
+    # Last 24h by purpose — calls only.
+    by_purpose_rows = (
+        await db.execute(
+            select(LLMCall.purpose, func.count(LLMCall.id))
+            .where(LLMCall.created_at >= day_start)
+            .group_by(LLMCall.purpose)
+            .order_by(func.count(LLMCall.id).desc())
+        )
+    ).all()
+    by_purpose = [{"purpose": p, "calls": int(n)} for p, n in by_purpose_rows]
+
+    # Recent errors.
     err_rows = (
         await db.execute(
             select(LLMCall.created_at, LLMCall.model, LLMCall.purpose, LLMCall.error)
@@ -178,30 +261,12 @@ async def _llm_panel(db: AsyncSession, *, now: datetime, settings) -> dict:
         )
     ).all()
     recent_errors = [
-        {
-            "at": dt.isoformat() if dt else None,
-            "model": m,
-            "purpose": p,
-            "error": (e or "")[:200],
-        }
+        {"at": dt.isoformat() if dt else None, "model": m, "purpose": p, "error": (e or "")[:200]}
         for dt, m, p, e in err_rows
     ]
 
-    # Budget bar.
-    budget_usd = settings.llm_monthly_budget_usd
-    spend_usd = mtd["cost_usd"]
-    pct_used = round(spend_usd / budget_usd, 4) if (budget_usd and budget_usd > 0) else None
-    threshold_warn = pct_used is not None and pct_used >= 0.8
-
     return {
-        "month_to_date": mtd,
-        "last_24h": today,
-        "budget": {
-            "limit_usd": budget_usd,
-            "spent_usd": spend_usd,
-            "pct_used": pct_used,
-            "threshold_warn": threshold_warn,
-        },
+        "calls": {"24h": calls_24h, "7d": calls_7d, "30d": calls_30d, "all": calls_all},
         "by_purpose_24h": by_purpose,
         "recent_errors": recent_errors,
     }

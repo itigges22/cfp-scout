@@ -25,6 +25,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     SmallInteger,
     String,
     Text,
@@ -64,6 +65,14 @@ class MessagingDocument(TimestampedMixin, Base):
         Text, nullable=False, server_default=text("''")
     )
 
+    doc_kind: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default=text("'other'")
+    )
+    pillar_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.strategic_pillars.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     raw_content: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
 
@@ -85,6 +94,12 @@ class AudienceProfile(TimestampedMixin, Base):
     key_messages: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     exclusion_criteria: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
+
+    # Migration B: optional pillar assignment (pillar page shows filtered view)
+    pillar_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.strategic_pillars.id", ondelete="SET NULL"),
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
@@ -122,7 +137,7 @@ class Sme(TimestampedMixin, Base):
     email: Mapped[str | None] = mapped_column(String(200))
     team: Mapped[str] = mapped_column(String(60), nullable=False)
 
-    expertise_areas: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    # expertise_areas removed (Migration J) — sme_topics junction is authoritative.
 
     # primary_topics + audience_focus are denormalized lists for fast
     # filtering; sme_topics + sme_audiences junctions are authoritative
@@ -236,6 +251,13 @@ class PastConference(TimestampedMixin, Base):
         String(20), nullable=False, server_default=text("'unsure'")
     )
 
+    event_kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'corporate'")
+    )
+    conference_url: Mapped[str | None] = mapped_column(String(500))
+    location_city: Mapped[str | None] = mapped_column(String(100))
+    location_country: Mapped[str | None] = mapped_column(String(2))
+
 
 # ===========================================================================
 # Scraper / discovery
@@ -324,6 +346,8 @@ class Conference(TimestampedMixin, Base):
         ),
         # GIN on the denormalized topics array for fast tag filtering.
         Index("ix_conferences_topics_gin", "topics", postgresql_using="gin"),
+        Index("ix_conferences_event_kind", "event_kind"),
+        Index("ix_conferences_assigned_pillar_id", "assigned_pillar_id"),
         {"schema": "app"},
     )
 
@@ -393,6 +417,16 @@ class Conference(TimestampedMixin, Base):
 
     freshness_score: Mapped[float] = mapped_column(nullable=False, server_default=text("1.0"))
 
+    # Migration A: what kind of event is this?
+    event_kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'corporate'")
+    )
+    # Migration A: human-assigned pillar (distinct from matcher-computed conference_pillars scores)
+    assigned_pillar_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.strategic_pillars.id", ondelete="SET NULL"),
+    )
+
 
 class ConferenceSource(Base):
     """Junction: which raw_pages contributed to which conference row.
@@ -414,3 +448,158 @@ class ConferenceSource(Base):
         ForeignKey("app.raw_pages.id", ondelete="CASCADE"),
         primary_key=True,
     )
+
+
+# ===========================================================================
+# Talks library (v2 Phase 1)
+# ===========================================================================
+
+
+class Talk(TimestampedMixin, Base):
+    """A prepared talk abstract. Migration D."""
+
+    __tablename__ = "talks"
+    __table_args__ = (
+        Index("ix_talks_pillar_id", "pillar_id"),
+        Index("ix_talks_primary_sme_id", "primary_sme_id"),
+        Index("ix_talks_review_status", "review_status"),
+        Index("ix_talks_is_active", "is_active"),
+        {"schema": "app"},
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    abstract: Mapped[str | None] = mapped_column(Text)
+    full_content: Mapped[str | None] = mapped_column(Text)
+
+    source_type: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'manual'"))
+    file_path: Mapped[str | None] = mapped_column(Text)
+
+    pillar_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.strategic_pillars.id", ondelete="SET NULL"),
+    )
+    primary_sme_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.smes.id", ondelete="SET NULL"),
+    )
+    co_speaker_ids: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=False, server_default=text("ARRAY[]::uuid[]")
+    )
+
+    talk_format: Mapped[str | None] = mapped_column(Text)
+    suggested_duration_minutes: Mapped[int | None] = mapped_column(Integer)
+
+    review_status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'draft'")
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+
+
+class TalkTag(Base):
+    """User-defined labels for organizing talks. Migration E."""
+
+    __tablename__ = "talk_tags"
+    __table_args__ = {"schema": "app"}
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+
+    name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    color: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+
+
+class TalkSubmission(Base):
+    """Record of a talk being submitted to a conference. Migration G."""
+
+    __tablename__ = "talk_submissions"
+    __table_args__ = (
+        Index("ix_talk_submissions_talk_id", "talk_id"),
+        Index("ix_talk_submissions_conference_id", "conference_id"),
+        Index("ix_talk_submissions_sme_id", "submitted_by_sme_id"),
+        {"schema": "app"},
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+
+    talk_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.talks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    conference_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.conferences.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    submitted_by_sme_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.smes.id", ondelete="SET NULL"),
+    )
+
+    submitted_at: Mapped[date | None] = mapped_column(Date)
+    outcome: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+
+
+# ===========================================================================
+# Pillar content tables (v2 Phase 1)
+# ===========================================================================
+
+
+class PillarContentRoadmap(TimestampedMixin, Base):
+    """Quarterly goals per pillar. Migration H."""
+
+    __tablename__ = "pillar_content_roadmap"
+    __table_args__ = (
+        Index("ix_pillar_content_roadmap_pillar_id", "pillar_id"),
+        {"schema": "app"},
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+
+    pillar_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.strategic_pillars.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    quarter: Mapped[str] = mapped_column(Text, nullable=False)
+    goals: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
+    owner_label: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+
+class PillarGtmStrategy(TimestampedMixin, Base):
+    """Versioned GTM strategy per pillar. Migration I."""
+
+    __tablename__ = "pillar_gtm_strategy"
+    __table_args__ = (
+        Index("ix_pillar_gtm_strategy_pillar_id", "pillar_id"),
+        {"schema": "app"},
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+
+    pillar_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app.strategic_pillars.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    objective: Mapped[str | None] = mapped_column(Text)
+    key_messages: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
+    target_audience_ids: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=False, server_default=text("ARRAY[]::uuid[]")
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))

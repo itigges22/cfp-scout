@@ -14,6 +14,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { StatusPill } from "@/components/conferences/StatusPill";
+import { PastConferenceEditDialog } from "@/components/past-conferences/PastConferenceEditDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +26,7 @@ import { ApiError, conferencesApi } from "@/lib/api";
 import type {
   ConferenceRead,
   DecisionVerdict,
+  PastConferenceCreate,
   SmeBreakdown,
 } from "@/lib/api-types";
 
@@ -34,6 +36,7 @@ export const Route = createFileRoute("/conferences_/$id")({
 
 function ConferenceDetailPage() {
   const { id } = Route.useParams();
+  const [markOpen, setMarkOpen] = useState(false);
   const conferenceQ = useQuery({
     queryKey: ["conferences", id],
     queryFn: () => conferencesApi.get(id),
@@ -79,11 +82,41 @@ function ConferenceDetailPage() {
   const sources = sourcesQ.data?.sources ?? [];
   const decisions = decisionsQ.data?.decisions ?? [];
 
+  const markPrefill: Partial<PastConferenceCreate> = conference
+    ? {
+        name: conference.name,
+        year: conference.start_date
+          ? Number(conference.start_date.slice(0, 4))
+          : new Date().getFullYear(),
+        series_id: conference.series_id ?? null,
+        event_kind: conference.event_kind ?? "corporate",
+        conference_url: conference.website ?? null,
+        location_city: conference.location_city ?? null,
+        location_country: conference.location_country ?? null,
+      }
+    : {};
+
   return (
     <div className="flex flex-col gap-6">
-      <Link to="/conferences" className="text-xs text-fg-muted hover:text-fg">
-        ← All conferences
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link to="/conferences" className="text-xs text-fg-muted hover:text-fg">
+          ← All conferences
+        </Link>
+        {conference ? (
+          <Button variant="outline" size="sm" onClick={() => setMarkOpen(true)}>
+            Mark as attended
+          </Button>
+        ) : null}
+      </div>
+
+      {conference ? (
+        <PastConferenceEditDialog
+          open={markOpen}
+          initial={null}
+          prefill={markPrefill}
+          onOpenChange={setMarkOpen}
+        />
+      ) : null}
 
       <ConferenceHeader conference={conference} />
 

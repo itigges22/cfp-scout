@@ -42,8 +42,11 @@ from app.api.v1 import (
     messaging,
     notifications,
     past_conferences,
+    pillars,
     smes,
     sources,
+    talk_tags,
+    talks,
     topics,
     uploads,
     versions,
@@ -117,6 +120,9 @@ app.include_router(versions.router)
 app.include_router(diagnostics.router)
 app.include_router(config.router)
 app.include_router(uploads.router)
+app.include_router(pillars.router)
+app.include_router(talks.router)
+app.include_router(talk_tags.router)
 
 # ---- static SPA at / -----------------------------------------------------
 # Mount the built assets under /assets, then add a SPA fallback that serves
