@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
+  BookOpen,
   CalendarClock,
   GitFork,
   History,
@@ -36,6 +37,7 @@ const DISCOVER_PRIMARY = [
 const DISCOVER_SECONDARY = [
   { to: "/past-conferences", label: "Past Events", Icon: History },
   { to: "/smes",             label: "SMEs",        Icon: Users },
+  { to: "/talks",            label: "Talks",       Icon: BookOpen },
 ] as const;
 
 function NavLink({
