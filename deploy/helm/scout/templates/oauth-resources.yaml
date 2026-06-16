@@ -5,7 +5,7 @@ OAuth sidecar supporting resources:
      bundle when it sees the inject-cabundle annotation.
 */}}
 {{- if .Values.oauth.enabled }}
-{{- $secretName := .Values.oauth.sessionSecretName }}
+{{- $secretName := .Values.oauth.sessionSecretName | default "scout-proxy-session" }}
 {{- $existing := lookup "v1" "Secret" .Release.Namespace $secretName }}
 ---
 apiVersion: v1

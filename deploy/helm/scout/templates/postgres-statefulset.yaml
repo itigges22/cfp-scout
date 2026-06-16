@@ -92,7 +92,7 @@ spec:
     - metadata:
         name: data
         labels:
-          {{- include "scout.componentLabels" (dict "ctx" . "component" "postgres") | nindent 10 }}
+          {{- include "scout.componentSelectorLabels" (dict "ctx" . "component" "postgres") | nindent 10 }}
       spec:
         accessModes:
           - {{ .Values.postgres.storage.accessMode }}

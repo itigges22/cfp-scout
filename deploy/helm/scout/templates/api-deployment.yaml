@@ -140,7 +140,7 @@ spec:
               mountPath: /var/lib/scout/storage
         {{- if .Values.oauth.enabled }}
         - name: oauth-proxy
-          image: {{ .Values.oauth.image }}
+          image: {{ .Values.oauth.image | default "quay.io/openshift/origin-oauth-proxy:4.15" }}
           imagePullPolicy: IfNotPresent
           ports:
             - name: oauth
@@ -151,7 +151,7 @@ spec:
             - --pass-basic-auth=false
             - --https-address=:8443
             - --http-address=
-            - --email-domain={{ .Values.oauth.emailDomain }}
+            - --email-domain={{ .Values.oauth.emailDomain | default "redhat.com" }}
             - --upstream=http://localhost:8000
             - --openshift-service-account={{ include "scout.serviceAccountName" . }}
             - --tls-key=/etc/tls/private/tls.key
@@ -191,10 +191,10 @@ spec:
         {{- if .Values.oauth.enabled }}
         - name: proxy-tls
           secret:
-            secretName: {{ .Values.oauth.tlsSecretName }}
+            secretName: {{ .Values.oauth.tlsSecretName | default "scout-api-tls" }}
         - name: proxy-session
           secret:
-            secretName: {{ .Values.oauth.sessionSecretName }}
+            secretName: {{ .Values.oauth.sessionSecretName | default "scout-proxy-session" }}
         - name: ocp-injected-certs
           configMap:
             name: {{ include "scout.fullname" . }}-ocp-injected-certs
