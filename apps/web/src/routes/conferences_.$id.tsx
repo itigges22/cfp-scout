@@ -11,7 +11,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+import { useMe } from "@/hooks/useMe";
 
 import { StatusPill } from "@/components/conferences/StatusPill";
 import { PastConferenceEditDialog } from "@/components/past-conferences/PastConferenceEditDialog";
@@ -552,9 +554,15 @@ function DecisionPanel({
   history: import("@/lib/api-types").DecisionRead[];
 }) {
   const queryClient = useQueryClient();
+  const { label: meLabel } = useMe();
   const [reason, setReason] = useState("");
   const [actor, setActor] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Pre-fill the actor field with the signed-in user once the identity loads.
+  useEffect(() => {
+    if (meLabel && !actor) setActor(meLabel);
+  }, [meLabel]);
 
   const mut = useMutation({
     mutationFn: (verdict: DecisionVerdict) =>

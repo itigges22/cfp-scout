@@ -11,6 +11,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Check, Sparkles, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { useMe } from "@/hooks/useMe";
+
 import { NewConferenceDialog } from "@/components/conferences/NewConferenceDialog";
 import { StatusPill } from "@/components/conferences/StatusPill";
 import { Badge } from "@/components/ui/badge";
@@ -242,6 +244,7 @@ function ConferenceRow({ c }: { c: import("@/lib/api-types").ConferenceListItem 
   const overall = c.overall_score ?? null;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { label: meLabel } = useMe();
 
   const deleteMut = useMutation({
     mutationFn: () => conferencesApi.delete(c.id, "user_delete"),
@@ -254,7 +257,7 @@ function ConferenceRow({ c }: { c: import("@/lib/api-types").ConferenceListItem 
       conferencesApi.createDecision(c.id, {
         decision,
         reason: null,
-        decided_by_label: "user_inline",
+        decided_by_label: meLabel || "user_inline",
       }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["conferences"] }),

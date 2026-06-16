@@ -12,6 +12,8 @@ import { Link } from "@tanstack/react-router";
 import { Bell, UserCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { useMe } from "@/hooks/useMe";
+
 import { Button } from "@/components/ui/button";
 import { ApiError, notificationsApi } from "@/lib/api";
 import type {
@@ -36,22 +38,12 @@ export function TopBar() {
 }
 
 function UserBadge() {
-  const q = useQuery({
-    queryKey: ["me"],
-    queryFn: async () => {
-      const res = await fetch("/api/v1/me");
-      if (!res.ok) return { email: "" };
-      return res.json() as Promise<{ email: string }>;
-    },
-    staleTime: Infinity,
-  });
-  const email = q.data?.email ?? "";
-  if (!email) return null;
-  const label = email.includes("@") ? email.split("@")[0] : email;
+  const { email, label } = useMe();
+  if (!label) return null;
   return (
     <div
       className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-fg-muted"
-      title={email}
+      title={email || label}
     >
       <UserCircle className="size-3.5 shrink-0" />
       <span className="max-w-[140px] truncate">{label}</span>

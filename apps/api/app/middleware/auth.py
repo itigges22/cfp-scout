@@ -24,6 +24,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        email = request.headers.get("x-auth-request-email") or _DEV_FALLBACK
+        # oauth-proxy sets X-Auth-Request-Email when the IdP provides an email
+        # claim. OpenShift's built-in provider often only sets
+        # X-Auth-Request-User (the preferred username, e.g. "itigges").
+        # Accept either; fall back to dev env var for local runs.
+        email = (
+            request.headers.get("x-auth-request-email")
+            or request.headers.get("x-auth-request-user")
+            or _DEV_FALLBACK
+        )
         request.state.user_email = email
         return await call_next(request)
