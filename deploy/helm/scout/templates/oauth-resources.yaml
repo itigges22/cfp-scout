@@ -1,0 +1,34 @@
+{{- /*
+OAuth sidecar supporting resources:
+  1. Session-cookie Secret  — stable value preserved across upgrades via lookup.
+  2. CA-injection ConfigMap — OCP service-ca operator injects the cluster CA
+     bundle when it sees the inject-cabundle annotation.
+*/}}
+{{- if .Values.oauth.enabled }}
+{{- $secretName := .Values.oauth.sessionSecretName }}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace $secretName }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+  labels:
+    {{- include "scout.labels" . | nindent 4 }}
+type: Opaque
+data:
+  {{- if $existing }}
+  session_secret: {{ index $existing.data "session_secret" }}
+  {{- else }}
+  session_secret: {{ randAlphaNum 32 | b64enc }}
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "scout.fullname" . }}-ocp-injected-certs
+  labels:
+    {{- include "scout.labels" . | nindent 4 }}
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+data: {}
+{{- end }}

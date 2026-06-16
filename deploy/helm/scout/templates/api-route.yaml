@@ -23,10 +23,10 @@ spec:
     name: {{ include "scout.fullname" . }}-api
     weight: 100
   port:
-    targetPort: http
+    targetPort: {{ if .Values.oauth.enabled }}oauth{{ else }}http{{ end }}
   {{- if .Values.route.tls.enabled }}
   tls:
-    termination: {{ .Values.route.tls.termination }}
+    termination: {{ if .Values.oauth.enabled }}reencrypt{{ else }}{{ .Values.route.tls.termination }}{{ end }}
     insecureEdgeTerminationPolicy: {{ .Values.route.tls.insecureEdgeTerminationPolicy }}
   {{- end }}
   wildcardPolicy: None

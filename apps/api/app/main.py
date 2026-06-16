@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import (
+    me,
     admin_discovery,
     admin_embeddings,
     admin_extraction,
@@ -53,6 +54,7 @@ from app.api.v1 import (
 )
 from app.lifespan import lifespan
 from app.logging import configure_logging
+from app.middleware.auth import AuthMiddleware
 from app.middleware.error_handler import install_error_handlers
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -92,10 +94,14 @@ app.add_middleware(RequestIDMiddleware)
 # Referrer-Policy, Permissions-Policy, X-Content-Type-Options) on every
 # response.
 app.add_middleware(SecurityHeadersMiddleware)
+# Reads X-Auth-Request-Email (set by oauth-proxy sidecar) and stores it
+# on request.state.user_email. Falls back to SCOUT_DEV_USER_EMAIL in dev.
+app.add_middleware(AuthMiddleware)
 
 install_error_handlers(app)
 
 # ---- routers --------------------------------------------------------------
+app.include_router(me.router)
 app.include_router(health.router)
 app.include_router(messaging.router)
 app.include_router(audiences.router)

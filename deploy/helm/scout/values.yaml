@@ -251,3 +251,26 @@ serviceAccount:
   create: true
   name: ""        # blank → auto-generated like "scout"
   annotations: {}
+
+# ---------------------------------------------------------------------------
+# OpenShift oauth-proxy sidecar — gates all traffic behind Red Hat SSO.
+# When enabled:
+#   * A second container runs oauth-proxy on :8443 (HTTPS / reencrypt)
+#   * The Service gains a port 8443 and a serving-cert annotation
+#   * The Route switches to reencrypt termination targeting port oauth
+#   * The ServiceAccount gets the OAuthRedirectReference annotation
+#   * A session-cookie Secret and OCP CA-injection ConfigMap are created
+#
+# Disable for local dev (proxy not present; auth reads SCOUT_DEV_USER_EMAIL).
+# ---------------------------------------------------------------------------
+oauth:
+  enabled: false       # set to true in OCP values override
+  image: quay.io/openshift/origin-oauth-proxy:4.15
+  emailDomain: redhat.com
+  # Name of the Secret that holds the session cookie key.
+  # Chart auto-creates it on first install (random 32-char value) and
+  # leaves it unchanged on upgrades. Override via `oc set data` if needed.
+  sessionSecretName: scout-proxy-session
+  # Name of the TLS Secret auto-created by the service-ca operator when it
+  # sees the service.beta.openshift.io/serving-cert-secret-name annotation.
+  tlsSecretName: scout-api-tls

@@ -9,7 +9,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Bell } from "lucide-react";
+import { Bell, UserCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -28,9 +28,34 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
+        <UserBadge />
         <NotificationBell />
       </div>
     </header>
+  );
+}
+
+function UserBadge() {
+  const q = useQuery({
+    queryKey: ["me"],
+    queryFn: async () => {
+      const res = await fetch("/api/v1/me");
+      if (!res.ok) return { email: "" };
+      return res.json() as Promise<{ email: string }>;
+    },
+    staleTime: Infinity,
+  });
+  const email = q.data?.email ?? "";
+  if (!email) return null;
+  const label = email.includes("@") ? email.split("@")[0] : email;
+  return (
+    <div
+      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-fg-muted"
+      title={email}
+    >
+      <UserCircle className="size-3.5 shrink-0" />
+      <span className="max-w-[140px] truncate">{label}</span>
+    </div>
   );
 }
 

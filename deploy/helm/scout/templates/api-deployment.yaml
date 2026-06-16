@@ -138,7 +138,64 @@ spec:
           volumeMounts:
             - name: shared-storage
               mountPath: /var/lib/scout/storage
+        {{- if .Values.oauth.enabled }}
+        - name: oauth-proxy
+          image: {{ .Values.oauth.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: oauth
+              containerPort: 8443
+              protocol: TCP
+          args:
+            - --provider=openshift
+            - --pass-basic-auth=false
+            - --https-address=:8443
+            - --http-address=
+            - --email-domain={{ .Values.oauth.emailDomain }}
+            - --upstream=http://localhost:8000
+            - --openshift-service-account={{ include "scout.serviceAccountName" . }}
+            - --tls-key=/etc/tls/private/tls.key
+            - --tls-cert=/etc/tls/private/tls.crt
+            - --cookie-secret-file=/etc/proxy/secrets/session_secret
+            - --openshift-ca=/etc/pki/tls/cert.pem
+            - --openshift-ca=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            - --openshift-ca=/etc/ocp-injected-certs/ca-bundle.crt
+            - --set-xauthrequest
+          volumeMounts:
+            - name: proxy-tls
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: proxy-session
+              mountPath: /etc/proxy/secrets
+              readOnly: true
+            - name: ocp-injected-certs
+              mountPath: /etc/ocp-injected-certs
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+        {{- end }}
       volumes:
         - name: shared-storage
           persistentVolumeClaim:
             claimName: {{ include "scout.fullname" . }}-storage
+        {{- if .Values.oauth.enabled }}
+        - name: proxy-tls
+          secret:
+            secretName: {{ .Values.oauth.tlsSecretName }}
+        - name: proxy-session
+          secret:
+            secretName: {{ .Values.oauth.sessionSecretName }}
+        - name: ocp-injected-certs
+          configMap:
+            name: {{ include "scout.fullname" . }}-ocp-injected-certs
+        {{- end }}

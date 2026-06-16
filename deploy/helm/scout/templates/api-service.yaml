@@ -4,6 +4,10 @@ metadata:
   name: {{ include "scout.fullname" . }}-api
   labels:
     {{- include "scout.componentLabels" (dict "ctx" . "component" "api") | nindent 4 }}
+  {{- if .Values.oauth.enabled }}
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: {{ .Values.oauth.tlsSecretName }}
+  {{- end }}
 spec:
   type: ClusterIP
   selector:
@@ -13,3 +17,9 @@ spec:
       port: 8000
       targetPort: http
       protocol: TCP
+    {{- if .Values.oauth.enabled }}
+    - name: oauth
+      port: 8443
+      targetPort: oauth
+      protocol: TCP
+    {{- end }}

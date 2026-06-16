@@ -11,11 +11,11 @@ type: application
 # Increment on chart-shape changes (templates, defaults, values
 # surface). Bump appVersion below independently when the image tag
 # moves but the chart shape is unchanged.
-version: 1.1.0
+version: 1.2.0
 
 # Tracks the matcher version. Update when shipping a new container
 # image. The default values.yaml references this as the image tag.
-appVersion: "2.5.0"
+appVersion: "2.7.0"
 
 keywords:
   - scout
