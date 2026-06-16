@@ -28,9 +28,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # claim. OpenShift's built-in provider often only sets
         # X-Auth-Request-User (the preferred username, e.g. "itigges").
         # Accept either; fall back to dev env var for local runs.
+        # openshift/oauth-proxy forwards X-Forwarded-Email and X-Forwarded-User
+        # (not X-Auth-Request-* which are response headers for nginx auth_request mode).
         email = (
-            request.headers.get("x-auth-request-email")
-            or request.headers.get("x-auth-request-user")
+            request.headers.get("x-forwarded-email")
+            or request.headers.get("x-forwarded-user")
             or _DEV_FALLBACK
         )
         request.state.user_email = email
