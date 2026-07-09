@@ -175,6 +175,7 @@ async def create_sme(
     await db.refresh(obj)
     invalidate_graph()  # SmeTopic / SmeAudience writes invalidated edges
     await _embed_bio_safely(db, obj, purpose="embed:sme_bio:create")
+    await db.refresh(obj)  # _embed_bio_safely commits/rolls back, which expires obj
     return obj
 
 
@@ -221,6 +222,7 @@ async def update_sme(
     await db.refresh(obj)
     invalidate_graph()  # SmeTopic / SmeAudience may have changed
     await _embed_bio_safely(db, obj, purpose="embed:sme_bio:update")
+    await db.refresh(obj)  # _embed_bio_safely commits/rolls back, which expires obj
     return obj
 
 

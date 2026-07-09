@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useMe } from "@/hooks/useMe";
 import { ApiError, audiencesApi, pillarsApi, smesApi, topicsApi } from "@/lib/api";
 import type { AudienceProfileRead, PillarRead, SmeCreate, SmeRead } from "@/lib/api-types";
 import { ErrorBox, Field } from "@/routes/audiences";
@@ -45,6 +46,7 @@ const EMPTY_FORM: SmeCreate = {
 
 export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
   const queryClient = useQueryClient();
+  const { label: meLabel } = useMe();
   const isEdit = initial !== null;
   const [form, setForm] = useState<SmeCreate>(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -98,9 +100,10 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
         email: body.email?.trim() ? body.email : null,
         location_city: body.location_city?.trim() ? body.location_city : null,
       };
+      const actor = meLabel || "user";
       return isEdit && initial
-        ? smesApi.update(initial.id, cleaned)
-        : smesApi.create(cleaned);
+        ? smesApi.update(initial.id, cleaned, actor)
+        : smesApi.create(cleaned, actor);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["smes"] });
@@ -115,6 +118,8 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
 
   const bioLength = form.bio.length;
   const bioOk = bioLength >= 200 && bioLength <= 2000;
+  const audienceOk = form.audience_focus.length >= 1;
+  const canSubmit = bioOk && audienceOk;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -248,6 +253,20 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
           {mutate.isError && Object.keys(fieldErrors).length === 0 ? (
             <ErrorBox error={mutate.error} />
           ) : null}
+
+          {/* Inline pre-submit hints so the user knows exactly what's blocking */}
+          {!canSubmit && (
+            <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-warning">
+              {!bioOk && bioLength < 200
+                ? `Bio needs ${200 - bioLength} more character${200 - bioLength === 1 ? "" : "s"} (minimum 200).`
+                : !bioOk
+                  ? "Bio is too long — trim to 2000 characters."
+                  : null}
+              {!audienceOk
+                ? " Select at least one audience the SME speaks to."
+                : null}
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -260,7 +279,7 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
           </Button>
           <Button
             onClick={() => mutate.mutate(form)}
-            disabled={mutate.isPending || !bioOk}
+            disabled={mutate.isPending || !canSubmit}
           >
             {mutate.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
             {isEdit ? "Save changes" : "Create SME"}
