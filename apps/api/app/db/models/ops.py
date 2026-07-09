@@ -142,11 +142,13 @@ class AppSettingOverride(Base):
     """Singleton-style key/value overrides for app/settings.py values.
 
     Populated via ``PATCH /api/v1/admin/settings`` so admins can tune
-    matcher weights, decay flags, LLM budget, etc. without editing
-    ``.env``. Loaded into the Pydantic Settings instance on api startup;
-    a successful PATCH clears the lru_cache so the next request picks up
-    the new value (for runtime-tunable keys; secrets like LLM_API_KEY
-    still require a restart of the api container).
+    matcher weights, decay flags, LLM keys/models/budget, etc. without
+    editing ``.env``. This table is the runtime source of truth: env vars
+    are boot defaults only. Loaded into the Pydantic Settings instance at
+    startup, then re-read every ``settings_refresh_seconds`` by every
+    process (api replicas + standalone scheduler, see
+    ``app.services.settings_refresh``), so a PATCH — including an
+    LLM_API_KEY rotation — propagates everywhere without a restart.
     """
 
     __tablename__ = "app_setting_overrides"

@@ -59,49 +59,57 @@ SPECS: list[SettingSpec] = [
         kind="secret",
         group="llm",
         label="LLM API key",
-        description="OpenAI-compatible API key. Stored encrypted at rest "
-        "is a future feature; today the value lands in plain text in the DB.",
-        restart_required=True,
+        description="OpenAI-compatible API key. Applied immediately on this pod and "
+        "picked up by other replicas + the scheduler within the settings refresh "
+        "interval (~30s) — no restart needed. Stored encrypted at rest is a future "
+        "feature; today the value lands in plain text in the DB.",
     ),
     SettingSpec(
         name="llm_base_url",
         kind="str",
         group="llm",
         label="LLM base URL",
-        description="OpenAI-compatible endpoint (e.g. https://your-llm-host.example/v1).",
-        restart_required=True,
+        description="OpenAI-compatible endpoint (e.g. https://your-llm-host.example/v1). "
+        "Applied dynamically; propagates to all pods within ~30s.",
     ),
     SettingSpec(
         name="llm_chat_model",
         kind="str",
         group="llm",
         label="Chat model",
-        description="Default chat model name. Per-purpose overrides below take precedence.",
-        restart_required=True,
+        description="Default chat model name. Per-purpose overrides below take precedence. "
+        "Applied dynamically; propagates to all pods within ~30s.",
     ),
     SettingSpec(
         name="llm_embedding_model",
         kind="str",
         group="llm",
         label="Embedding model",
-        description="Embedding model name. Common choices include nomic-embed-text-v1-5 or text-embedding-3-small. Required for the matcher.",
-        restart_required=True,
+        description="Embedding model name — must exist on the LLM endpoint (see the "
+        "diagnostics connectivity probe). Required for the matcher. Applied dynamically. "
+        "NOTE: switching models makes previously stored vectors incomparable; update the "
+        "active row in vectors.embedding_models and re-embed content afterwards.",
     ),
     SettingSpec(
         name="llm_embedding_api_key",
         kind="secret",
         group="llm",
         label="Embedding API key (optional)",
-        description="If the chat key can't access the embedding model (common when providers issue per-model keys), paste a key with embedding access here. Leave blank to reuse the chat key.",
-        restart_required=True,
+        description="If the chat key can't access the embedding model (common when providers issue per-model keys), paste a key with embedding access here. Leave blank to reuse the chat key. Applied dynamically.",
     ),
     SettingSpec(
         name="llm_embedding_base_url",
         kind="str",
         group="llm",
         label="Embedding base URL (optional)",
-        description="Override the embedding endpoint URL. Leave blank to use the same base URL as chat.",
-        restart_required=True,
+        description="Override the embedding endpoint URL. Leave blank to use the same base URL as chat. Applied dynamically.",
+    ),
+    SettingSpec(
+        name="llm_disable_thinking",
+        kind="bool",
+        group="llm",
+        label="Disable model reasoning/thinking",
+        description="For reasoning models (Qwen3 family): suppress the internal thinking channel so token-capped calls return an actual answer instead of an empty string. Leave on unless you specifically want chain-of-thought and have generous max_tokens. Ignored by models without a thinking mode.",
     ),
     SettingSpec(
         name="llm_dry_run",
@@ -127,6 +135,24 @@ SPECS: list[SettingSpec] = [
         description="Process-wide cap on in-flight LLM calls (chat + embedding). Default 3 is safe under typical provider quotas. If you see 429 rate-limit errors in /diagnostics during a bulk rescore or matcher fan-out, lower this; if you have headroom and want faster rescores, raise it.",
         min_value=1,
         max_value=20,
+    ),
+    SettingSpec(
+        name="embed_chunk_max_chars",
+        kind="int",
+        group="llm",
+        label="Embedding chunk size (chars)",
+        description="Max characters per chunk sent to the embedding model. Must stay comfortably under the model's serving context window (~4 chars/token estimate; Nomic-embed-text-v2-moe on LiteMaaS caps at 512 tokens, so keep this ≤ ~1600). Re-embed content after changing.",
+        min_value=200,
+        max_value=20_000,
+    ),
+    SettingSpec(
+        name="embed_chunk_overlap_chars",
+        kind="int",
+        group="llm",
+        label="Embedding chunk overlap (chars)",
+        description="Characters of overlap between adjacent chunks. Keeps sentence context across chunk boundaries.",
+        min_value=0,
+        max_value=2_000,
     ),
     # Matcher score rescaler -------------------------------------------
     SettingSpec(

@@ -187,6 +187,33 @@ def start_scheduler() -> None:
     register_jobs(scheduler)
 
 
+def start_scheduler_paused() -> None:
+    """Start the scheduler paused: jobstore attached, nothing fires here.
+
+    For SCHEDULER_MODE=disabled processes (HPA-scaled api pods on
+    OpenShift). APScheduler's ``add_job`` on a never-started scheduler
+    only buffers jobs in the process-local ``_pending_jobs`` list — they
+    never reach the shared Postgres jobstore, so every admin "run now"
+    endpoint (``enqueue_now``) silently no-ops on those pods while the
+    standalone scheduler sees nothing. Starting paused flushes adds
+    straight to the jobstore (the standalone scheduler picks them up at
+    its next wakeup) without this process ever executing a job.
+
+    No leader lock: a paused scheduler fires nothing, so every worker
+    can safely attach.
+    """
+    scheduler = get_scheduler()
+    if scheduler.running:
+        log.warning("scheduler.already_running")
+        return
+    scheduler.start(paused=True)
+    log.info(
+        "scheduler.started_paused",
+        reason="jobstore_write_path_for_enqueue_now",
+        jobstores=list(scheduler._jobstores.keys()),
+    )
+
+
 def stop_scheduler() -> None:
     """Stop the scheduler. Idempotent."""
     global _scheduler, _leader_conn

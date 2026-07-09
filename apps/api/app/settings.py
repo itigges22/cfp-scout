@@ -51,7 +51,8 @@ class Settings(BaseSettings):
     llm_base_url: str = Field(..., description="LLM endpoint base URL.")
     llm_api_key: SecretStr = Field(..., description="LLM API key.")
     llm_chat_model: str = "your-chat-model"
-    llm_embedding_model: str = "nomic-embed-text-v1-5"
+    # Must match the active row in vectors.embedding_models (dim 768).
+    llm_embedding_model: str = "Nomic-embed-text-v2-moe"
 
     # Per-purpose overrides; empty string -> fall back to llm_chat_model.
     llm_extraction_model: str = ""
@@ -68,6 +69,30 @@ class Settings(BaseSettings):
 
     llm_dry_run: bool = False
     llm_monthly_budget_usd: float | None = None
+
+    # Reasoning models (Qwen3 family) emit a separate "thinking" channel
+    # before the answer. SCOUT's calls are utilitarian (extraction, RAG
+    # chat, judging) with hard max_tokens caps — with thinking on, the
+    # model can exhaust the whole budget reasoning and return an EMPTY
+    # answer (Ask Scout renders nothing). Sent to the backend as
+    # chat_template_kwargs={"enable_thinking": false}; backends that
+    # don't know the kwarg ignore it, so this is safe for non-reasoning
+    # models too.
+    llm_disable_thinking: bool = True
+
+    # How often (seconds) each process re-reads app.app_setting_overrides
+    # from Postgres so runtime config changes (rotated LLM key, model
+    # swap) propagate to every api replica + the standalone scheduler
+    # without a restart. 0 disables the background refresh.
+    settings_refresh_seconds: int = Field(default=30, ge=0, le=3600)
+
+    # Chunk sizing for the embedding pipeline. Must keep every chunk under
+    # the embedding model's serving context window with margin — the
+    # chunker estimates tokens at ~4 chars/token, and real tokenization
+    # can run denser. Nomic-embed-text-v2-moe on LiteMaaS caps requests
+    # at 512 tokens; 1400 chars ≈ 350 estimated tokens leaves headroom.
+    embed_chunk_max_chars: int = Field(default=1400, ge=200, le=20_000)
+    embed_chunk_overlap_chars: int = Field(default=150, ge=0, le=2_000)
 
     # Maximum concurrent in-flight LLM calls (chat + embedding combined).
     # A bulk rescore enqueues one task per conference; without a cap,
@@ -475,6 +500,11 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",  # tolerate unrecognised vars; we only read what we declare
+        # Empty env vars fall back to the field default instead of parsing
+        # as "". Matters for LLM_EMBEDDING_API_KEY: compose/helm pass it
+        # through unconditionally, and SecretStr("") ≠ None would wrongly
+        # activate the dedicated embedding client with a blank key.
+        env_ignore_empty=True,
     )
 
     # ------------------------------------------------------------------

@@ -36,7 +36,7 @@ import structlog
 
 from app.db.session import dispose_engine, get_session_factory
 from app.scheduler import start_scheduler, stop_scheduler
-from app.services import settings_overrides
+from app.services import settings_overrides, settings_refresh
 from app.settings import get_settings
 
 log = structlog.get_logger("scout.scheduler_standalone")
@@ -90,6 +90,9 @@ async def main() -> int:
         return 2
 
     start_scheduler()
+    # Background jobs call the LLM client directly, so this process must
+    # also see key rotations / model swaps written to the DB by the api.
+    settings_refresh.start_refresh_task()
     log.info(
         "scout.scheduler_standalone.ready",
         scheduler_mode=settings.scheduler_mode,
@@ -102,6 +105,7 @@ async def main() -> int:
         await _run_forever(stop)
     finally:
         log.info("scout.scheduler_standalone.shutting_down")
+        await settings_refresh.stop_refresh_task()
         try:
             stop_scheduler()
         except Exception as exc:  # noqa: BLE001

@@ -79,6 +79,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:
         log.warning("scout.settings_overrides.load_failed", error=str(exc))
 
+    # Keep the overrides fresh: DB is the source of truth for runtime
+    # config, and PATCHes can land on any replica. The refresh loop makes
+    # key rotations reach this process within settings_refresh_seconds.
+    from app.services import settings_refresh
+
+    settings_refresh.start_refresh_task()
+
     # Plan 25: register the content-versioning SQLAlchemy event listener.
     # Idempotent — safe to call on every boot. Done BEFORE the scheduler
     # so any startup task that mutates versioned entities gets logged.
@@ -98,7 +105,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     mode = _gs().scheduler_mode
     if mode == "disabled":
-        log.info("scout.scheduler_skipped", reason="SCHEDULER_MODE=disabled")
+        # Don't fire jobs here — but DO attach the shared jobstore
+        # (paused) so admin "run now" endpoints can enqueue work for
+        # the standalone scheduler. Without this, enqueue_now() buffers
+        # jobs in process-local memory and they silently never run.
+        from app.scheduler import start_scheduler_paused
+
+        try:
+            start_scheduler_paused()
+        except Exception as exc:
+            log.error("scout.scheduler_paused_failed", error=str(exc))
+        log.info("scout.scheduler_skipped", reason="SCHEDULER_MODE=disabled (jobstore attached, paused)")
     else:
         try:
             start_scheduler()
@@ -112,9 +129,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Shutdown
     log.info("scout.shutting_down")
-    if mode != "disabled":
-        try:
-            stop_scheduler()
-        except Exception as exc:
-            log.warning("scout.scheduler_shutdown_failed", error=str(exc))
+    await settings_refresh.stop_refresh_task()
+    # Unconditional: disabled-mode pods hold a paused scheduler whose
+    # jobstore connection also deserves a clean shutdown. Idempotent.
+    try:
+        stop_scheduler()
+    except Exception as exc:
+        log.warning("scout.scheduler_shutdown_failed", error=str(exc))
     await dispose_engine()

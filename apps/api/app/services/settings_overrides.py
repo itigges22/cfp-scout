@@ -48,8 +48,15 @@ def has(name: str) -> bool:
 # ---------------------------------------------------------------------------
 # Async DB integration
 # ---------------------------------------------------------------------------
-async def load_from_db(db: AsyncSession) -> dict[str, Any]:
-    """Populate the in-memory dict from the table. Call once at startup."""
+async def load_from_db(db: AsyncSession, *, quiet: bool = False) -> dict[str, Any]:
+    """Populate the in-memory dict from the table.
+
+    Called once at startup and then periodically by the refresh loop
+    (``app.services.settings_refresh``) so overrides written by another
+    process — a sibling api replica or the standalone scheduler — land
+    here without a restart. ``quiet=True`` suppresses the loaded log
+    line (the refresh loop logs only on actual change).
+    """
     rows = (await db.execute(select(AppSettingOverride))).scalars().all()
     new_dict: dict[str, Any] = {}
     for row in rows:
@@ -63,8 +70,26 @@ async def load_from_db(db: AsyncSession) -> dict[str, Any]:
             )
     _OVERRIDES.clear()
     _OVERRIDES.update(new_dict)
-    log.info("settings_overrides.loaded", count=len(_OVERRIDES))
+    if not quiet:
+        log.info("settings_overrides.loaded", count=len(_OVERRIDES))
     return new_dict
+
+
+async def refresh_from_db(db: AsyncSession) -> bool:
+    """Reload the dict from the table; True if anything actually changed.
+
+    Callers should ``get_settings.cache_clear()`` when this returns True
+    so the next Settings read picks up the new values.
+    """
+    before = dict(_OVERRIDES)
+    after = await load_from_db(db, quiet=True)
+    changed = after != before
+    if changed:
+        changed_keys = sorted(
+            k for k in (set(before) | set(after)) if before.get(k) != after.get(k)
+        )
+        log.info("settings_overrides.refreshed", changed=changed_keys)
+    return changed
 
 
 async def upsert(

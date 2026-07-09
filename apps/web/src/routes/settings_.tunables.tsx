@@ -32,7 +32,7 @@ export const Route = createFileRoute("/settings_/tunables")({
 type SettingSpec = {
   name: string;
   kind: "int" | "float" | "bool" | "str" | "secret" | "list_str";
-  group: "llm" | "matcher" | "sme" | "team" | "decay" | "scraper" | "logging" | "talks";
+  group: "llm" | "matcher" | "sme" | "team" | "decay" | "discovery" | "scraper" | "logging" | "talks" | "conferences";
   label: string;
   description: string;
   restart_required: boolean;
@@ -58,6 +58,8 @@ const GROUP_ORDER: SettingSpec["group"][] = [
   "sme",
   "team",
   "decay",
+  "discovery",
+  "conferences",
   "talks",
   "scraper",
   "logging",
@@ -69,6 +71,8 @@ const GROUP_TITLE: Record<SettingSpec["group"], string> = {
   sme: "SME ranker weights",
   team: "Team recommendations",
   decay: "Decay",
+  discovery: "Web discovery",
+  conferences: "Conferences",
   talks: "Talks library",
   scraper: "Scraper",
   logging: "Logging",
