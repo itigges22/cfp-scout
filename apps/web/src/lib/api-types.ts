@@ -454,6 +454,14 @@ export interface GraphResponse {
 // ---------------------------------------------------------------------------
 // Diagnostics (plan 26)
 // ---------------------------------------------------------------------------
+export interface LlmEndpointProbe {
+  ok: boolean;
+  status_code: number | null;
+  latency_ms: number;
+  error: string | null;
+  available_models: string[] | null;
+}
+
 export interface DiagnosticsResponse {
   generated_at: string;
   cache_ttl_seconds: number;
@@ -473,6 +481,15 @@ export interface DiagnosticsResponse {
   };
   llm: {
     calls: { "24h": number; "7d": number; "30d": number; all: number };
+    calls_24h_ok: number;
+    calls_24h_errors: number;
+    last_success: {
+      at: string | null;
+      model: string;
+      purpose: string;
+      latency_ms: number | null;
+    } | null;
+    errors_cleared_at: string | null;
     by_purpose_24h: Array<{ purpose: string; calls: number }>;
     recent_errors: Array<{
       at: string | null;
@@ -480,6 +497,21 @@ export interface DiagnosticsResponse {
       purpose: string;
       error: string;
     }>;
+    connectivity: {
+      endpoint: LlmEndpointProbe;
+      embedding_endpoint: LlmEndpointProbe | null;
+      chat_model_available: boolean | null;
+      embedding_model_available: boolean | null;
+      config: {
+        base_url: string;
+        chat_model: string;
+        embedding_model: string;
+        dry_run: boolean;
+        api_key_masked: string | null;
+        api_key_source: "db_override" | "env";
+        embedding_key_set: boolean;
+      };
+    };
   };
   jobs: {
     running: Array<{

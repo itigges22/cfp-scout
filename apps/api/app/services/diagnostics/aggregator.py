@@ -222,8 +222,113 @@ async def _usage_panel(db: AsyncSession, *, now: datetime) -> dict:
     }
 
 
+def _mask_secret(value: str | None) -> str | None:
+    """Show only the last 4 chars — enough to tell keys apart, no more."""
+    if not value:
+        return None
+    return f"…{value[-4:]}" if len(value) > 4 else "…"
+
+
+async def _probe_models_endpoint(base_url: str, api_key: str) -> dict:
+    """Authenticated GET {base}/models — a real key + reachability check
+    that costs zero tokens. Returns the model ids the backend actually
+    serves so we can flag configured-but-missing models."""
+    import httpx
+
+    from app.services.llm.client import _normalize_openai_base_url
+
+    url = _normalize_openai_base_url(base_url).rstrip("/") + "/models"
+    started = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url, headers={"Authorization": f"Bearer {api_key}"})
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        if resp.status_code in (401, 403):
+            return {
+                "ok": False,
+                "status_code": resp.status_code,
+                "latency_ms": latency_ms,
+                "error": f"authentication failed ({resp.status_code}) — the API key is invalid or revoked",
+                "available_models": None,
+            }
+        if resp.status_code != 200:
+            return {
+                "ok": False,
+                "status_code": resp.status_code,
+                "latency_ms": latency_ms,
+                "error": f"unexpected status {resp.status_code}: {resp.text[:200]}",
+                "available_models": None,
+            }
+        ids = [m.get("id") for m in resp.json().get("data", []) if m.get("id")]
+        return {
+            "ok": True,
+            "status_code": 200,
+            "latency_ms": latency_ms,
+            "error": None,
+            "available_models": ids[:50],
+        }
+    except Exception as exc:  # noqa: BLE001 — diagnostics must not raise
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        return {
+            "ok": False,
+            "status_code": None,
+            "latency_ms": latency_ms,
+            "error": f"{type(exc).__name__}: {exc}",
+            "available_models": None,
+        }
+
+
+async def _llm_connectivity() -> dict:
+    """Live probe of the configured LLM endpoint(s).
+
+    Unlike the call-history panel below, this actually talks to the
+    backend — so a rotated-out key or a decommissioned model shows up
+    here even when nothing has made an LLM call recently (or dry-run
+    has been silently swallowing every call).
+    """
+    from app.services import settings_overrides
+
+    s = get_settings()
+    chat_key = s.llm_api_key.get_secret_value() if s.llm_api_key else ""
+    probe = await _probe_models_endpoint(s.llm_base_url, chat_key)
+
+    # When a dedicated embedding endpoint/key is configured, check the
+    # embedding model against THAT endpoint, not the chat one.
+    embed_key_obj = getattr(s, "llm_embedding_api_key", None)
+    embed_base = getattr(s, "llm_embedding_base_url", "") or ""
+    embed_probe = None
+    if embed_key_obj is not None or (embed_base and embed_base != s.llm_base_url):
+        embed_probe = await _probe_models_endpoint(
+            embed_base or s.llm_base_url,
+            embed_key_obj.get_secret_value() if embed_key_obj is not None else chat_key,
+        )
+
+    def _available(p: dict | None, model: str) -> bool | None:
+        if p is None or not p.get("ok") or p.get("available_models") is None:
+            return None
+        return model in p["available_models"]
+
+    return {
+        "endpoint": probe,
+        "embedding_endpoint": embed_probe,
+        "chat_model_available": _available(probe, s.llm_chat_model),
+        "embedding_model_available": _available(embed_probe or probe, s.llm_embedding_model),
+        "config": {
+            "base_url": s.llm_base_url,
+            "chat_model": s.llm_chat_model,
+            "embedding_model": s.llm_embedding_model,
+            "dry_run": s.llm_dry_run,
+            "api_key_masked": _mask_secret(chat_key),
+            "api_key_source": (
+                "db_override" if settings_overrides.has("llm_api_key") else "env"
+            ),
+            "embedding_key_set": embed_key_obj is not None,
+        },
+    }
+
+
 async def _llm_panel(db: AsyncSession, *, now: datetime) -> dict:
-    """LLM call activity — counts only, no cost data."""
+    """LLM call activity + a live connectivity probe."""
     month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
     day_start = now - timedelta(hours=24)
     week_start = now - timedelta(days=7)
@@ -251,24 +356,79 @@ async def _llm_panel(db: AsyncSession, *, now: datetime) -> dict:
     ).all()
     by_purpose = [{"purpose": p, "calls": int(n)} for p, n in by_purpose_rows]
 
-    # Recent errors.
-    err_rows = (
-        await db.execute(
-            select(LLMCall.created_at, LLMCall.model, LLMCall.purpose, LLMCall.error)
-            .where(LLMCall.error.is_not(None))
-            .order_by(LLMCall.created_at.desc())
-            .limit(10)
-        )
-    ).all()
+    # Recent errors — filtered past the operator's "clear errors"
+    # watermark so stale pre-fix failures don't haunt the panel forever.
+    from app.services import settings_overrides
+
+    cleared_raw = settings_overrides.get("diagnostics_llm_errors_cleared_at")
+    cleared_at: datetime | None = None
+    if cleared_raw:
+        try:
+            cleared_at = datetime.fromisoformat(str(cleared_raw))
+        except ValueError:
+            pass
+
+    err_q = (
+        select(LLMCall.created_at, LLMCall.model, LLMCall.purpose, LLMCall.error)
+        .where(LLMCall.error.is_not(None))
+        .order_by(LLMCall.created_at.desc())
+        .limit(10)
+    )
+    if cleared_at is not None:
+        err_q = err_q.where(LLMCall.created_at > cleared_at)
+    err_rows = (await db.execute(err_q)).all()
     recent_errors = [
         {"at": dt.isoformat() if dt else None, "model": m, "purpose": p, "error": (e or "")[:200]}
         for dt, m, p, e in err_rows
     ]
 
+    # Success signal: the panel previously only surfaced errors, so a
+    # healthy-but-idle system and a broken one looked identical.
+    last_ok = (
+        await db.execute(
+            select(LLMCall.created_at, LLMCall.model, LLMCall.purpose, LLMCall.latency_ms)
+            .where(LLMCall.error.is_(None))
+            .order_by(LLMCall.created_at.desc())
+            .limit(1)
+        )
+    ).first()
+    ok_24h = int(
+        (
+            await db.execute(
+                select(func.count(LLMCall.id))
+                .where(LLMCall.created_at >= day_start)
+                .where(LLMCall.error.is_(None))
+            )
+        ).scalar_one()
+    )
+    errors_24h = int(
+        (
+            await db.execute(
+                select(func.count(LLMCall.id))
+                .where(LLMCall.created_at >= day_start)
+                .where(LLMCall.error.is_not(None))
+            )
+        ).scalar_one()
+    )
+
     return {
         "calls": {"24h": calls_24h, "7d": calls_7d, "30d": calls_30d, "all": calls_all},
+        "calls_24h_ok": ok_24h,
+        "calls_24h_errors": errors_24h,
+        "last_success": (
+            {
+                "at": last_ok[0].isoformat() if last_ok[0] else None,
+                "model": last_ok[1],
+                "purpose": last_ok[2],
+                "latency_ms": last_ok[3],
+            }
+            if last_ok
+            else None
+        ),
+        "errors_cleared_at": cleared_raw,
         "by_purpose_24h": by_purpose,
         "recent_errors": recent_errors,
+        "connectivity": await _llm_connectivity(),
     }
 
 

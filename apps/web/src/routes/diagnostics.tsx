@@ -280,8 +280,74 @@ function DigestPanel({ d }: { d: DiagnosticsResponse }) {
 // ---------------------------------------------------------------------------
 // LLM Activity — window-aware
 // ---------------------------------------------------------------------------
+function LlmConnectivityStatus({ llm }: { llm: DiagnosticsResponse["llm"] }) {
+  const conn = llm.connectivity;
+  if (!conn) return null;
+  const { endpoint, config } = conn;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        {endpoint.ok ? (
+          <Badge variant="success">Endpoint reachable · {endpoint.latency_ms}ms</Badge>
+        ) : (
+          <Badge variant="danger">Endpoint unreachable</Badge>
+        )}
+        {config.dry_run ? (
+          <Badge variant="warning">DRY-RUN — no real LLM calls are being made</Badge>
+        ) : null}
+        <Badge variant="muted">
+          key {config.api_key_masked ?? "not set"} ·{" "}
+          {config.api_key_source === "db_override" ? "from DB" : "from env"}
+        </Badge>
+      </div>
+      {!endpoint.ok && endpoint.error ? (
+        <p className="text-sm text-danger">{endpoint.error}</p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge
+          variant={
+            conn.chat_model_available === false
+              ? "danger"
+              : conn.chat_model_available
+                ? "success"
+                : "muted"
+          }
+        >
+          chat: {config.chat_model}
+          {conn.chat_model_available === false ? " — NOT on backend" : ""}
+        </Badge>
+        <Badge
+          variant={
+            conn.embedding_model_available === false
+              ? "danger"
+              : conn.embedding_model_available
+                ? "success"
+                : "muted"
+          }
+        >
+          embed: {config.embedding_model}
+          {conn.embedding_model_available === false ? " — NOT on backend" : ""}
+        </Badge>
+      </div>
+      {(conn.chat_model_available === false || conn.embedding_model_available === false) &&
+      endpoint.available_models ? (
+        <p className="text-sm text-fg-muted">
+          Backend serves: {endpoint.available_models.join(", ")}
+        </p>
+      ) : null}
+      <p className="truncate text-xs text-fg-muted">{config.base_url}</p>
+    </div>
+  );
+}
+
 function LlmActivityPanel({ d, window }: { d: DiagnosticsResponse; window: Window }) {
   const llm = d.llm;
+  const queryClient = useQueryClient();
+  const clearErrorsMut = useMutation({
+    mutationFn: diagnosticsApi.clearLlmErrors,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["diagnostics"] }),
+  });
   // Map the page window to the corresponding call count key
   const windowCallKey = window === "7d" ? "7d" : window === "30d" ? "30d" : "all";
   const highlightedCalls = llm.calls[windowCallKey];
@@ -292,6 +358,29 @@ function LlmActivityPanel({ d, window }: { d: DiagnosticsResponse; window: Windo
         <CardTitle>LLM Activity</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {/* Live connectivity — talks to the backend, unlike the call
+            history below which can look healthy while dry-run swallows
+            every call or a rotated key silently fails. */}
+        <LlmConnectivityStatus llm={llm} />
+
+        {/* Success signal: without this, healthy-but-idle and broken
+            look identical. */}
+        <div className="flex flex-wrap items-center gap-2">
+          {llm.last_success ? (
+            <Badge variant="success">
+              last success:{" "}
+              {llm.last_success.at ? new Date(llm.last_success.at).toLocaleString() : "?"} ·{" "}
+              {llm.last_success.purpose}
+              {llm.last_success.latency_ms != null ? ` · ${llm.last_success.latency_ms}ms` : ""}
+            </Badge>
+          ) : (
+            <Badge variant="muted">no successful calls recorded yet</Badge>
+          )}
+          <Badge variant={llm.calls_24h_errors > 0 ? "warning" : "muted"} className="tabular-nums">
+            24h: {llm.calls_24h_ok} ok / {llm.calls_24h_errors} errors
+          </Badge>
+        </div>
+
         {/* Window-highlighted count */}
         <div className="flex items-baseline gap-2">
           <span className="text-4xl font-bold tabular-nums">{highlightedCalls.toLocaleString()}</span>
@@ -326,7 +415,18 @@ function LlmActivityPanel({ d, window }: { d: DiagnosticsResponse; window: Windo
 
         {llm.recent_errors.length > 0 ? (
           <div>
-            <p className="mb-2 text-sm font-medium text-fg-muted">Recent errors</p>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-fg-muted">Recent errors</p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={clearErrorsMut.isPending}
+                onClick={() => clearErrorsMut.mutate()}
+                title="Hide errors recorded up to now (history is kept; new errors still appear)"
+              >
+                {clearErrorsMut.isPending ? "Clearing…" : "Clear"}
+              </Button>
+            </div>
             <TerminalBox>
               {llm.recent_errors.map((e, i) => (
                 <div key={i} className="text-danger">

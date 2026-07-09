@@ -50,6 +50,33 @@ async def refresh() -> None:
     return None
 
 
+@router.post("/llm-errors/clear", status_code=status.HTTP_200_OK)
+async def clear_llm_errors(db: DbSession) -> dict:
+    """Hide LLM errors recorded up to now from the diagnostics panel.
+
+    The ``llm_calls`` rows are audit history and stay untouched — this
+    just persists a cleared-at watermark (in ``app_setting_overrides``,
+    so it survives restarts and syncs across pods) that the LLM panel
+    uses to filter its "recent errors" list. New errors after the clear
+    still show up.
+    """
+    from datetime import UTC, datetime
+
+    from app.services import settings_overrides
+
+    now_iso = datetime.now(tz=UTC).isoformat()
+    await settings_overrides.upsert(
+        db,
+        name="diagnostics_llm_errors_cleared_at",
+        value=now_iso,
+        actor_label="diagnostics-ui",
+    )
+    await db.commit()
+    invalidate_cache()
+    log.info("diagnostics.llm_errors.cleared", cleared_at=now_iso)
+    return {"cleared_at": now_iso}
+
+
 # ---------------------------------------------------------------------------
 # Job retry
 # ---------------------------------------------------------------------------

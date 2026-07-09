@@ -493,6 +493,10 @@ export const diagnosticsApi = {
       `${BASE}/diagnostics/jobs/${job_id}/retry`,
       { method: "POST" },
     ),
+  clearLlmErrors: () =>
+    request<{ cleared_at: string }>(`${BASE}/diagnostics/llm-errors/clear`, {
+      method: "POST",
+    }),
 };
 
 // ---------------------------------------------------------------------------
