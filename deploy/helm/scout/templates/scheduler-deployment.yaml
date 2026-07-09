@@ -37,6 +37,18 @@ spec:
       serviceAccountName: {{ include "scout.serviceAccountName" . }}
       {{- include "scout.imagePullSecrets" . | nindent 6 }}
       {{- include "scout.podSecurityContext" . | nindent 6 }}
+      {{- with .Values.scheduler.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduler.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduler.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       initContainers:
         - name: wait-for-postgres
           image: {{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}

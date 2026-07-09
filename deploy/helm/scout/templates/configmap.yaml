@@ -29,6 +29,7 @@ data:
   LLM_DRY_RUN: {{ .Values.config.llmDryRun | quote }}
   LLM_MONTHLY_BUDGET_USD: {{ .Values.config.llmMonthlyBudgetUsd | quote }}
   LLM_MAX_CONCURRENT_CALLS: {{ .Values.config.llmMaxConcurrentCalls | quote }}
+  SETTINGS_REFRESH_SECONDS: {{ .Values.config.settingsRefreshSeconds | quote }}
   SCRAPER_USER_AGENT: {{ .Values.config.scraperUserAgent | quote }}
   SCRAPER_DEFAULT_POLITENESS_SECONDS: {{ .Values.config.scraperDefaultPolitenessSeconds | quote }}
   # OpenShift assigns a random UID to every container in a project

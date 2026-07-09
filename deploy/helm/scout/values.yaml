@@ -92,6 +92,9 @@ hpa:
 scheduler:
   enabled: true       # set to false if API uses schedulerMode=embedded
   mode: standalone    # SCHEDULER_MODE env var on the scheduler pod
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
   resources:
     requests:
       cpu: 200m
@@ -115,6 +118,9 @@ postgres:
     repository: pgvector/pgvector
     tag: "pg15"
     pullPolicy: IfNotPresent
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
   storage:
     size: 20Gi
     storageClass: ""    # empty → cluster default storage class
@@ -178,14 +184,19 @@ config:
   logFormat: json
   schedulerTimezone: UTC
   # MaaS / LLM endpoint configuration. The API key + (optional) embedding
-  # key go in Secrets, not here.
-  llmBaseUrl: ""
-  llmChatModel: "llama-scout-17b"
-  llmEmbeddingModel: "nomic-embed-text-v1-5"
+  # key go in Secrets, not here. These are BOOT defaults — the runtime
+  # source of truth is app.app_setting_overrides (managed in the
+  # /settings/tunables UI) and changes there propagate to all pods
+  # within SETTINGS_REFRESH_SECONDS without a redeploy.
+  # Models must exist on the endpoint — /diagnostics has a live probe.
+  llmBaseUrl: "https://litellm-litemaas.apps.prod.rhoai.rh-aiservices-bu.com/v1"
+  llmChatModel: "Qwen3.6-35B-A3B"
+  llmEmbeddingModel: "Nomic-embed-text-v2-moe"
   llmEmbeddingBaseUrl: ""   # blank → reuses llmBaseUrl
   llmDryRun: "false"
   llmMonthlyBudgetUsd: "1000"
   llmMaxConcurrentCalls: "6"
+  settingsRefreshSeconds: "30"
   scraperUserAgent: "Scout/1.0 (CFP Discovery)"
   scraperDefaultPolitenessSeconds: "3"
   # CORS origins — Route host gets auto-added if route.enabled and

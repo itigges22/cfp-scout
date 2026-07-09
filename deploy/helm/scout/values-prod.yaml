@@ -1,0 +1,40 @@
+# SCOUT prod values — user-itigges @ api.ocp.cloud.rhai-tmm.dev
+# Mirrors the release's prior user-supplied values with two changes:
+#   - config.llmBaseUrl → new LiteMaaS endpoint (old MaaS decommissioned)
+#   - image.tag → 2.8.0 (dynamic settings reload + diagnostics probe + embed model rollover)
+config:
+  llmBaseUrl: https://litellm-litemaas.apps.prod.rhoai.rh-aiservices-bu.com/v1
+# Image built ON the cluster (oc binary build → internal registry) because
+# cross-building amd64 locally on Apple Silicon proved unreliable.
+image:
+  pullPolicy: Always
+  repository: image-registry.openshift-image-registry.svc:5000/user-itigges/scout-api
+  tag: 2.8.2
+oauth:
+  enabled: true
+
+# Node ocp-j8fns-worker-cpu-3-94p9f has corrupted container overlay
+# storage (FailedCreatePodSandBox: input/output error) — no pod can
+# start there. Keep every scout workload off it until the cluster
+# admins fix or replace the node, then this block can be removed.
+api:
+  affinity: &avoidBrokenNode
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                  - ocp-j8fns-worker-cpu-3-94p9f
+scheduler:
+  affinity: *avoidBrokenNode
+
+postgres:
+  affinity: *avoidBrokenNode
+  storage:
+    storageClass: ibmc-vpc-block-10iops-tier
+route:
+  host: ""
+sharedStorage:
+  storageClass: ibmc-vpc-file-500-iops

@@ -93,25 +93,27 @@ You should rotate quarterly or any time:
 - The key is suspected to be compromised (someone else's machine had a copy, etc.).
 - The provider prompts you to.
 
-Procedure:
+**Preferred procedure (no restart):** the runtime source of truth for the
+key is `app.app_setting_overrides` in Postgres, not `.env`.
 
-```bash
-# 1. Provision a new key on the provider's dashboard (label it with a date)
-# 2. Edit the .env to use the new key
-$EDITOR .env
+1. Provision a new key on the provider's dashboard (label it with a date).
+2. Open **Settings → Tunables** in the UI (or
+   `PATCH /api/v1/admin/settings` with `{"llm_api_key": "sk-..."}`) and
+   paste the new key. It applies immediately on the pod that served the
+   request and reaches every other api replica + the scheduler within
+   `SETTINGS_REFRESH_SECONDS` (default 30s) — no restart.
+3. Verify on `/diagnostics` — the LLM panel's live connectivity probe
+   authenticates against the endpoint and flags a bad key outright.
+4. Revoke the OLD key on the provider's dashboard.
+5. Also update the boot fallback so a fresh install / DB wipe doesn't
+   resurrect the dead key: `.env` locally, and the `scout-llm` Secret
+   on OpenShift (`oc set data secret/scout-llm api-key=sk-...`).
 
-# 3. Reload the api container — picks up the new env on restart
-make down && make up
+**Do step 4 after step 3.** If you revoke before the new key is verified,
+in-flight requests fail and you have to roll back.
 
-# 4. Verify the new key works
-make logs SERVICE=api | grep -i 'llm_api_key'
-# (expect '**********' for the key; no errors)
-
-# 5. Revoke the OLD key on the provider's dashboard
-```
-
-**Do step 5 last.** If you revoke before swapping, in-flight requests fail
-and you have to roll back.
+Env-file-only fallback (e.g. the DB is down): edit `.env`, then
+`make down && make up` — but prefer the DB path above.
 
 ## Rotating the Postgres passwords
 

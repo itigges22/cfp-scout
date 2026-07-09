@@ -19,7 +19,11 @@
 # then we run without --frozen-lockfile (which would fail). Switch to
 # --frozen-lockfile once the lockfile is committed.
 # ============================================================================
-FROM registry.access.redhat.com/ubi9/nodejs-22 AS spa-builder
+# --platform=$BUILDPLATFORM: the SPA build outputs arch-independent static
+# JS, so run this stage natively on the build host. Cross-building the
+# amd64 prod image on an Apple-Silicon Mac otherwise puts node under qemu
+# emulation, which is slow and flaky enough to kill `pnpm build`.
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/nodejs-22 AS spa-builder
 
 USER 0
 
@@ -65,6 +69,14 @@ WORKDIR /app
 COPY apps/api/pyproject.toml ./
 # Generate venv at /app/.venv. Plan 06 commits uv.lock; switch to
 # `uv sync --frozen` then.
+#
+# UV_NATIVE_TLS + low concurrency + long timeout: uv's default rustls
+# client intermittently gets TLS HandshakeFailure from the PyTorch CDN
+# (download-r2.pytorch.org) on VPN'd/middlebox networks, killing the
+# build. System TLS + fewer parallel connections is reliable.
+ENV UV_NATIVE_TLS=1 \
+    UV_HTTP_TIMEOUT=300 \
+    UV_CONCURRENT_DOWNLOADS=4
 RUN uv sync --no-dev
 
 # Copy api source AND Alembic migration suite.
@@ -97,9 +109,15 @@ RUN dnf install -y --setopt=install_weak_deps=False \
 
 # Create the runtime user. UBI python-312's default user occupies uid 1001;
 # we use 1002 to avoid the collision. Rootless Podman maps subuid to it.
+#
+# OCP runs containers with an arbitrary UID from the project's UID range
+# (e.g. 1000800000) and always GID=0 (root group). We therefore set group
+# ownership to 0 and grant group-write so the OCP-assigned UID can write
+# to these directories regardless of which numeric UID it gets.
 RUN useradd --uid 1002 --create-home --shell /bin/bash scout \
  && mkdir -p /app /var/lib/scout/storage/pdf_uploads /var/lib/scout/storage/raw_pages \
- && chown -R scout:scout /app /var/lib/scout
+ && chown -R scout:0 /app /var/lib/scout \
+ && chmod -R g+rwX /app /var/lib/scout
 
 WORKDIR /app
 
@@ -134,11 +152,13 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     DOCLING_CACHE_DIR=/home/scout/.cache/docling \
     CRAWL4_AI_BASE_DIRECTORY=/home/scout/.cache/crawl4ai
 
-# Pre-create the cache subtree as scout so first model fetch doesn't EACCES.
+# Pre-create the cache subtree. Group=0 + g+rwX lets the OCP arbitrary UID
+# (always GID=0) write here even though the UID won't be 1002 at runtime.
 RUN mkdir -p /home/scout/.cache/huggingface \
               /home/scout/.cache/docling \
               /home/scout/.cache/crawl4ai \
- && chown -R scout:scout /home/scout/.cache
+ && chown -R scout:0 /home/scout \
+ && chmod -R g+rwX /home/scout
 
 USER 1002
 
