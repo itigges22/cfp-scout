@@ -246,6 +246,11 @@ async def parse_raw_page(db: AsyncSession, raw_page_id: UUID) -> ParseResult:
     # via composite PK + ON CONFLICT-free insert protected by an existence
     # check (small N per conference; not worth a raw INSERT ON CONFLICT).
     if matched_topic_rows:
+        # Topics minted by normalize_topics get their UUID from Postgres
+        # (gen_random_uuid() server default) — until a flush their .id is
+        # None and the junction insert below would violate the NOT NULL
+        # constraint on conference_topics.topic_id.
+        await db.flush()
         existing_ct = await db.execute(
             select(ConferenceTopic.topic_id).where(ConferenceTopic.conference_id == conference.id)
         )

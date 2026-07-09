@@ -31,6 +31,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.llm import dry_run
 from app.services.llm._recording import check_budget, record_call
+
+
+async def _record_failure_isolated(**kwargs: Any) -> None:
+    """Record a failed LLM call on a DEDICATED session.
+
+    Error paths used to record on the caller's session — but a failing
+    task rolls that session back, taking the error row with it. The
+    diagnostics panel then shows nothing while jobs die (exactly how the
+    matcher's ContextWindowExceededError stayed invisible). A separate
+    committed session survives the caller's rollback. Best-effort: a
+    recording failure must never mask the original exception.
+    """
+    try:
+        from app.db.session import get_session_factory
+
+        async with get_session_factory()() as err_db:
+            await record_call(err_db, **kwargs)
+            await err_db.commit()
+    except Exception as rec_exc:  # noqa: BLE001
+        log.warning("llm.record_failure_failed", error=str(rec_exc))
 from app.services.llm.costs import compute_cost
 from app.services.llm.models import (
     ChatMessage,
@@ -169,8 +189,7 @@ class LLMClient:
             response = await self._call_chat(model, req)
         except Exception as exc:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
-            await record_call(
-                db,
+            await _record_failure_isolated(
                 model=model,
                 purpose=purpose,
                 prompt_tokens=estimated_input_tokens,
@@ -190,6 +209,21 @@ class LLMClient:
         choice = response.choices[0]
         request_id = getattr(response, "id", None)
         content = choice.message.content or ""
+        if not content.strip() and choice.finish_reason == "length":
+            # Reasoning models (Qwen3 et al.) stream their thinking into a
+            # separate channel; when max_tokens is exhausted mid-think, the
+            # answer channel comes back EMPTY and the caller sees a silent
+            # no-op (this is how "Ask Scout returns nothing" presented).
+            # llm_disable_thinking (default on) prevents this — surface it
+            # loudly in case an operator turned that off.
+            log.warning(
+                "llm.chat.empty_content_reasoning_truncated",
+                model=model,
+                purpose=purpose,
+                completion_tokens=completion_tokens,
+                hint="model spent the whole max_tokens budget on reasoning; "
+                "enable llm_disable_thinking or raise max_tokens",
+            )
 
         await record_call(
             db,
@@ -263,6 +297,14 @@ class LLMClient:
         completion_tokens = 0
         request_id: str | None = None
         try:
+            stream_kwargs: dict[str, Any] = {}
+            if getattr(self._settings, "llm_disable_thinking", False):
+                # Same reasoning-channel guard as _call_chat: without it a
+                # Qwen3-style model streams thinking (not content) until the
+                # budget dies and the UI renders an empty reply.
+                stream_kwargs["extra_body"] = {
+                    "chat_template_kwargs": {"enable_thinking": False}
+                }
             stream = await self._openai.chat.completions.create(
                 model=model,
                 messages=[m.model_dump() for m in req.messages],
@@ -270,6 +312,7 @@ class LLMClient:
                 max_tokens=req.max_tokens,
                 stream=True,
                 stream_options={"include_usage": True},
+                **stream_kwargs,
             )
             async for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -283,8 +326,7 @@ class LLMClient:
                     request_id = getattr(chunk, "id", None)
         except Exception as exc:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
-            await record_call(
-                db,
+            await _record_failure_isolated(
                 model=model,
                 purpose=req.purpose,
                 prompt_tokens=prompt_tokens,
@@ -322,6 +364,27 @@ class LLMClient:
     ) -> EmbeddingResponse:
         model = req.model or self._settings.llm_embedding_model
 
+        # Hard guard against the embedding model's serving context window
+        # (Nomic-embed-text-v2-moe on LiteMaaS caps at 512 tokens). The
+        # chunking pipeline already sizes its chunks, but ad-hoc QUERY
+        # embeds — matcher stages, agent retrieval — pass raw text
+        # straight through and a long enriched description 400s the whole
+        # task. Truncation is the only option under a hard cap, and for
+        # similarity queries the head of the text carries the signal.
+        max_chars = int(getattr(self._settings, "embed_chunk_max_chars", 1400))
+        if any(len(t) > max_chars for t in req.texts):
+            n_over = sum(1 for t in req.texts if len(t) > max_chars)
+            log.warning(
+                "llm.embed.texts_truncated",
+                n_texts=len(req.texts),
+                n_truncated=n_over,
+                max_chars=max_chars,
+                purpose=req.purpose,
+            )
+            req = req.model_copy(
+                update={"texts": [t[:max_chars] for t in req.texts]}
+            )
+
         if self._settings.llm_dry_run:
             fake = dry_run.fake_embed(req)
             await record_call(
@@ -353,8 +416,7 @@ class LLMClient:
             response = await self._call_embed(model, req)
         except Exception as exc:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
-            await record_call(
-                db,
+            await _record_failure_isolated(
                 model=model,
                 purpose=req.purpose,
                 prompt_tokens=estimated_tokens,
@@ -425,6 +487,15 @@ class LLMClient:
                         kwargs["max_tokens"] = req.max_tokens
                     if req.response_format is not None:
                         kwargs["response_format"] = req.response_format
+                    if getattr(self._settings, "llm_disable_thinking", False):
+                        # Reasoning models (Qwen3 family) otherwise burn the
+                        # max_tokens budget on their thinking channel and can
+                        # return an EMPTY answer. vLLM honours this via the
+                        # chat template; LiteLLM forwards it. Backends that
+                        # don't know the kwarg simply ignore it.
+                        kwargs["extra_body"] = {
+                            "chat_template_kwargs": {"enable_thinking": False}
+                        }
                     return await self._openai.chat.completions.create(**kwargs)
         raise RuntimeError("unreachable")  # tenacity reraise prevents this
 
@@ -477,6 +548,11 @@ def _normalize_openai_base_url(url: str) -> str:
 def _settings_fingerprint(s: Settings) -> tuple:
     """Cheap snapshot of the settings the client depends on. If any of
     these changed since the singleton was built, the singleton is stale.
+
+    Model names and the budget cap are included because the client reads
+    them from its captured ``self._settings`` snapshot on every call —
+    without them here, a model swap via /admin/settings (or the periodic
+    DB-overrides refresh) would keep hitting the old model until restart.
     """
     return (
         s.llm_base_url,
@@ -488,6 +564,13 @@ def _settings_fingerprint(s: Settings) -> tuple:
             if getattr(s, "llm_embedding_api_key", None) is not None
             else ""
         ),
+        s.llm_chat_model,
+        s.llm_embedding_model,
+        s.llm_extraction_model,
+        s.llm_narrative_model,
+        s.llm_agent_model,
+        s.llm_monthly_budget_usd,
+        getattr(s, "llm_disable_thinking", False),
     )
 
 

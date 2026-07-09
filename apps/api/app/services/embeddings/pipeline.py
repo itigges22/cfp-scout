@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.vectors import DocumentChunk, EmbeddingModel
 from app.services.embeddings.chunker import ChunkData, chunk_text
 from app.services.llm import EmbeddingRequest, LLMClient, get_llm_client
+from app.settings import get_settings
 
 log = structlog.get_logger("scout.embeddings")
 
@@ -94,7 +95,15 @@ async def embed_owner(
         )
     )
 
-    chunks: list[ChunkData] = chunk_text(text)
+    # Chunk size rides settings so it can track the active embedding
+    # model's serving context window (v2-moe on LiteMaaS caps at 512
+    # tokens — the old 3000-char default overflowed it).
+    _s = get_settings()
+    chunks: list[ChunkData] = chunk_text(
+        text,
+        max_chars=_s.embed_chunk_max_chars,
+        overlap_chars=_s.embed_chunk_overlap_chars,
+    )
     if not chunks:
         log.info(
             "embed.no_chunks",
