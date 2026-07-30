@@ -14,7 +14,7 @@ superseded_by: ""
 Scout ingests two kinds of text-heavy input for embedding:
 
 1. **PDFs** uploaded by users (messaging decks, audience profile docs, past-conference summaries) — plan 12
-2. **Plain text** entered via the manual wizards or the XLSX workbook — plan 09 / plan 31
+2. **Plain text** entered through the web forms
 
 Both paths feed into the same chunking + embedding pipeline (plan 11), which then writes to `vectors.document_chunks`.
 

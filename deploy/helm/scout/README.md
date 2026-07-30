@@ -132,7 +132,6 @@ the operator runbook (`docs/ops/runbook.md`).
 | `route.tls.termination` | edge | `edge` / `reencrypt` / `passthrough` |
 | `config.llmBaseUrl` | "" | Your MaaS / OpenAI endpoint URL |
 | `config.llmChatModel` | llama-scout-17b | Override per your MaaS catalog |
-| `monitoring.serviceMonitor.enabled` | false | Opt in if you run user-workload monitoring |
 
 Full surface is documented inline in `values.yaml` — read it before
 shipping to prod.

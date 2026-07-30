@@ -11,6 +11,8 @@
  */
 
 import type {
+  AnalyticsOverview,
+  SettingsResponse,
   AgentMessage,
   AgentReply,
   AgentSession,
@@ -26,6 +28,7 @@ import type {
   ConferenceMatchResponse,
   ConferenceSmesResponse,
   ConferenceSourcesResponse,
+  ConferenceTalksResponse,
   DashboardStats,
   DecisionCreate,
   DecisionListResponse,
@@ -33,9 +36,6 @@ import type {
   CfpDigestMarkdown,
   DiagnosticsResponse,
   DiagnosticsRetryResponse,
-  GraphResponse,
-  GtmStrategyCreate,
-  GtmStrategyRead,
   MessagingDocUploadPreview,
   MessagingDocumentCreate,
   MessagingDocumentRead,
@@ -43,20 +43,15 @@ import type {
   NotificationRead,
   NotificationsList,
   Page,
-  PastConferenceCreate,
-  PastConferenceImportResult,
-  PastConferenceRead,
-  PastConferenceUpdate,
   PillarAudienceItem,
+  PillarAnalytics,
   PillarConferenceItem,
   PillarCreate,
   PillarRead,
   PillarTalkItem,
   PillarUpdate,
   ReuseCheckResult,
-  RoadmapEntryCreate,
-  RoadmapEntryRead,
-  RoadmapEntryUpdate,
+  SmeAnalytics,
   SmeCreate,
   SmeRead,
   SmeUpdate,
@@ -66,12 +61,7 @@ import type {
   TalkRead,
   TalkSubmissionCreate,
   TalkSubmissionRead,
-  TalkTag,
   TalkUpdate,
-  TeamRecommendationsResponse,
-  TopicCreate,
-  TopicRead,
-  TopicUpdate,
 } from "@/lib/api-types";
 
 // ---------------------------------------------------------------------------
@@ -194,6 +184,13 @@ type ListParams = {
 };
 
 export const messagingApi = {
+  /** Undo a deactivate — see smesApi.restore for why this exists. */
+  restore: (doc: MessagingDocumentRead, actor_label = "system") =>
+    request<MessagingDocumentRead>(`${BASE}/messaging-documents/${doc.id}`, {
+      method: "PUT",
+      query: { actor_label },
+      body: { ...doc, is_active: true },
+    }),
   list: (params: ListParams & { pillar_id?: string } = {}) =>
     request<Page<MessagingDocumentRead>>(`${BASE}/messaging-documents`, { query: params }),
   get: (id: string) => request<MessagingDocumentRead>(`${BASE}/messaging-documents/${id}`),
@@ -231,6 +228,13 @@ export const messagingApi = {
 };
 
 export const audiencesApi = {
+  /** Undo a deactivate — see smesApi.restore for why this exists. */
+  restore: (a: AudienceProfileRead, actor_label = "system") =>
+    request<AudienceProfileRead>(`${BASE}/audience-profiles/${a.id}`, {
+      method: "PUT",
+      query: { actor_label },
+      body: { ...a, is_active: true },
+    }),
   list: (params: ListParams = {}) =>
     request<Page<AudienceProfileRead>>(`${BASE}/audience-profiles`, { query: params }),
   get: (id: string) => request<AudienceProfileRead>(`${BASE}/audience-profiles/${id}`),
@@ -253,12 +257,46 @@ export const audiencesApi = {
     }),
 };
 
-type SmeListParams = ListParams & { team?: string };
+type SmeListParams = ListParams & {
+  team?: string;
+  /** True = everyone off the primary team; false = on it. */
+  external_only?: boolean;
+  /** Omit to include deactivated SMEs; true for active only. */
+  is_active?: boolean;
+};
 
 export const smesApi = {
+  /**
+   * Undo a deactivate.
+   *
+   * DELETE on these resources is a SOFT delete — the row stays and goes
+   * inactive. The list kept showing it while hiding every action, so a row
+   * could be deactivated once and then never removed or brought back. There
+   * is no dedicated reactivate endpoint; PUT already accepts is_active, so
+   * this replays the row with the flag flipped.
+   */
+  restore: (sme: SmeRead, actor_label = "system") =>
+    request<SmeRead>(`${BASE}/smes/${sme.id}`, {
+      method: "PUT",
+      query: { actor_label },
+      body: {
+        full_name: sme.full_name,
+        email: sme.email,
+        team: sme.team,
+        audience_focus: sme.audience_focus,
+        location_country: sme.location_country,
+        location_city: sme.location_city,
+        bio: sme.bio,
+        languages: sme.languages,
+        external_links: sme.external_links ?? {},
+        pillar_ids: sme.pillar_ids ?? [],
+        is_active: true,
+      },
+    }),
   list: (params: SmeListParams = {}) =>
     request<Page<SmeRead>>(`${BASE}/smes`, { query: params }),
   get: (id: string) => request<SmeRead>(`${BASE}/smes/${id}`),
+  analytics: (id: string) => request<SmeAnalytics>(`${BASE}/smes/${id}/analytics`),
   create: (body: SmeCreate, actor_label = "system") =>
     request<SmeRead>(`${BASE}/smes`, { method: "POST", body, query: { actor_label } }),
   update: (id: string, body: SmeUpdate, actor_label = "system") =>
@@ -271,71 +309,6 @@ export const smesApi = {
     request<void>(`${BASE}/smes/${id}`, { method: "DELETE", query: { actor_label } }),
 };
 
-type PastConferenceListParams = { page?: number; per_page?: number; q?: string; year?: number };
-
-export const pastConferencesApi = {
-  list: (params: PastConferenceListParams = {}) =>
-    request<Page<PastConferenceRead>>(`${BASE}/past-conferences`, { query: params }),
-  get: (id: string) => request<PastConferenceRead>(`${BASE}/past-conferences/${id}`),
-  create: (body: PastConferenceCreate, actor_label = "system") =>
-    request<PastConferenceRead>(`${BASE}/past-conferences`, {
-      method: "POST",
-      body,
-      query: { actor_label },
-    }),
-  update: (id: string, body: PastConferenceUpdate, actor_label = "system") =>
-    request<PastConferenceRead>(`${BASE}/past-conferences/${id}`, {
-      method: "PUT",
-      body,
-      query: { actor_label },
-    }),
-  delete: (id: string, actor_label = "user_delete") =>
-    request<void>(`${BASE}/past-conferences/${id}`, {
-      method: "DELETE",
-      query: { actor_label },
-    }),
-  setVerdict: (id: string, verdict: import("./api-types").PastConferenceVerdict) =>
-    request<PastConferenceRead>(`${BASE}/past-conferences/${id}/verdict`, {
-      method: "PATCH",
-      body: { verdict },
-    }),
-  importCsv: (file: File, ignore_errors = false, actor_label = "csv_import") => {
-    const form = new FormData();
-    form.append("file", file);
-    return request<PastConferenceImportResult>(`${BASE}/past-conferences/import`, {
-      method: "POST",
-      form,
-      query: { ignore_errors, actor_label },
-    });
-  },
-};
-
-type TopicListParams = { page?: number; per_page?: number; q?: string; pending_only?: boolean | null };
-
-export const topicsApi = {
-  list: (params: TopicListParams = {}) =>
-    request<Page<TopicRead>>(`${BASE}/topics`, { query: params }),
-  get: (id: string) => request<TopicRead>(`${BASE}/topics/${id}`),
-  create: (body: TopicCreate, actor_label = "system") =>
-    request<TopicRead>(`${BASE}/topics`, { method: "POST", body, query: { actor_label } }),
-  update: (id: string, body: TopicUpdate, actor_label = "system") =>
-    request<TopicRead>(`${BASE}/topics/${id}`, {
-      method: "PUT",
-      body,
-      query: { actor_label },
-    }),
-  approve: (id: string, actor_label = "system") =>
-    request<TopicRead>(`${BASE}/topics/${id}/approve`, {
-      method: "POST",
-      query: { actor_label },
-    }),
-  reject: (id: string, actor_label = "system") =>
-    request<void>(`${BASE}/topics/${id}/reject`, {
-      method: "POST",
-      query: { actor_label },
-    }),
-};
-
 // ---------------------------------------------------------------------------
 // Conferences (plan 20 review UI)
 // ---------------------------------------------------------------------------
@@ -343,8 +316,26 @@ type ConferenceListParams = {
   page?: number;
   per_page?: number;
   status?: string | string[];
-  sort?: "score" | "messaging" | "pillar" | "sme" | "date" | "name";
+  sort?: "score" | "fit" | "speakers" | "date" | "name" | "cfp_close";
+  /** Secondary sort — breaks ties the primary leaves (e.g. cfp_close + fit). */
+  then_by?: "score" | "fit" | "speakers" | "date" | "name" | "cfp_close";
+  // Slice filters. These are predicates over the ranked list, so a
+  // filtered view keeps each conference's GLOBAL rank — the top row of
+  // a country filter is still "#7 overall", never a fresh "#1".
+  country?: string[];
+  city?: string;
+  starts_after?: string;
+  starts_before?: string;
+  cfp_open?: boolean;
+  /** Only CFPs closing between today and N days out. Unknown deadlines drop. */
+  cfp_closes_within_days?: number;
+  max_cost_usd?: number;
+  include_virtual?: boolean;
   attendance_filter?: "all" | "new" | "returning";
+  /** Our own involvement, as opposed to the event's own history. */
+  engagement?: "all" | "going" | "attended" | "none";
+  /** False (default) hides already-closed CFPs unless we have a stake. */
+  include_closed_cfp?: boolean;
 };
 
 export const conferencesApi = {
@@ -367,6 +358,20 @@ export const conferencesApi = {
     request<ConferenceSourcesResponse>(`${BASE}/conferences/${id}/sources`),
   smes: (id: string, k = 5) =>
     request<ConferenceSmesResponse>(`${BASE}/conferences/${id}/smes`, { query: { k } }),
+  importFormat: () =>
+    request<import("@/lib/api-types").ImportColumnSpec[]>(
+      `${BASE}/conferences/import/format`,
+    ),
+  importPast: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<import("@/lib/api-types").ImportResult>(`${BASE}/conferences/import`, {
+      method: "POST",
+      form: fd,
+    });
+  },
+  talks: (id: string, k = 10) =>
+    request<ConferenceTalksResponse>(`${BASE}/conferences/${id}/talks`, { query: { k } }),
   decisions: (id: string) =>
     request<DecisionListResponse>(`${BASE}/conferences/${id}/decisions`),
   createDecision: (id: string, body: DecisionCreate) =>
@@ -392,35 +397,8 @@ export const conferencesApi = {
     request<ConferenceBrief>(`${BASE}/conferences/${id}/brief`, {
       query: { team_size, force },
     }),
-  teamRecommendations: (id: string) =>
-    request<TeamRecommendationsResponse>(
-      `${BASE}/conferences/${id}/team-recommendations`,
-    ),
 };
 
-// ---------------------------------------------------------------------------
-// Knowledge graph (plan 21 explorer)
-// ---------------------------------------------------------------------------
-type GraphFullParams = {
-  kinds?: string | string[];
-  status?: string | string[];
-  since?: string;
-  max_nodes?: number;
-};
-
-export const graphApi = {
-  full: (params: GraphFullParams = {}) =>
-    request<GraphResponse>(`${BASE}/graph/full`, { query: params }),
-  neighborhood: (node_id: string, depth = 2) =>
-    request<GraphResponse>(`${BASE}/graph/neighborhood`, {
-      query: { node_id, depth },
-    }),
-  invalidate: () =>
-    request<void>(`${BASE}/graph/invalidate`, { method: "POST" }),
-};
-
-// ---------------------------------------------------------------------------
-// Notifications (plan 24)
 // ---------------------------------------------------------------------------
 export const notificationsApi = {
   list: (params: { kind?: string; include_seen?: boolean; limit?: number } = {}) =>
@@ -484,6 +462,71 @@ export const agentApi = {
 // ---------------------------------------------------------------------------
 // Diagnostics (plan 26)
 // ---------------------------------------------------------------------------
+/**
+ * Operator settings.
+ *
+ * Three pages hit /admin/settings with raw `fetch`, which skips everything
+ * `request` does: the ApiError shape, the RFC 7807 problem body, and the
+ * credentials/headers policy. Routed through the client like every other
+ * resource.
+ */
+/** Matcher freshness + bulk rescore. */
+export type MatcherFreshness = {
+  corpus_changed_at: string | null;
+  total_scored: number;
+  stale_count: number;
+  running: boolean;
+  progress: { done: number; total: number } | null;
+};
+
+export const matcherApi = {
+  freshness: () => request<MatcherFreshness>(`${BASE}/admin/matcher/freshness`),
+  recomputeAll: () =>
+    request<{ queued_job_id: string }>(`${BASE}/admin/matcher/recompute-all`, {
+      method: "POST",
+    }),
+};
+
+export const settingsApi = {
+  list: () => request<SettingsResponse>(`${BASE}/admin/settings`),
+  update: (values: Record<string, unknown>, actor_label = "ui") =>
+    request<SettingsResponse>(`${BASE}/admin/settings`, {
+      method: "PATCH",
+      body: { ...values, actor_label },
+    }),
+  reset: (name: string) =>
+    request<void>(`${BASE}/admin/settings/${name}`, { method: "DELETE" }),
+};
+
+/**
+ * The operator's event-kind vocabulary.
+ *
+ * Deliberately read from settings rather than hardcoded: the kinds are
+ * operator-owned, and a literal list in the SPA would silently disagree
+ * with the one the extractor and the filters actually use.
+ */
+export async function fetchEventKinds(): Promise<string[]> {
+  const res = await settingsApi.list();
+  const row = res.items?.find((i) => i.spec?.name === "event_kinds");
+  const value = row?.value;
+  return Array.isArray(value) ? (value as string[]) : [];
+}
+
+export const analyticsApi = {
+  overview: (
+    params: {
+      pillar_id?: string;
+      country?: string;
+      months?: number;
+      status?: string[];
+      event_kind?: string[];
+      include_virtual?: boolean;
+      starts_after?: string;
+      starts_before?: string;
+    } = {},
+  ) => request<AnalyticsOverview>(`${BASE}/analytics/overview`, { query: params }),
+};
+
 export const diagnosticsApi = {
   get: () => request<DiagnosticsResponse>(`${BASE}/diagnostics`),
   refresh: () =>
@@ -526,16 +569,90 @@ export type DiscoveryResult = {
   finished_at: string;
 };
 
-export const discoveryApi = {
-  runNow: (body: { prompt?: string; max_results?: number } = {}) =>
-    request<DiscoveryResult>(`${BASE}/admin/discovery/run-now`, {
+// ---------------------------------------------------------------------------
+// Participation — who is going, when, and what they are doing there
+// ---------------------------------------------------------------------------
+export interface Participation {
+  id: string;
+  conference_id: string;
+  sme_id: string | null;
+  person_label: string;
+  activity: "talk" | "booth" | "attend" | "sponsor";
+  talk_id: string | null;
+  arrives_on: string | null;
+  departs_on: string | null;
+  attended_at: string | null;
+  /** Derived: attended_at is set, or departs_on has passed. */
+  has_attended: boolean;
+  notes: string;
+}
+
+export interface AttendanceSummary {
+  edition_year: number | null;
+  spend_usd: number | null;
+  leads_generated: number | null;
+  audience_size_estimate: number | null;
+  attendance_verdict: "would_attend" | "unsure" | "would_not_attend" | null;
+  attendance_notes: string;
+}
+
+export type ParticipationInput = {
+  person_label?: string;
+  sme_id?: string | null;
+  activity: Participation["activity"];
+  arrives_on?: string | null;
+  departs_on?: string | null;
+  notes?: string;
+};
+
+export const participationApi = {
+  list: (conferenceId: string) =>
+    request<Participation[]>(`${BASE}/conferences/${conferenceId}/participation`),
+  add: (conferenceId: string, body: ParticipationInput) =>
+    request<Participation>(`${BASE}/conferences/${conferenceId}/participation`, {
       method: "POST",
       body,
     }),
-  runNowAsync: (body: { prompt?: string; max_results?: number } = {}) =>
-    request<{ queued_job_id: string }>(
-      `${BASE}/admin/discovery/run-now-async`,
-      { method: "POST", body },
+  update: (id: string, body: ParticipationInput) =>
+    request<Participation>(`${BASE}/participation/${id}`, { method: "PATCH", body }),
+  remove: (id: string) =>
+    request<void>(`${BASE}/participation/${id}`, { method: "DELETE" }),
+  /** Confirm, or take back, that this person actually went. */
+  markAttended: (id: string, attended: boolean) =>
+    request<Participation>(`${BASE}/participation/${id}/attended`, {
+      method: "POST",
+      body: { attended },
+    }),
+  getAttendance: (conferenceId: string) =>
+    request<AttendanceSummary>(`${BASE}/conferences/${conferenceId}/attendance`),
+  setAttendance: (conferenceId: string, body: AttendanceSummary) =>
+    request<AttendanceSummary>(`${BASE}/conferences/${conferenceId}/attendance`, {
+      method: "PUT",
+      body,
+    }),
+};
+
+export const discoveryApi = {
+  /**
+   * Pull the developers.events feed.
+   *
+   * `only_ai` is deliberately NOT passed. It defaults to false server-side
+   * because, measured against the live feed, that filter dropped 375 of
+   * 801 future events — including KeyCloakCon, ArgoCon and Open Source
+   * Summit Korea. This call used to pass `only_ai: true` explicitly,
+   * which kept the filter on regardless of the default.
+   */
+  ingestFeed: () =>
+    request<{
+      new_conferences: number;
+      updated_conferences: number;
+      total_in_feed: number;
+      matched_filter: number;
+      /** Future events the keyword filter rejected, when it is enabled. */
+      dropped_by_keyword_filter: number;
+    }>(
+      `${BASE}/admin/discovery/ingest-feed`,
+      { method: "POST", body: { future_only: true } },
     ),
 };
 
@@ -559,6 +676,7 @@ export const pillarsApi = {
   unlinkSme: (id: string, smeId: string) =>
     request<void>(`${BASE}/pillars/${id}/smes/${smeId}`, { method: "DELETE" }),
 
+  analytics: (id: string) => request<PillarAnalytics>(`${BASE}/pillars/${id}/analytics`),
   listConferences: (id: string) =>
     request<PillarConferenceItem[]>(`${BASE}/pillars/${id}/conferences`),
   listTalks: (id: string) =>
@@ -566,22 +684,6 @@ export const pillarsApi = {
   listAudiences: (id: string) =>
     request<PillarAudienceItem[]>(`${BASE}/pillars/${id}/audiences`),
 
-  listRoadmap: (id: string) =>
-    request<RoadmapEntryRead[]>(`${BASE}/pillars/${id}/content-roadmap`),
-  addRoadmap: (id: string, body: RoadmapEntryCreate) =>
-    request<RoadmapEntryRead>(`${BASE}/pillars/${id}/content-roadmap`, { method: "POST", body }),
-  updateRoadmap: (id: string, roadmapId: string, body: RoadmapEntryUpdate) =>
-    request<RoadmapEntryRead>(`${BASE}/pillars/${id}/content-roadmap/${roadmapId}`, {
-      method: "PUT",
-      body,
-    }),
-  deleteRoadmap: (id: string, roadmapId: string) =>
-    request<void>(`${BASE}/pillars/${id}/content-roadmap/${roadmapId}`, { method: "DELETE" }),
-
-  listGtm: (id: string) =>
-    request<GtmStrategyRead[]>(`${BASE}/pillars/${id}/gtm-strategy`),
-  createGtm: (id: string, body: GtmStrategyCreate) =>
-    request<GtmStrategyRead>(`${BASE}/pillars/${id}/gtm-strategy`, { method: "POST", body }),
 };
 
 // ---------------------------------------------------------------------------
@@ -592,7 +694,6 @@ export const talksApi = {
     page?: number;
     per_page?: number;
     pillar_id?: string;
-    tag_id?: string;
     sme_id?: string;
     review_status?: string;
     is_active?: boolean;
@@ -601,7 +702,6 @@ export const talksApi = {
     if (params.page) sp.set("page", String(params.page));
     if (params.per_page) sp.set("per_page", String(params.per_page));
     if (params.pillar_id) sp.set("pillar_id", params.pillar_id);
-    if (params.tag_id) sp.set("tag_id", params.tag_id);
     if (params.sme_id) sp.set("sme_id", params.sme_id);
     if (params.review_status) sp.set("review_status", params.review_status);
     if (params.is_active !== undefined) sp.set("is_active", String(params.is_active));
@@ -634,10 +734,3 @@ export const talksApi = {
 // ---------------------------------------------------------------------------
 // Talk tags (v2)
 // ---------------------------------------------------------------------------
-export const talkTagsApi = {
-  list: () => request<TalkTag[]>(`${BASE}/talk-tags`),
-  create: (body: { name: string; color?: string | null }) =>
-    request<TalkTag>(`${BASE}/talk-tags`, { method: "POST", body }),
-  delete: (id: string) =>
-    request<void>(`${BASE}/talk-tags/${id}`, { method: "DELETE" }),
-};

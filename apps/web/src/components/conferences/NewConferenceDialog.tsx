@@ -1,15 +1,16 @@
 /**
  * NewConferenceDialog — modal form for adding a conference manually.
  *
- * Posts to POST /api/v1/conferences (which auto-runs the matcher), then
- * tells the caller the new conference id so the parent can navigate +
- * invalidate cache.
+ * POST /api/v1/conferences returns as soon as the row + embedding exist
+ * (~1s). It used to run the matcher inline too — 16 seconds on a frozen
+ * dialog against a live LLM. Scoring now happens on the detail page this
+ * navigates to, behind its ScorePanel skeleton.
  */
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { ApiError, conferencesApi } from "@/lib/api";
+import { ApiError, conferencesApi, fetchEventKinds } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,6 +30,22 @@ type Props = {
 
 export function NewConferenceDialog({ onClose, onCreated }: Props) {
   const [name, setName] = useState("");
+  // This form never sent event_kind. It does not 422 — the field defaults
+  // to "corporate" server-side — which is the actual problem: every
+  // hand-added event silently became corporate, including grassroots and
+  // hackathons. That is not cosmetic, because the finder list defaults to
+  // exclude_grassroot=true, so a mislabelled grassroot event stays visible
+  // when it should not, and a real one cannot be filtered out.
+  //
+  // The vocabulary is operator-owned (the `event_kinds` setting) — read it,
+  // never hardcode it, or this form disagrees with what the extractor and
+  // the filters use.
+  const [eventKind, setEventKind] = useState("");
+  const kinds = useQuery({
+    queryKey: ["event-kinds"],
+    queryFn: fetchEventKinds,
+    staleTime: 5 * 60_000,
+  });
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [locationCity, setLocationCity] = useState("");
@@ -48,6 +65,7 @@ export function NewConferenceDialog({ onClose, onCreated }: Props) {
     mutationFn: () =>
       conferencesApi.create({
         name: name.trim(),
+        event_kind: eventKind,
         start_date: startDate || null,
         end_date: endDate || null,
         location_city: locationCity.trim() || null,
@@ -103,8 +121,8 @@ export function NewConferenceDialog({ onClose, onCreated }: Props) {
         <DialogHeader>
           <DialogTitle>Add a conference manually</DialogTitle>
           <DialogDescription>
-            For events Scout hasn't discovered. After save, the matcher runs
-            immediately and the detail page opens with the score.
+            For events Scout hasn&rsquo;t discovered. Saves in about a second;
+            the detail page opens and scores it while you watch.
           </DialogDescription>
         </DialogHeader>
 
@@ -117,6 +135,23 @@ export function NewConferenceDialog({ onClose, onCreated }: Props) {
               placeholder="KubeCon EU 2027"
               autoFocus
             />
+          </Field>
+
+          <Field label="Type" required full>
+            <select
+              value={eventKind}
+              onChange={(e) => setEventKind(e.currentTarget.value)}
+              className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            >
+              <option value="" disabled>
+                {kinds.isLoading ? "Loading…" : "Select a type"}
+              </option>
+              {(kinds.data ?? []).map((k) => (
+                <option key={k} value={k}>
+                  {k.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
           </Field>
 
           <Field label="Start date">
@@ -252,7 +287,13 @@ export function NewConferenceDialog({ onClose, onCreated }: Props) {
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={mutation.isPending}>
+            <Button
+              type="submit"
+              // Name is required; a type must be chosen rather than
+              // defaulted, so the operator states it instead of silently
+              // getting "corporate".
+              disabled={mutation.isPending || !name.trim() || !eventKind}
+            >
               {mutation.isPending ? "Saving + scoring…" : "Save & run matcher"}
             </Button>
           </DialogFooter>

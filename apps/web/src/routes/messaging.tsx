@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Trash2, Upload } from "lucide-react";
+import { Trash2, Upload, RotateCcw } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
+import { useUnsavedWorkWarning } from "@/hooks/useUnsavedWorkWarning";
+import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,9 +21,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { messagingApi } from "@/lib/api";
-import type { DocKind, MessagingDocUploadPreview, MessagingDocumentCreate } from "@/lib/api-types";
-import { ErrorBox } from "@/routes/audiences";
+import { ApiError, messagingApi } from "@/lib/api";
+import type {
+  DocKind,
+  MessagingDocUploadPreview,
+  MessagingDocumentCreate,
+  MessagingDocumentRead,
+} from "@/lib/api-types";
+import { ErrorBox } from "@/components/form";
 import { TeamGuidance } from "@/components/team/TeamGuidance";
 import { PageHeader } from "@/routes/dashboard";
 
@@ -49,6 +56,12 @@ function MessagingPage() {
     queryKey: ["messaging", { page, q: debouncedSearch }],
     queryFn: () =>
       messagingApi.list({ page, per_page: PER_PAGE, q: debouncedSearch || undefined }),
+  });
+  // Deactivate is reversible; a doc used to go inactive and then have no
+  // action left on the row at all.
+  const restoreDoc = useMutation({
+    mutationFn: (d: MessagingDocumentRead) => messagingApi.restore(d),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["messaging"] }),
   });
   const deactivate = useMutation({
     mutationFn: (id: string) => messagingApi.deactivate(id),
@@ -111,7 +124,7 @@ function MessagingPage() {
               >
                 Upload a GTM Strategy or Content Roadmap PDF
               </button>{" "}
-              or use the <strong>New</strong> button to enter fields manually.
+              or <strong>Enter manually</strong> to type the fields in.
             </div>
           ) : (
             <Table>
@@ -155,7 +168,7 @@ function MessagingPage() {
                       {m.key_themes.length > 3 ? "…" : null}
                     </TableCell>
                     <TableCell className="text-fg-muted text-xs tabular-nums">
-                      {new Date(m.updated_at).toLocaleDateString()}
+                      {formatDate(m.updated_at)}
                     </TableCell>
                     <TableCell>
                       {m.is_active ? (
@@ -175,10 +188,26 @@ function MessagingPage() {
                           }}
                           disabled={deactivate.isPending}
                           aria-label={`deactivate ${m.title}`}
+                          title="Deactivate"
                         >
                           <Trash2 className="size-4" />
                         </Button>
-                      ) : null}
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            restoreDoc.mutate(m);
+                          }}
+                          disabled={restoreDoc.isPending}
+                          aria-label={`restore ${m.title}`}
+                          title="Restore"
+                        >
+                          <RotateCcw className="mr-1 size-4" />
+                          Restore
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -215,6 +244,32 @@ function MessagingPage() {
 
 type UploadPhase = "pick" | "extracting" | "review" | "saving";
 
+
+/** Human names for the save-schema fields, for readable validation errors. */
+const FIELD_LABELS: Record<string, string> = {
+  title: "Title",
+  elevator_pitch: "Elevator pitch",
+  target_personas: "Target personas",
+  key_themes: "Key themes",
+  talking_points: "Talking points",
+  differentiators: "Differentiators",
+  competitive_position: "Competitive position",
+};
+
+/** "One or more fields failed validation" is useless — say which and why. */
+function describeSaveError(err: unknown): string {
+  if (err instanceof ApiError) {
+    const fields = Object.entries(err.fieldErrors());
+    if (fields.length) {
+      return fields
+        .map(([k, msg]) => `${FIELD_LABELS[k.split(".")[0] ?? k] ?? k}: ${msg}`)
+        .join(" · ");
+    }
+    return err.message;
+  }
+  return String((err as Error).message);
+}
+
 function UploadReviewDialog({
   onClose,
   onSaved,
@@ -227,6 +282,9 @@ function UploadReviewDialog({
   const [docKind, setDocKind] = useState<DocKind>("other");
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<MessagingDocUploadPreview | null>(null);
+  // Nothing persists until the review is confirmed — a refresh mid-extract
+  // or mid-review silently discards the work, so intercept the unload.
+  useUnsavedWorkWarning(phase !== "pick");
 
   const extractMut = useMutation({
     mutationFn: ({ file, kind }: { file: File; kind: DocKind }) =>
@@ -246,7 +304,7 @@ function UploadReviewDialog({
     mutationFn: (body: MessagingDocumentCreate) =>
       messagingApi.create(body, "ui_admin"),
     onSuccess: () => onSaved(),
-    onError: (err) => setError(String((err as Error).message)),
+    onError: (err) => setError(describeSaveError(err)),
   });
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -341,8 +399,9 @@ function UploadReviewDialog({
 
               {phase === "extracting" && (
                 <p className="text-sm text-fg-muted">
-                  Parsing document with Docling and extracting fields via LLM — this takes 15–30
-                  seconds for a typical PDF…
+                  Parsing the document and extracting fields with the LLM — typically
+                  15–60 seconds. Stay on this page: nothing is saved until you review
+                  and confirm.
                 </p>
               )}
 

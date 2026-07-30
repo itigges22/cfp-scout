@@ -22,6 +22,16 @@ spec:
         - -c
         - |
           set -eu
-          echo "Hitting /api/v1/healthz on {{ include "scout.fullname" . }}-api:8000..."
-          curl -fsS "http://{{ include "scout.fullname" . }}-api:8000/api/v1/healthz"
+          BASE="http://{{ include "scout.fullname" . }}-api:8000/api/v1"
+          # /healthz is deliberately dependency-free — it returns 200 as
+          # soon as uvicorn binds, so on its own it proves almost nothing
+          # about a fresh install. /readyz exercises the Postgres
+          # connection, which is what "did this deploy actually work?"
+          # means. Check both so a failure says which layer broke.
+          echo "GET $BASE/healthz (process alive)..."
+          curl -fsS "$BASE/healthz"
+          echo
+          echo "GET $BASE/readyz (database reachable)..."
+          curl -fsS "$BASE/readyz"
+          echo
           echo "OK"

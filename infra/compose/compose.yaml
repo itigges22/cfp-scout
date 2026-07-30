@@ -12,6 +12,21 @@
 # Volumes are named (not host bind mounts) so they survive `down` and play
 # well with rootless Podman.
 
+# LOCAL DEVELOPMENT ONLY. Not a deployment path — the cluster is configured
+# from deploy/helm/scout/values.yaml.
+#
+# Every value below has a dev default, so `make dev` works on a clean clone
+# with no dotfile. There is no .env: it was deleted because it had become a
+# third place to look for configuration, and its example had grown into a
+# 96-line mirror of production.
+#
+# To point at a real LLM: export LLM_BASE_URL, LLM_API_KEY and
+# LLM_DRY_RUN=false in your shell before `make dev`. The default runs
+# offline against canned responses.
+#
+# The Postgres password here is a known dev value on a container that binds
+# to localhost. Do not reuse it anywhere that matters.
+
 services:
   # --------------------------------------------------------------------------
   # Postgres 16 with pgvector. Schema, indexes, and the rest of the data
@@ -22,9 +37,9 @@ services:
     container_name: scout-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER not set in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set in .env}
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB not set in .env}
+      POSTGRES_USER: ${POSTGRES_USER:-scout}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scout_local_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-scout}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../postgres/init:/docker-entrypoint-initdb.d:ro
@@ -64,13 +79,13 @@ services:
       # below) so it can run DDL as the superuser.
       DATABASE_URL: postgresql+asyncpg://app:${APP_DB_PASSWORD:-app}@postgres:5432/${POSTGRES_DB}
       # Superuser credentials — Alembic reads these via Settings.superuser_*_dsn.
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-scout}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scout_local_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-scout}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-      LLM_BASE_URL: ${LLM_BASE_URL:?LLM_BASE_URL not set in .env}
-      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY not set in .env}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://example.invalid/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-dry-run-no-key}
       LLM_CHAT_MODEL: ${LLM_CHAT_MODEL:-Qwen3.6-35B-A3B}
       LLM_EMBEDDING_MODEL: ${LLM_EMBEDDING_MODEL:-Nomic-embed-text-v2-moe}
       LLM_EMBEDDING_API_KEY: ${LLM_EMBEDDING_API_KEY:-}
@@ -78,23 +93,19 @@ services:
       LLM_EXTRACTION_MODEL: ${LLM_EXTRACTION_MODEL:-}
       LLM_NARRATIVE_MODEL: ${LLM_NARRATIVE_MODEL:-}
       LLM_AGENT_MODEL: ${LLM_AGENT_MODEL:-}
-      LLM_DRY_RUN: ${LLM_DRY_RUN:-false}
+      LLM_DRY_RUN: ${LLM_DRY_RUN:-true}
       LLM_MONTHLY_BUDGET_USD: ${LLM_MONTHLY_BUDGET_USD:-}
       SETTINGS_REFRESH_SECONDS: ${SETTINGS_REFRESH_SECONDS:-30}
-      SAFETY_CLASSIFIER_ENABLED: ${SAFETY_CLASSIFIER_ENABLED:-false}
-      SAFETY_CLASSIFIER_MODEL: ${SAFETY_CLASSIFIER_MODEL:-Llama-Guard-3-1B}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-json}
       STORAGE_PATH: /var/lib/scout/storage
       SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-UTC}
-      SCRAPER_USER_AGENT: ${SCRAPER_USER_AGENT:?SCRAPER_USER_AGENT not set in .env}
+      SCRAPER_USER_AGENT: ${SCRAPER_USER_AGENT:-Scout-Dev/1.0 (+local)}
       SCRAPER_DEFAULT_POLITENESS_SECONDS: ${SCRAPER_DEFAULT_POLITENESS_SECONDS:-3}
+      MATCH_W_FIT: ${MATCH_W_FIT:-0.65}
+      MATCH_W_SPEAKERS: ${MATCH_W_SPEAKERS:-0.35}
       MATCH_M_GATE: ${MATCH_M_GATE:-0.55}
-      MATCH_P_GATE: ${MATCH_P_GATE:-0.55}
       MATCH_S_GATE: ${MATCH_S_GATE:-0.5}
-      MATCH_W_MESSAGING: ${MATCH_W_MESSAGING:-0.35}
-      MATCH_W_PILLAR: ${MATCH_W_PILLAR:-0.35}
-      MATCH_W_SME: ${MATCH_W_SME:-0.30}
       DECAY_ENABLED: ${DECAY_ENABLED:-true}
     volumes:
       - pdf_uploads:/var/lib/scout/storage/pdf_uploads
@@ -120,7 +131,7 @@ services:
           # ~1.5–2 GB of model weights resident and can spike well past
           # 3 GB on large PDFs. 6 GB gives Docling room to breathe while
           # still bounding the container under a typical 16 GB laptop
-          # allocation. Bump via .env override if you're seeing OOM kills
+          # allocation. Override in your shell if you're seeing OOM kills
           # on >50 MB documents.
           cpus: "2.0"
           memory: 6G

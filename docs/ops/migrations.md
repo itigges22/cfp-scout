@@ -83,7 +83,7 @@ class MessagingDocument(Base):
 
 When generating migrations, Alembic respects this — tables land in the
 right schema. Junction tables go in `app`, document_chunks in `vectors`,
-audit_log + content_versions in `audit`, the APScheduler jobstore in `jobs`.
+audit_log in `audit`, the APScheduler jobstore in `jobs`.
 
 ## Migration history
 

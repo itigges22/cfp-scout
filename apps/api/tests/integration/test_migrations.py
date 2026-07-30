@@ -17,45 +17,99 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-
 # ---------------------------------------------------------------------------
 # Migration A: event_kind CHECK + assigned_pillar_id SET NULL
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_event_kind_invalid_raises(test_engine) -> None:
-    """INSERT with an invalid event_kind must raise IntegrityError."""
-    async with test_engine.begin() as conn:
-        with pytest.raises(IntegrityError):
-            await conn.execute(
-                text(
-                    "INSERT INTO app.conferences "
-                    "(id, name, slug, status, event_kind, freshness_score, topics, "
-                    "cfp_topics_of_interest, cfp_deadlines, is_virtual) "
-                    "VALUES (gen_random_uuid(), 'X', 'x-2099', 'discovered', "
-                    "'INVALID_KIND', 1.0, '{}', '{}', '[]', false)"
-                )
-            )
+async def test_an_unconfigured_event_kind_is_rejected_by_the_api(
+    async_client, clean_db
+) -> None:
+    """Enforcement moved layers, deliberately.
+
+    There used to be a CHECK constraint here, and this test inserted raw
+    SQL to prove it fired. Migration 20260727_2200 dropped it: event kinds
+    are now settings.event_kinds, which an operator edits at runtime, and
+    a DDL constraint frozen when the migration ran cannot enforce a list
+    that changes afterwards. Regenerating the constraint on every settings
+    save would mean a settings page running DDL against a live table —
+    a far worse failure than a bad string in a column.
+
+    So the guarantee is now "the API refuses to write one", not "the
+    database refuses to store one". The database WILL accept any string
+    via direct SQL. That is the acknowledged cost of an editable
+    vocabulary, and this test pins what replaced it.
+    """
+    r = await async_client.post(
+        "/api/v1/conferences", json={"name": "Bad Kind 2099", "event_kind": "INVALID"}
+    )
+    assert r.status_code == 422
+    assert "event kind" in r.text.lower()
 
 
 @pytest.mark.asyncio
-async def test_event_kind_team_managed_accepted(test_engine) -> None:
-    """INSERT with event_kind='team_managed' must succeed."""
+async def test_the_rejection_names_the_configured_kinds(
+    async_client, clean_db
+) -> None:
+    """A Literal published the options in openapi.json; a runtime check
+    does not. If the 422 does not list them, the error is unactionable."""
+    r = await async_client.post(
+        "/api/v1/conferences", json={"name": "Bad Kind 2099", "event_kind": "summit"}
+    )
+    assert r.status_code == 422
+    assert "grassroot" in r.text, "the error should say what IS allowed"
+
+
+@pytest.mark.parametrize(
+    "kind", ["corporate", "grassroot", "developer_day", "research", "hackathon"]
+)
+@pytest.mark.asyncio
+async def test_event_kind_canonical_values_accepted(test_engine, kind: str) -> None:
+    """Every kind in EVENT_KINDS must be insertable.
+
+    This test previously asserted the OPPOSITE — that 'team_managed' is
+    accepted — and passed, because migration 20260604_1100 renamed the
+    values in data but left the CHECK constraint alone. That drift made
+    'grassroot' and 'hackathon' uninsertable in production while the API
+    happily accepted them. Pinning the real set both ways now.
+    """
     async with test_engine.begin() as conn:
         await conn.execute(
             text(
                 "INSERT INTO app.conferences "
-                "(id, name, slug, status, event_kind, freshness_score, topics, "
+                "(id, name, slug, status, event_kind, topics, "
                 "cfp_topics_of_interest, cfp_deadlines, is_virtual) "
-                "VALUES (:id, 'TeamEv', 'teamev-2099', 'approved', "
-                "'team_managed', 1.0, '{}', '{}', '[]', false)"
+                "VALUES (:id, :name, :slug, 'approved', "
+                ":kind, '{}', '{}', '[]', false)"
             ),
-            {"id": str(uuid.uuid4())},
+            {
+                "id": str(uuid.uuid4()),
+                "name": f"Kind {kind}",
+                "slug": f"kind-{kind}-2099",
+                "kind": kind,
+            },
         )
         await conn.execute(
-            text("DELETE FROM app.conferences WHERE slug = 'teamev-2099'")
+            text("DELETE FROM app.conferences WHERE slug = :slug"),
+            {"slug": f"kind-{kind}-2099"},
         )
+
+
+@pytest.mark.asyncio
+async def test_retired_event_kinds_are_not_in_the_default_vocabulary() -> None:
+    """The pre-v2 values must not come back.
+
+    Previously proved by attempting an INSERT; the CHECK that made that
+    fail is gone (see above), so this now asserts the shipped default
+    vocabulary instead. An operator CAN re-add 'meetup' deliberately —
+    that is the point of the setting — but it must not reappear by
+    accident.
+    """
+    from app.settings import Settings
+
+    kinds = set(Settings().event_kinds)
+    assert not ({"team_managed", "meetup"} & kinds)
 
 
 @pytest.mark.asyncio
@@ -77,9 +131,9 @@ async def test_assigned_pillar_id_set_null_on_pillar_delete(test_engine) -> None
             text(
                 "INSERT INTO app.conferences "
                 "(id, name, slug, status, event_kind, assigned_pillar_id, "
-                "freshness_score, topics, cfp_topics_of_interest, cfp_deadlines, is_virtual) "
+                "topics, cfp_topics_of_interest, cfp_deadlines, is_virtual) "
                 "VALUES (:cid, 'PillarConf', 'pillarconf-2099', 'discovered', "
-                "'corporate', :pid, 1.0, '{}', '{}', '[]', false)"
+                "'corporate', :pid, '{}', '{}', '[]', false)"
             ),
             {"cid": conf_id, "pid": pillar_id},
         )
@@ -126,9 +180,9 @@ async def pillar_and_sme(test_engine):  # type: ignore[misc]
         await conn.execute(
             text(
                 "INSERT INTO app.smes "
-                "(id, full_name, team, primary_topics, audience_focus, "
+                "(id, full_name, team, audience_focus, "
                 "location_country, bio, languages, external_links, is_active) "
-                "VALUES (:id, 'Test SME', 'Eng', '{}', '{}', "
+                "VALUES (:id, 'Test SME', 'Eng', '{}', "
                 "'US', 'Test bio text for this sme', '{}', '{}', true)"
             ),
             {"id": sme_id},
@@ -246,10 +300,10 @@ async def talk_and_conference(test_engine):  # type: ignore[misc]
         await conn.execute(
             text(
                 "INSERT INTO app.conferences "
-                "(id, name, slug, status, event_kind, freshness_score, topics, "
+                "(id, name, slug, status, event_kind, topics, "
                 "cfp_topics_of_interest, cfp_deadlines, is_virtual) "
                 "VALUES (:id, 'TestConf', :slug, 'discovered', 'corporate', "
-                "1.0, '{}', '{}', '[]', false)"
+                "'{}', '{}', '[]', false)"
             ),
             {"id": conf_id, "slug": f"testconf-{conf_id[:8]}"},
         )
@@ -310,54 +364,6 @@ async def test_talk_submissions_cascade_on_talk_delete(test_engine, talk_and_con
 
 # ---------------------------------------------------------------------------
 # Migration E: talk_tag_assignments CASCADE on tag delete
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_talk_tag_assignments_cascade_on_tag_delete(test_engine) -> None:
-    """Deleting a tag cascades to talk_tag_assignments."""
-    talk_id = str(uuid.uuid4())
-    tag_id = str(uuid.uuid4())
-
-    async with test_engine.begin() as conn:
-        await conn.execute(
-            text(
-                "INSERT INTO app.talks (id, title, source_type, review_status, is_active) "
-                "VALUES (:id, 'T', 'manual', 'draft', true)"
-            ),
-            {"id": talk_id},
-        )
-        await conn.execute(
-            text("INSERT INTO app.talk_tags (id, name) VALUES (:id, :name)"),
-            {"id": tag_id, "name": f"tag-{tag_id[:8]}"},
-        )
-        await conn.execute(
-            text(
-                "INSERT INTO app.talk_tag_assignments (talk_id, tag_id) "
-                "VALUES (:tid, :tagid)"
-            ),
-            {"tid": talk_id, "tagid": tag_id},
-        )
-        # Delete the tag → assignment should cascade
-        await conn.execute(
-            text("DELETE FROM app.talk_tags WHERE id = :id"), {"id": tag_id}
-        )
-        count = (
-            await conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM app.talk_tag_assignments "
-                    "WHERE talk_id = :tid"
-                ),
-                {"tid": talk_id},
-            )
-        ).scalar_one()
-        assert count == 0
-        # Cleanup
-        await conn.execute(text("DELETE FROM app.talks WHERE id = :id"), {"id": talk_id})
-
-
-# ---------------------------------------------------------------------------
-# Migration G: talk_submissions CASCADE on conference delete
 # ---------------------------------------------------------------------------
 
 

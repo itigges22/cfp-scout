@@ -15,7 +15,9 @@ Scout's data divides naturally into four groups:
 
 - **Application tables** — conferences, sources, smes, audiences, messaging, matches, decisions, junctions
 - **Vectors** — embedding chunks (pgvector + HNSW), kept separate so vacuum/reindex don't fight the OLTP hot path
-- **Audit** — append-only `audit_log` and `content_versions`; written on every change, never updated
+- **Audit** — append-only `audit_log`; written on every deliberate change, never updated
+  (`content_versions` sat here too until 2026-07; removed as write-only — see
+  planning/09-restructure-plan.md P3)
 - **Jobs** — APScheduler `SQLAlchemyJobStore` persistence
 
 We could split these along three boundaries:

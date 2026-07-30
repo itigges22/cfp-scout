@@ -13,7 +13,7 @@ import { useState } from "react";
 import { MessagingForm } from "@/components/messaging/MessagingForm";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/routes/dashboard";
-import { ErrorBox } from "@/routes/audiences";
+import { ErrorBox } from "@/components/form";
 import { messagingApi } from "@/lib/api";
 
 export const Route = createFileRoute("/messaging_/$id")({

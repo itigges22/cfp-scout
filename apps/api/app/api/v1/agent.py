@@ -1,15 +1,26 @@
-"""/api/v1/agent — chat sessions + per-turn asks (plan 22).
+"""/api/v1/agent — the chat assistant's sessions and messages.
 
-Endpoints:
-  * ``POST   /agent/sessions``                  — create a new session
-  * ``GET    /agent/sessions``                  — list active sessions
-  * ``GET    /agent/sessions/{id}``             — session metadata
-  * ``GET    /agent/sessions/{id}/messages``    — full message history
-  * ``POST   /agent/sessions/{id}/messages``    — ask a question; returns reply
-  * ``PATCH  /agent/sessions/{id}``             — rename / archive
-  * ``DELETE /agent/sessions/{id}``             — soft delete (archives)
+WHAT THIS DOES
+    A retrieval-augmented chat surface over Scout's own data. Sessions are
+    created, listed, renamed and archived through ``/agent/sessions*``.
+    ``GET /sessions/{id}/messages`` returns the transcript, and
+    ``POST /sessions/{id}/messages`` asks a question: it persists both the
+    user turn and the assistant turn and returns the reply with citations
+    and token cost. The request body can narrow retrieval to certain
+    ``owner_types`` and set ``k``, how many chunks get pulled in.
 
-SSE streaming, slash commands, and the conversation sidebar live in pass 2.
+HOW IT CONNECTS
+    Called by   main.py (registered as a router); the web UI calls
+                /agent/sessions from apps/web/src/lib/api.ts
+    Reads/writes app.chat_sessions, app.chat_messages
+    Answers via services/agent/, which searches vectors.document_chunks and
+                logs each provider call to app.llm_calls
+
+WORTH KNOWING
+    DELETE on a session archives it. Hard delete is intentionally not
+    exposed so the app.chat_messages audit trail stays complete.
+    An ask returns 404 for a missing session, 409 for an archived one, and
+    503 once the monthly LLM budget cap is hit.
 """
 
 from __future__ import annotations
@@ -23,9 +34,10 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
-from app.db.models.ops import ChatMessage, ChatSession
+from app.db.models import ChatMessage, ChatSession
 from app.db.session import DbSession
 from app.services.agent import ask
+from app.services.embeddings import OWNER_TYPES
 from app.services.llm import BudgetExceeded
 
 log = structlog.get_logger("scout.api.agent")
@@ -70,10 +82,15 @@ class AskBody(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     content: str = Field(..., min_length=1, max_length=4000)
-    # Allow narrowing retrieval to a subset of owner_types. Default = all.
-    owner_types: (
-        list[Literal["conference", "messaging", "sme_bio", "audience", "pillar", "raw_page"]] | None
-    ) = Field(default=None)
+    # Narrow retrieval to a subset of owner types. Default = all of them.
+    #
+    # Derived from OWNER_TYPES rather than listed. The hand-written list here
+    # accepted "pillar" and "raw_page", neither of which anything has ever
+    # written — so a request naming one returned zero snippets and the agent
+    # answered from nothing, with no error to explain why.
+    owner_types: list[Literal[OWNER_TYPES]] | None = Field(  # type: ignore[valid-type]
+        default=None
+    )
     k: int = Field(default=16, ge=1, le=40)
 
 

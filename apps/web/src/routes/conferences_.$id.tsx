@@ -4,7 +4,7 @@
  * Panels:
  *   - Header: name + dates + location + website + status pill
  *   - Score panel: overall + per-stage bars + rationale
- *   - SME panel: top-K with per-dimension bars + narrative (plan 19)
+ *   - SME panel: top-K with per-dimension bars
  *   - Sources panel: contributing raw_pages (plan 14)
  *   - Decision panel: Approve / Reject / Needs Review + reason + history
  */
@@ -16,7 +16,7 @@ import { useEffect, useState } from "react";
 import { useMe } from "@/hooks/useMe";
 
 import { StatusPill } from "@/components/conferences/StatusPill";
-import { PastConferenceEditDialog } from "@/components/past-conferences/PastConferenceEditDialog";
+import { AttendancePanel } from "@/components/conferences/AttendancePanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,7 +28,6 @@ import { ApiError, conferencesApi } from "@/lib/api";
 import type {
   ConferenceRead,
   DecisionVerdict,
-  PastConferenceCreate,
   SmeBreakdown,
 } from "@/lib/api-types";
 
@@ -38,7 +37,6 @@ export const Route = createFileRoute("/conferences_/$id")({
 
 function ConferenceDetailPage() {
   const { id } = Route.useParams();
-  const [markOpen, setMarkOpen] = useState(false);
   const conferenceQ = useQuery({
     queryKey: ["conferences", id],
     queryFn: () => conferencesApi.get(id),
@@ -50,6 +48,10 @@ function ConferenceDetailPage() {
   const smesQ = useQuery({
     queryKey: ["conferences", id, "smes"],
     queryFn: () => conferencesApi.smes(id, 5),
+  });
+  const talksQ = useQuery({
+    queryKey: ["conferences", id, "talks"],
+    queryFn: () => conferencesApi.talks(id, 10),
   });
   const sourcesQ = useQuery({
     queryKey: ["conferences", id, "sources"],
@@ -84,41 +86,13 @@ function ConferenceDetailPage() {
   const sources = sourcesQ.data?.sources ?? [];
   const decisions = decisionsQ.data?.decisions ?? [];
 
-  const markPrefill: Partial<PastConferenceCreate> = conference
-    ? {
-        name: conference.name,
-        year: conference.start_date
-          ? Number(conference.start_date.slice(0, 4))
-          : new Date().getFullYear(),
-        series_id: conference.series_id ?? null,
-        event_kind: conference.event_kind ?? "corporate",
-        conference_url: conference.website ?? null,
-        location_city: conference.location_city ?? null,
-        location_country: conference.location_country ?? null,
-      }
-    : {};
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <Link to="/conferences" className="text-xs text-fg-muted hover:text-fg">
           ← All conferences
         </Link>
-        {conference ? (
-          <Button variant="outline" size="sm" onClick={() => setMarkOpen(true)}>
-            Mark as attended
-          </Button>
-        ) : null}
       </div>
-
-      {conference ? (
-        <PastConferenceEditDialog
-          open={markOpen}
-          initial={null}
-          prefill={markPrefill}
-          onOpenChange={setMarkOpen}
-        />
-      ) : null}
 
       <ConferenceHeader conference={conference} />
 
@@ -127,7 +101,13 @@ function ConferenceDetailPage() {
         loading={matchQ.isLoading}
       />
 
-      <SmesPanel id={id} loading={smesQ.isLoading} data={smesQ.data} />
+      <SmesPanel loading={smesQ.isLoading} data={smesQ.data} />
+
+      <TalksPanel loading={talksQ.isLoading} data={talksQ.data} />
+
+      {/* Who is going, and how it went. Until this existed the app could
+          SHOW "previously attended" in three places and set it in none. */}
+      <AttendancePanel conferenceId={id} />
 
       <SourcesPanel sources={sources} loading={sourcesQ.isLoading} />
 
@@ -272,21 +252,27 @@ function ScorePanel({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <ScoreRow label="Messaging fit" value={match.messaging_score} />
-        <ScoreRow label="Pillar alignment" value={match.pillar_score} />
-        <ScoreRow label="SME match" value={match.sme_score} />
-        {match.judge_score !== null && match.judge_score !== undefined ? (
-          <ScoreRow label="LLM judge" value={match.judge_score} />
-        ) : null}
-        {match.boosts && match.boosts.total !== 0 ? (
-          <BoostsBreakdown boosts={match.boosts} />
-        ) : null}
-        {match.judge_rationale ? (
-          <div className="mt-2 rounded-md border border-border-subtle bg-surface-2 p-3 text-sm text-fg">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-muted">
-              Judge rationale
+        <ScoreRow label="Fit — do they care about what we do" value={match.fit_score} />
+        <ScoreRow label="Speakers — can we show up well" value={match.speaker_score} />
+
+        {/* A boost breakdown used to render here: signed
+            percentage-point adjustments for CFP urgency, series
+            memory and a recency penalty. Nobody can act on
+            "recency penalty: -4", and the facts underneath it (the
+            CFP closes soon; we have been to this series before) are
+            already on this page as a deadline and a badge. The
+            boosts still apply to the score - they are no longer
+            narrated. */}
+        {match.judge_verdict === "veto" ? (
+          <div className="mt-2 rounded-md border border-danger bg-surface-2 p-3 text-sm text-fg">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-danger">
+              Vetoed — wrong audience
             </p>
-            <p>{match.judge_rationale}</p>
+            <p>{match.judge_reason}</p>
+            <p className="mt-2 text-xs text-fg-muted">
+              A veto is a review flag, not a deletion. If this looks wrong,
+              the reason above is what to argue with.
+            </p>
           </div>
         ) : null}
         {match.rationale_text ? (
@@ -299,61 +285,6 @@ function ScorePanel({
         ) : null}
       </CardContent>
     </Card>
-  );
-}
-
-function BoostsBreakdown({ boosts }: { boosts: import("@/lib/api-types").MatchBoosts }) {
-  // Render only the boosts that actually fired. Each entry is a
-  // signed pp adjustment to overall_score; positive lifts the rank,
-  // negative sinks it. The total is what got added to the weighted
-  // stage blend to produce overall_score.
-  const items: { label: string; value: number; title: string }[] = [];
-  if (boosts.flagship_event) {
-    items.push({
-      label: "Flagship event",
-      value: boosts.flagship_event,
-      title: "Name matches a curated list of industry / developer megaconferences (KubeCon, AWS re:Invent, NVIDIA GTC, etc.) and the event is future-dated.",
-    });
-  }
-  if (boosts.cfp_urgency) {
-    items.push({
-      label: "CFP urgency",
-      value: boosts.cfp_urgency,
-      title: "CFP deadline is within the next 30 days.",
-    });
-  }
-  if (boosts.series_memory) {
-    items.push({
-      label: "Series memory",
-      value: boosts.series_memory,
-      title: "Your team has attended a past edition of this series, or approved a past edition in Scout.",
-    });
-  }
-  if (boosts.recency_penalty) {
-    items.push({
-      label: "Recency penalty",
-      value: boosts.recency_penalty,
-      title: "Event is more than 12 months in the future — discounted because long-horizon planning is hard.",
-    });
-  }
-  if (items.length === 0) return null;
-  return (
-    <div className="rounded-md border border-border-subtle bg-surface-2 p-3 text-sm">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">
-        Boosts applied (+ {Math.round(boosts.total * 100)} pp to overall)
-      </p>
-      <ul className="space-y-1">
-        {items.map((it) => (
-          <li key={it.label} className="flex items-baseline justify-between" title={it.title}>
-            <span>{it.label}</span>
-            <span className={`tabular-nums font-medium ${it.value >= 0 ? "text-success" : "text-danger"}`}>
-              {it.value >= 0 ? "+" : ""}
-              {Math.round(it.value * 100)}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 
@@ -373,29 +304,12 @@ function ScoreRow({ label, value }: { label: string; value: number }) {
 // SME panel
 // ---------------------------------------------------------------------------
 function SmesPanel({
-  id,
   loading,
   data,
 }: {
-  id: string;
   loading: boolean;
   data: import("@/lib/api-types").ConferenceSmesResponse | undefined;
 }) {
-  const queryClient = useQueryClient();
-  const regenMut = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(
-        `/api/v1/admin/matcher/narratives/regenerate/${id}`,
-        { method: "POST" },
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["conferences", id, "smes"] });
-    },
-  });
-
   if (loading) {
     return (
       <Card>
@@ -405,27 +319,22 @@ function SmesPanel({
       </Card>
     );
   }
-  const ranked = (data?.above_gate?.length ?? 0) > 0 ? data!.above_gate : data?.near_misses ?? [];
+  const ranked =
+    (data?.above_gate?.length ?? 0) > 0
+      ? (data?.above_gate ?? [])
+      : (data?.near_misses ?? []);
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle>Recommended SMEs</CardTitle>
-          {data && data.above_gate.length === 0 ? (
+          {data && (data.above_gate ?? []).length === 0 ? (
             <p className="mt-1 text-xs text-warning">
               No candidates above gate ({data.gate}); showing near-misses.
             </p>
           ) : null}
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => regenMut.mutate()}
-          disabled={regenMut.isPending}
-        >
-          {regenMut.isPending ? "Regenerating…" : "Regenerate narratives"}
-        </Button>
       </CardHeader>
       <CardContent className="space-y-4">
         {ranked.length === 0 ? (
@@ -462,26 +371,114 @@ function SmeCard({ b }: { b: SmeBreakdown }) {
           <span className="text-xs font-medium uppercase tracking-wider text-fg-muted">composite</span>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-5">
-        <DimBar label="Topics" value={b.dimensions.topic_overlap} />
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-4">
         <DimBar label="Audience" value={b.dimensions.audience_overlap} />
         <DimBar label="Bio" value={b.dimensions.bio_similarity} />
         <DimBar label="Location" value={b.dimensions.location} />
         <DimBar label="Past" value={b.dimensions.past_attendance} />
       </div>
-      {b.narrative ? (
-        <div className="mt-3 flex flex-col gap-1">
-          <Badge variant="muted" className="self-start">
-            AI-generated
-          </Badge>
-          <p className="text-sm text-fg">{b.narrative}</p>
-        </div>
-      ) : null}
     </div>
   );
 }
 
-function DimBar({ label, value }: { label: string; value: number }) {
+// Deliberately its own ranking, separate from SMEs: a CFP committee accepts
+// a talk first and a speaker second, so "which of our talks fits this event"
+// and "who should go" are two independent lists. The similarity uses the
+// same measure as the SME Bio bar above, so the numbers are comparable.
+function TalksPanel({
+  loading,
+  data,
+}: {
+  loading: boolean;
+  data: import("@/lib/api-types").ConferenceTalksResponse | undefined;
+}) {
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="py-6">
+          <Skeleton className="h-24 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+  const talks = data?.talks ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Talks to pitch</CardTitle>
+        <p className="mt-1 text-xs text-fg-muted">
+          Your talk library ranked against this conference. Same similarity
+          measure as the Bio bar above.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {talks.length === 0 ? (
+          <p className="text-sm text-fg-muted">
+            No talks in the library yet. Add them on the{" "}
+            <Link to="/talks" className="underline hover:text-fg">
+              Talks page
+            </Link>{" "}
+            and they will be ranked here automatically.
+          </p>
+        ) : (
+          talks.map((t) => (
+            <div
+              key={t.talk_id}
+              className="rounded-md border border-border-subtle bg-surface-2 p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-medium">{t.title}</h3>
+                  <p className="text-xs text-fg-muted">
+                    {[t.primary_sme_name, t.pillar_name].filter(Boolean).join(" · ") || "—"}
+                  </p>
+                  <div className="mt-1 flex gap-2">
+                    {t.already_submitted ? (
+                      <Badge variant="success">Already submitted here</Badge>
+                    ) : null}
+                    {!t.has_embedding ? (
+                      <Badge variant="warning">
+                        Not indexed — re-save the talk to score it
+                      </Badge>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex flex-col items-end">
+                  <div className="flex items-baseline gap-1 tabular-nums">
+                    <span className="text-xl font-semibold">
+                      {Math.round(t.similarity * 100)}
+                    </span>
+                    <span className="text-xs text-fg-muted">/ 100</span>
+                  </div>
+                  <span className="text-xs font-medium uppercase tracking-wider text-fg-muted">
+                    fit
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// null = the matcher couldn't measure this dimension (no tags on one side),
+// dropped it, and renormalised the remaining weights — a different thing
+// from a real 0, and it must not read as one.
+function DimBar({ label, value }: { label: string; value: number | null | undefined }) {
+  if (value == null) {
+    return (
+      <div title="Not measured — no tags on one side. Dropped from the composite; remaining weights renormalised.">
+        <div className="mb-1 flex items-baseline justify-between text-xs">
+          <span className="text-fg-muted">{label}</span>
+          <span className="text-fg-subtle">n/a</span>
+        </div>
+        <Progress value={0} size="sm" className="opacity-30" />
+      </div>
+    );
+  }
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between text-xs">
@@ -559,9 +556,12 @@ function DecisionPanel({
   const [actor, setActor] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Pre-fill the actor field with the signed-in user once the identity loads.
+  // Pre-fill the actor field with the signed-in user once the identity
+  // loads. `actor` is read through the setter callback rather than listed as
+  // a dependency: depending on it would re-run this on every keystroke and
+  // fight the user's own typing.
   useEffect(() => {
-    if (meLabel && !actor) setActor(meLabel);
+    if (meLabel) setActor((current) => current || meLabel);
   }, [meLabel]);
 
   const mut = useMutation({

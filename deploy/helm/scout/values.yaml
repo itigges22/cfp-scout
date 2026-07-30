@@ -204,37 +204,44 @@ config:
   corsOrigins: []
 
 # ---------------------------------------------------------------------------
-# Secret references. Operator creates these via `oc create secret`
-# OUTSIDE the chart (so cluster-secret values never live in git).
-# Chart references them by name; if you want, you can also let the
-# chart create empty placeholder Secrets and then `oc set data` them.
+# Secrets.
+#
+# Defaults let `helm install` succeed on a clean cluster with no manual
+# preparation. Nothing sensitive is committed here:
+#
+#   * database passwords are GENERATED (randAlphaNum 32) at install time
+#   * the LLM key is created EMPTY on purpose — see below
+#
+# To manage them yourself instead, set createPlaceholder: false and create
+# the named Secrets out of band:
+#
+#   oc create secret generic scout-db \
+#     --from-literal=password=... --from-literal=app-password=...
 # ---------------------------------------------------------------------------
 secrets:
   llm:
-    # Set to true to have the chart create an empty Secret you patch
-    # later. Default false expects you to create it externally.
-    createPlaceholder: false
+    # Creates the Secret with an EMPTY api-key.
+    #
+    # The LLM key is not cluster configuration. It is registered in
+    # settings_spec.py, so it is entered once through Settings after
+    # deployment and stored as a database override — which means it can be
+    # rotated by whoever operates the app, without a redeploy and without
+    # anyone holding a kubeconfig.
+    #
+    # The app starts fine without it. Anything needing the model reports
+    # "LLM is not configured" rather than crash-looping the pod.
+    createPlaceholder: true
     name: scout-llm
     # Keys inside the Secret — env vars on the api/scheduler pods.
     apiKeyField: api-key
     embeddingApiKeyField: embedding-api-key  # optional; same value as api-key if not set
   database:
-    createPlaceholder: false
+    # Generated at install time. Unlike the LLM key these CANNOT be entered
+    # later — Postgres needs them before the app starts.
+    createPlaceholder: true
     name: scout-db
     passwordField: password
     appPasswordField: app-password   # used by the API to log in as the app role
-
-# ---------------------------------------------------------------------------
-# ServiceMonitor for Prometheus scraping. OpenShift includes a
-# user-workload-monitoring stack you can opt into; this resource lets
-# it discover the API's /metrics endpoint.
-# ---------------------------------------------------------------------------
-monitoring:
-  serviceMonitor:
-    enabled: false
-    interval: 30s
-    scrapeTimeout: 10s
-    namespace: ""   # blank → install namespace
 
 # ---------------------------------------------------------------------------
 # Pod security. OpenShift's restricted-v2 SCC auto-injects the UID,

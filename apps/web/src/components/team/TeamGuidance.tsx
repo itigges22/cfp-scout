@@ -13,20 +13,17 @@
  * keeps the explanation visible without taking over the screen.
  */
 
-import { Link } from "@tanstack/react-router";
-import { ArrowRight, Upload } from "lucide-react";
+import {} from "@tanstack/react-router";
+import { ArrowRight } from "lucide-react";
 
 export function TeamGuidance({
   storedHere,
   addInline,
-  workbookSheet,
 }: {
   /** One sentence — what this page stores + what the matcher uses it for. */
   storedHere: string;
   /** Label of the inline create affordance (e.g. "+ New SME"). */
   addInline?: string;
-  /** Sheet name in the workbook (e.g. "SMEs", "Audiences"). */
-  workbookSheet?: string;
 }) {
   return (
     <div className="rounded-md border border-border-subtle bg-surface-2 p-3 text-sm">
@@ -48,18 +45,6 @@ export function TeamGuidance({
                 <ArrowRight className="h-3 w-3" />
                 Inline: use the <strong className="text-fg">{addInline}</strong>{" "}
                 button on this page.
-              </li>
-            )}
-            {workbookSheet && (
-              <li className="flex items-center gap-1">
-                <Upload className="h-3 w-3" />
-                Bulk: edit the{" "}
-                <strong className="text-fg">{workbookSheet}</strong> sheet in
-                the workbook, then{" "}
-                <Link to="/settings" className="text-accent hover:underline">
-                  upload it from Settings
-                </Link>
-                .
               </li>
             )}
           </ul>

@@ -8,7 +8,6 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -33,9 +32,9 @@ async def _create_sme(test_engine, name: str = "Test SME") -> str:
         await conn.execute(
             text(
                 "INSERT INTO app.smes "
-                "(id, full_name, team, primary_topics, audience_focus, "
+                "(id, full_name, team, audience_focus, "
                 "location_country, bio, languages, external_links, is_active) "
-                "VALUES (:id, :name, 'Eng', '{}', '{}', 'US', "
+                "VALUES (:id, :name, 'Eng', '{}', 'US', "
                 "'A sufficiently long bio for testing purposes.', '{}', '{}', true)"
             ),
             {"id": sme_id, "name": name},
@@ -163,129 +162,6 @@ async def test_list_pillar_smes_primary_first(
 
 
 # ---------------------------------------------------------------------------
-# Content Roadmap
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_add_roadmap_entry(async_client: AsyncClient, clean_db, test_engine) -> None:
-    pid = await _create_pillar(test_engine, "RoadmapPillar", 8)
-
-    resp = await async_client.post(
-        f"/api/v1/pillars/{pid}/content-roadmap",
-        json={
-            "quarter": "Q3 2026",
-            "goals": ["Ship v2", "Reduce latency"],
-            "owner_label": "Alice",
-        },
-    )
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["quarter"] == "Q3 2026"
-    assert body["goals"] == ["Ship v2", "Reduce latency"]
-    assert body["owner_label"] == "Alice"
-
-
-@pytest.mark.asyncio
-async def test_update_roadmap_entry(async_client: AsyncClient, clean_db, test_engine) -> None:
-    pid = await _create_pillar(test_engine, "RmUpdatePillar", 9)
-
-    create_resp = await async_client.post(
-        f"/api/v1/pillars/{pid}/content-roadmap",
-        json={"quarter": "Q1 2026", "goals": ["Initial"]},
-    )
-    assert create_resp.status_code == 201
-    roadmap_id = create_resp.json()["id"]
-
-    resp = await async_client.put(
-        f"/api/v1/pillars/{pid}/content-roadmap/{roadmap_id}",
-        json={"goals": ["Updated goal"]},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["goals"] == ["Updated goal"]
-
-
-@pytest.mark.asyncio
-async def test_delete_roadmap_entry(async_client: AsyncClient, clean_db, test_engine) -> None:
-    pid = await _create_pillar(test_engine, "RmDelPillar", 10)
-
-    create_resp = await async_client.post(
-        f"/api/v1/pillars/{pid}/content-roadmap",
-        json={"quarter": "Q2 2026", "goals": []},
-    )
-    roadmap_id = create_resp.json()["id"]
-
-    del_resp = await async_client.delete(
-        f"/api/v1/pillars/{pid}/content-roadmap/{roadmap_id}"
-    )
-    assert del_resp.status_code == 204
-
-
-# ---------------------------------------------------------------------------
-# GTM strategy
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_create_gtm_strategy_version_1(
-    async_client: AsyncClient, clean_db, test_engine
-) -> None:
-    pid = await _create_pillar(test_engine, "GtmPillar1", 11)
-
-    resp = await async_client.post(
-        f"/api/v1/pillars/{pid}/gtm-strategy",
-        json={
-            "objective": "Dominate the cloud-native market",
-            "key_messages": ["We are the fastest", "Open source first"],
-        },
-    )
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["version"] == 1
-    assert body["objective"] == "Dominate the cloud-native market"
-
-
-@pytest.mark.asyncio
-async def test_create_gtm_strategy_increments_version(
-    async_client: AsyncClient, clean_db, test_engine
-) -> None:
-    pid = await _create_pillar(test_engine, "GtmPillar2", 12)
-
-    await async_client.post(
-        f"/api/v1/pillars/{pid}/gtm-strategy",
-        json={"objective": "v1 objective"},
-    )
-    resp = await async_client.post(
-        f"/api/v1/pillars/{pid}/gtm-strategy",
-        json={"objective": "v2 objective"},
-    )
-    assert resp.status_code == 201
-    assert resp.json()["version"] == 2
-
-
-@pytest.mark.asyncio
-async def test_list_gtm_strategies_newest_first(
-    async_client: AsyncClient, clean_db, test_engine
-) -> None:
-    pid = await _create_pillar(test_engine, "GtmPillar3", 13)
-
-    await async_client.post(
-        f"/api/v1/pillars/{pid}/gtm-strategy", json={"objective": "v1"}
-    )
-    await async_client.post(
-        f"/api/v1/pillars/{pid}/gtm-strategy", json={"objective": "v2"}
-    )
-
-    resp = await async_client.get(f"/api/v1/pillars/{pid}/gtm-strategy")
-    assert resp.status_code == 200
-    items = resp.json()
-    assert len(items) == 2
-    # Newest first
-    assert items[0]["version"] == 2
-    assert items[1]["version"] == 1
-
-
-# ---------------------------------------------------------------------------
 # Pillar-scoped collections
 # ---------------------------------------------------------------------------
 
@@ -294,26 +170,39 @@ async def test_list_gtm_strategies_newest_first(
 async def test_list_pillar_conferences(
     async_client: AsyncClient, clean_db, test_engine
 ) -> None:
+    """Ranked by the matcher's per-pillar edge (conference_pillars), best
+    first — NOT by assigned_pillar_id, which only knows the top pillar."""
     pid = await _create_pillar(test_engine, "ConfPillar", 14)
 
-    # Insert a conference assigned to this pillar
-    cid = str(uuid.uuid4())
+    weak, strong = str(uuid.uuid4()), str(uuid.uuid4())
     async with test_engine.begin() as conn:
-        await conn.execute(
-            text(
-                "INSERT INTO app.conferences "
-                "(id, name, slug, status, event_kind, freshness_score, topics, "
-                "cfp_topics_of_interest, cfp_deadlines, is_virtual, assigned_pillar_id) "
-                "VALUES (:id, 'PillarConf', :slug, 'approved', 'corporate', "
-                "1.0, '{}', '{}', '[]', false, :pid)"
-            ),
-            {"id": cid, "slug": f"pillarconf-{cid[:8]}", "pid": pid},
-        )
+        for cid, name, score in ((weak, "WeakConf", 0.2), (strong, "StrongConf", 0.7)):
+            await conn.execute(
+                text(
+                    "INSERT INTO app.conferences "
+                    "(id, name, slug, status, event_kind, topics, "
+                    "cfp_topics_of_interest, cfp_deadlines, is_virtual) "
+                    "VALUES (:id, :name, :slug, 'approved', 'corporate', "
+                    "'{}', '{}', '[]', false)"
+                ),
+                {"id": cid, "name": name, "slug": f"pillarconf-{cid[:8]}"},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO app.conference_pillars (conference_id, pillar_id, score) "
+                    "VALUES (:cid, :pid, :score)"
+                ),
+                {"cid": cid, "pid": pid, "score": score},
+            )
 
     resp = await async_client.get(f"/api/v1/pillars/{pid}/conferences")
     assert resp.status_code == 200
     items = resp.json()
-    assert any(c["id"] == cid for c in items)
+    assert [c["id"] for c in items] == [strong, weak]
+    assert items[0]["pillar_score"] == 0.7
+    # No match row inserted — overall must be null, not fabricated.
+    assert items[0]["overall_score"] is None
+    assert "cfp_close_at" in items[0]
 
 
 @pytest.mark.asyncio

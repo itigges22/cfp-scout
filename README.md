@@ -54,11 +54,8 @@ The personas you're trying to reach (Platform Engineering Lead, ML Platform Lead
 ### Messaging
 Active product messaging documents — one per positioning artifact. Each one has an elevator pitch, target personas, key themes, talking points, differentiators, and competitive position. The matcher compares every event's description against these to compute a messaging-fit score.
 
-### Past Conferences
-A log of events your team has been to before, who attended, what role they played, and any notes. Drives both the SME ranker (location + past-attendance signals) and the conference-series detector (so if you've been to PyCon US 2024, Scout knows PyCon US 2027 isn't a new conference, it's the next edition).
-
-### Knowledge Graph
-A force-directed visualization of how everything connects: conferences ↔ topics ↔ SMEs ↔ audiences ↔ pillars. Useful for spotting clusters ("we have five upcoming events about AI safety but only one SME who covers it") and for answering "why did the matcher recommend this person for that event?". Three sliders let you adjust the layout density to taste.
+### Attendance tracking
+Recorded against the conference itself, not a separate list. Each person gets a row saying what they did there — gave a talk, worked the booth, attended, or we sponsored — so "Alice spoke and Bob ran the stand" is expressible. The event carries what it cost, roughly how many people were there, and whether it was worth going. That history feeds the SME ranker and the next edition's score.
 
 ### Ask Scout (agent chat)
 A read-only RAG chat. Ask it anything in plain English about your conferences, SMEs, or messaging documents — it answers with citations to specific rows so you can verify. Examples: *"Which approved events does Sarah have a high fit score for?"*, *"Show me events about MLOps in Europe in Q3"*, *"Which SMEs haven't been assigned to anything in the next 90 days?"*
@@ -67,7 +64,7 @@ A read-only RAG chat. Ask it anything in plain English about your conferences, S
 What's the health of the system? Where is the LLM budget going? Which background jobs ran, succeeded, failed? How fresh is each data source? One page with all of it.
 
 ### Settings
-Everything tunable in one place. The runtime knobs (matcher weights, gate thresholds, AI keyword filter, discovery sources) live under **Settings → Tunables** and update live without a restart. The system uses a JSON file backup of every setting (including your LLM API keys) so you can move installs or recover from a wipe.
+Everything tunable in one place. The runtime knobs (matcher weights, gate thresholds, AI keyword filter, discovery sources) live under **Settings → Tunables** and update live without a restart. A JSON export of every setting (including your LLM API keys) lets you move installs or recover from a wipe.
 
 ---
 
@@ -91,11 +88,7 @@ If you don't have an LLM API key yet, leave `LLM_DRY_RUN=true` in `.env` and Sco
 
 ## First-time setup: load your data
 
-Scout needs to know about your team before it can recommend anything. Two ways to load:
-
-**Option A — Bulk import (recommended for first-time setup).** Download the XLSX template from **Settings → Workbook** in the running app. It has six sheets: Pillars, Industries, Audiences, SMEs, Topics, Series. Fill them in, upload back. Round-trip-safe, so you can export your current state at any time and re-import after a tweak.
-
-**Option B — One-by-one in the UI.** Each section (`/smes`, `/audiences`, `/messaging`, `/past-conferences`, `/topics`) has a **New** button and clickable rows for edit. Good for adding a single SME or correcting a typo; tedious for bulk seeding.
+Scout needs to know about your team before it can recommend anything. Enter it through the UI: each section (`/smes`, `/audiences`, `/messaging`, `/pillars`, `/topics`) has a **New** button, and rows are clickable to edit.
 
 **The minimum to get useful results:**
 
@@ -109,15 +102,11 @@ Once those are in, click **Discover more** on `/conferences` and Scout will star
 
 ## Backup and restore (including API keys)
 
-Scout has two separate backup paths because reference data and secrets need different handling:
-
-**Reference data — the XLSX workbook.** Settings → Workbook → Export. Gives you a 6-sheet spreadsheet you can edit by hand, share with a teammate, or commit to a private repo. Contains your pillars, industries, audiences, SMEs, topics, and series catalog. **Does not contain secrets.**
-
 **Settings backup — JSON file with everything (including secrets).** Hit `GET /api/v1/admin/settings/export` to download a JSON file with every runtime setting in it: the 33-key tunables surface (matcher weights, gate thresholds, AI keyword filter, discovery sources) **and** your LLM API keys in plain text. Re-import with `POST /api/v1/admin/settings/import`. This is the "move my install to a new machine" file.
 
 > The settings export contains your API keys unmasked. Save with `chmod 600`, don't commit to git, don't share in Slack. The export endpoint logs a warning every time it runs.
 
-The XLSX workbook + the settings JSON together are a complete backup. Save both before any destructive change.
+Reference data (pillars, SMEs, audiences, topics, series) lives in Postgres and is covered by a database backup — that is the backup story for it. The settings JSON covers the configuration that is not in the database.
 
 ---
 

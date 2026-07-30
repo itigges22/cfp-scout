@@ -5,8 +5,8 @@ Revises: 20260604_0900
 Create Date: 2026-06-04 10:00:00
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
 revision = "20260604_1000"

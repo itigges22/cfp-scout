@@ -1,0 +1,228 @@
+name: CI
+
+# Every gate that guards this repo runs here: lint, API unit + integration
+# tests, the SPA build, a live-stack Playwright run, and Helm rendering.
+#
+# Keep it green. A test suite that is wired up but never executed rots
+# silently, which is the failure mode this file exists to prevent.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # pyproject.toml pins requires-python = ">=3.12,<3.13".
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  lint-api:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      # Version-pinned to match .pre-commit-config.yaml so local hooks and
+      # CI cannot disagree about what "clean" means.
+      - name: ruff check
+        working-directory: apps/api
+        run: uvx ruff@0.7.4 check app tests alembic
+      - name: ruff format --check
+        working-directory: apps/api
+        run: uvx ruff@0.7.4 format --check app tests alembic
+        # Formatting has never been enforced, so this reports rather than
+        # blocks until the one-time reformat lands.
+        continue-on-error: true
+
+  test-api:
+    name: API tests (unit + integration)
+    runs-on: ubuntu-latest
+    # The dependency tree includes torch + docling + crawl4ai, so a cold
+    # resolve is slow. uv's cache does the heavy lifting on repeat runs.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: apps/api
+        run: uv sync --dev
+
+      - name: Unit tests
+        working-directory: apps/api
+        run: uv run pytest tests/unit -q
+
+      # testcontainers talks to the runner's Docker daemon directly, so
+      # these run on the host rather than inside the api image.
+      - name: Integration tests (real Postgres + pgvector)
+        working-directory: apps/api
+        run: uv run pytest tests/integration -q
+
+  build-web:
+    name: Build SPA
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      # `build` runs `tsr generate && tsc -b && vite build`, so this is the
+      # typecheck gate as well as the build gate.
+      - name: Build
+        working-directory: apps/web
+        run: pnpm build
+
+      # NOT wired yet: `pnpm lint` currently fails with parse errors, and
+      # `pnpm test` has no test files despite vitest being installed.
+      # Both are tracked as follow-up work — adding them here today would
+      # only teach people to ignore a red build.
+
+  e2e:
+    name: E2E (Playwright against a live stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: scout
+          POSTGRES_PASSWORD: scoutdev
+          POSTGRES_DB: scout
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scout -d scout"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+
+    env:
+      # Mirrors the local e2e stack. LLM_DRY_RUN keeps the matcher's
+      # auto-run-on-first-view (ADR-0005) from making real API calls when
+      # Playwright opens a conference detail page.
+      DATABASE_URL: postgresql+asyncpg://app:app@127.0.0.1:5432/scout
+      POSTGRES_USER: scout
+      POSTGRES_PASSWORD: scoutdev
+      POSTGRES_DB: scout
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      LLM_BASE_URL: https://llm.example.invalid/v1
+      LLM_API_KEY: sk-ci-not-real
+      LLM_DRY_RUN: "true"
+      SCRAPER_USER_AGENT: Scout-CI/1.0
+      SCHEDULER_MODE: disabled
+      DISCOVERY_ENABLED: "false"
+      STORAGE_PATH: /tmp/scout-ci-storage
+      PYTHONPATH: ${{ github.workspace }}/apps/api
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      # The same init SQL compose mounts into the postgres container.
+      - name: Bootstrap extensions, schemas and roles
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+          export PGPASSWORD=scoutdev
+          psql -h 127.0.0.1 -U scout -d scout -v ON_ERROR_STOP=1 \
+            -f infra/postgres/init/01-extensions.sql
+          psql -h 127.0.0.1 -U scout -d scout -v ON_ERROR_STOP=1 \
+            -f infra/postgres/init/02-roles-and-schemas.sql
+
+      - name: Install API dependencies
+        working-directory: apps/api
+        run: uv sync --dev
+
+      - name: Run migrations
+        working-directory: apps/api
+        run: uv run alembic upgrade head
+
+      - name: Build the SPA into apps/api/static
+        working-directory: apps/web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+          rm -rf ../api/static/*
+          cp -R dist/. ../api/static/
+
+      - name: Start the API
+        working-directory: apps/api
+        run: |
+          mkdir -p /tmp/scout-ci-storage
+          nohup uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 \
+            > /tmp/scout-ci-storage/uvicorn.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8000/api/v1/healthz && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/api/v1/readyz
+
+      - name: Playwright
+        working-directory: apps/web
+        env:
+          BASE_URL: http://127.0.0.1:8000
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm exec playwright test
+
+      - name: API log on failure
+        if: failure()
+        run: tail -200 /tmp/scout-ci-storage/uvicorn.log
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/test-results/
+          retention-days: 7
+
+  render-chart:
+    name: Render Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+
+      - name: helm lint
+        run: helm lint deploy/helm/scout
+
+      # Both value sets must render — values-prod.yaml turns on oauth,
+      # which changes the Service ports and the Route's TLS termination.
+      - name: helm template (defaults)
+        run: helm template scout deploy/helm/scout > /dev/null
+
+      - name: helm template (prod values)
+        run: helm template scout deploy/helm/scout -f deploy/helm/scout/values-prod.yaml > /dev/null

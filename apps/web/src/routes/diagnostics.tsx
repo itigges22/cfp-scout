@@ -6,7 +6,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
@@ -147,14 +147,14 @@ function DiagnosticsPage() {
             sub="have a match score"
           />
           <HeroStat
-            label="Past Events Uploaded"
-            value={u.past_conferences_total}
-            sub={`${u.past_conferences_scored} with verdict`}
+            label="Conferences Attended"
+            value={u.conferences_attended}
+            sub={`${u.conferences_attended_scored} with verdict`}
           />
           <HeroStat
-            label="Talks Linked"
+            label="Talk Submissions"
             value={u.talk_submissions_total}
-            sub="submitted to conferences"
+            sub="talks pitched to conferences"
           />
         </div>
 
@@ -200,14 +200,16 @@ function DiagnosticsPage() {
       <div className="flex flex-col gap-6 p-6">
         <h2 className="text-lg font-semibold text-fg-muted">Background Systems</h2>
 
+        <ErrorFeedPanel
+          d={data}
+          onRetry={(id) =>
+            diagnosticsApi.retryJob(id).then(() => void refetch()).catch(console.error)
+          }
+        />
+
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <LlmActivityPanel d={data} window={window} />
-          <JobsPanel
-            d={data}
-            onRetry={(id) =>
-              diagnosticsApi.retryJob(id).then(() => void refetch()).catch(console.error)
-            }
-          />
+          <JobsPanel d={data} />
           <ScraperPanel d={data} />
           <DataPanel d={data} />
         </div>
@@ -243,6 +245,95 @@ function HeroStat({
 // ---------------------------------------------------------------------------
 // CFP Digest
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Unified error feed — ONE terminal for everything that went wrong
+// ---------------------------------------------------------------------------
+// LLM call errors and failed background jobs used to live in two separate
+// panels; checking "is anything broken?" meant reading both. This merges
+// them into a single timestamped stream, newest first, in one terminal.
+function ErrorFeedPanel({
+  d,
+  onRetry,
+}: {
+  d: DiagnosticsResponse;
+  onRetry: (id: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  // "Clear" hides LLM errors recorded up to now (history kept; new errors
+  // still appear). It moved here from the old LLM Activity terminal when
+  // the per-panel terminals were folded into this single feed.
+  const clearErrorsMut = useMutation({
+    mutationFn: diagnosticsApi.clearLlmErrors,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["diagnostics"] }),
+  });
+
+  const entries: { at: string | null; tag: string; text: string; jobId?: string }[] = [
+    ...d.llm.recent_errors.map((e) => ({
+      at: e.at,
+      tag: "llm",
+      text: `${e.purpose ?? "?"} · ${e.error}`,
+    })),
+    ...d.jobs.failed_24h.map((f) => ({
+      at: f.started_at,
+      tag: "job",
+      text: `${f.kind} · ${f.error_preview ?? "failed"}`,
+      jobId: f.id,
+    })),
+  ].sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="font-semibold">Error feed</h3>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-fg-muted">
+            LLM errors + failed jobs, last 24h, newest first
+          </span>
+          {d.llm.recent_errors.length > 0 ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={clearErrorsMut.isPending}
+              onClick={() => clearErrorsMut.mutate()}
+              title="Hide LLM errors recorded up to now (history is kept; new errors still appear)"
+            >
+              {clearErrorsMut.isPending ? "Clearing…" : "Clear LLM errors"}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <TerminalBox>
+        {entries.length === 0 ? (
+          <span className="text-success">✓ no errors in the last 24 hours</span>
+        ) : (
+          entries.map((e, i) => (
+            <div key={i} className="whitespace-pre-wrap break-all">
+              <span className="text-fg-subtle">
+                {e.at ? new Date(e.at).toLocaleTimeString() : "--:--"}
+              </span>{" "}
+              <span className={e.tag === "llm" ? "text-warning" : "text-danger"}>
+                [{e.tag}]
+              </span>{" "}
+              {e.text}
+              {e.jobId ? (
+                <>
+                  {" "}
+                  <button
+                    className="text-accent underline hover:no-underline"
+                    onClick={() => onRetry(e.jobId!)}
+                  >
+                    retry
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ))
+        )}
+      </TerminalBox>
+    </div>
+  );
+}
+
 function DigestPanel({ d }: { d: DiagnosticsResponse }) {
   const latest = d.digest.latest;
   if (!latest) return null;
@@ -343,11 +434,6 @@ function LlmConnectivityStatus({ llm }: { llm: DiagnosticsResponse["llm"] }) {
 
 function LlmActivityPanel({ d, window }: { d: DiagnosticsResponse; window: Window }) {
   const llm = d.llm;
-  const queryClient = useQueryClient();
-  const clearErrorsMut = useMutation({
-    mutationFn: diagnosticsApi.clearLlmErrors,
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["diagnostics"] }),
-  });
   // Map the page window to the corresponding call count key
   const windowCallKey = window === "7d" ? "7d" : window === "30d" ? "30d" : "all";
   const highlightedCalls = llm.calls[windowCallKey];
@@ -413,36 +499,8 @@ function LlmActivityPanel({ d, window }: { d: DiagnosticsResponse; window: Windo
           </div>
         ) : null}
 
-        {llm.recent_errors.length > 0 ? (
-          <div>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-sm font-medium text-fg-muted">Recent errors</p>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={clearErrorsMut.isPending}
-                onClick={() => clearErrorsMut.mutate()}
-                title="Hide errors recorded up to now (history is kept; new errors still appear)"
-              >
-                {clearErrorsMut.isPending ? "Clearing…" : "Clear"}
-              </Button>
-            </div>
-            <TerminalBox>
-              {llm.recent_errors.map((e, i) => (
-                <div key={i} className="text-danger">
-                  <span className="text-fg-muted">
-                    {e.at ? new Date(e.at).toLocaleString() : "?"}
-                  </span>
-                  {" · "}
-                  <span className="text-warning">{e.purpose}</span>
-                  {"\n"}
-                  <span className="pl-2">{e.error}</span>
-                  {i < llm.recent_errors.length - 1 ? "\n" : ""}
-                </div>
-              ))}
-            </TerminalBox>
-          </div>
-        ) : null}
+        {/* Errors live in the unified Error feed above — one terminal,
+            not one per panel. */}
       </CardContent>
     </Card>
   );
@@ -453,7 +511,7 @@ function LlmActivityPanel({ d, window }: { d: DiagnosticsResponse; window: Windo
 // ---------------------------------------------------------------------------
 const STALE_THRESHOLD_SECONDS = 60 * 60 * 4; // 4h — beyond this is likely a zombie
 
-function JobsPanel({ d, onRetry }: { d: DiagnosticsResponse; onRetry: (id: string) => void }) {
+function JobsPanel({ d }: { d: DiagnosticsResponse }) {
   const j = d.jobs;
   return (
     <Card>
@@ -494,36 +552,8 @@ function JobsPanel({ d, onRetry }: { d: DiagnosticsResponse; onRetry: (id: strin
           )}
         </div>
 
-        {/* Failed */}
-        <div>
-          <p className="mb-2 text-sm font-medium text-fg-muted">Failed (24h)</p>
-          {j.failed_24h.length === 0 ? (
-            <p className="text-sm text-fg-muted">Clean.</p>
-          ) : (
-            <TerminalBox>
-              {j.failed_24h.slice(0, 10).map((f, i) => (
-                <div key={f.id}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-danger">{f.kind}</span>
-                    <button
-                      className="text-xs text-accent underline hover:no-underline"
-                      onClick={() => onRetry(f.id)}
-                    >
-                      retry
-                    </button>
-                  </div>
-                  <div className="text-fg-muted">
-                    {f.started_at ? new Date(f.started_at).toLocaleString() : ""}
-                  </div>
-                  {f.error_preview ? (
-                    <div className="text-danger">{f.error_preview}</div>
-                  ) : null}
-                  {i < j.failed_24h.length - 1 ? <div className="my-1 border-t border-border/40" /> : null}
-                </div>
-              ))}
-            </TerminalBox>
-          )}
-        </div>
+        {/* Failed jobs live in the unified Error feed above, retry
+            button included. */}
 
         {/* Next fires */}
         <div>
@@ -603,24 +633,13 @@ function DataPanel({ d }: { d: DiagnosticsResponse }) {
           <MiniStat label="Active SMEs" value={data.smes.total_active} />
           <MiniStat label="Active audiences" value={data.audiences_active} />
           <MiniStat label="Active series" value={data.series.active_count} />
-          <MiniStat label="SMEs missing topics" value={data.smes.no_topics} warn={data.smes.no_topics > 0} />
         </div>
 
-        {(data.pending_topics > 0 || data.series.unlinked_conferences > 0) ? (
+        {data.series.unlinked_conferences > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {data.pending_topics > 0 ? (
-              <Link
-                to="/topics"
-                className="rounded-md border border-warning/40 bg-warning/15 px-3 py-1.5 text-sm text-warning hover:bg-warning/25"
-              >
-                {data.pending_topics} pending topic{data.pending_topics === 1 ? "" : "s"} →
-              </Link>
-            ) : null}
-            {data.series.unlinked_conferences > 0 ? (
-              <span className="rounded-md border border-border bg-surface-2 px-3 py-1.5 text-sm text-fg-muted">
-                {data.series.unlinked_conferences} unlinked conference{data.series.unlinked_conferences === 1 ? "" : "s"}
-              </span>
-            ) : null}
+            <span className="rounded-md border border-border bg-surface-2 px-3 py-1.5 text-sm text-fg-muted">
+              {data.series.unlinked_conferences} unlinked conference{data.series.unlinked_conferences === 1 ? "" : "s"}
+            </span>
           </div>
         ) : null}
 
@@ -629,31 +648,8 @@ function DataPanel({ d }: { d: DiagnosticsResponse }) {
             Embedding: <span className="text-fg">{data.embedding_model.name}</span> · {data.embedding_model.dimension}d ({data.embedding_model.provider})
           </p>
         ) : null}
-
-        <div>
-          <p className="mb-2 text-sm font-medium text-fg-muted">
-            Conference freshness (decay {data.decay_enabled ? "on" : "off"})
-          </p>
-          <FreshnessHistogram counts={data.freshness_histogram.counts} />
-        </div>
       </CardContent>
     </Card>
-  );
-}
-
-function FreshnessHistogram({ counts }: { counts: number[] }) {
-  const max = Math.max(1, ...counts);
-  return (
-    <div className="flex h-14 items-end gap-0.5">
-      {counts.map((n, i) => (
-        <div
-          key={i}
-          className="flex-1 rounded-t bg-accent/60"
-          style={{ height: `${(n / max) * 100}%` }}
-          title={`bucket ${i}: ${n}`}
-        />
-      ))}
-    </div>
   );
 }
 

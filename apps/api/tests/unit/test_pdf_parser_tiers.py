@@ -8,7 +8,7 @@ through the small-PDF pipeline.
 
 from __future__ import annotations
 
-from app.services.pdf.parser import (
+from app.services.pdf import (
     LARGE_THRESHOLD_BYTES,
     SMALL_THRESHOLD_BYTES,
     pick_tier,

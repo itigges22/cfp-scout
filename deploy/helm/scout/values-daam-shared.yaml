@@ -1,0 +1,44 @@
+# SCOUT — daam-shared @ api.ocp.cloud.rhai-tmm.dev
+#
+# Same shape as values-prod.yaml (the user-itigges install) with the
+# image sourced from THIS namespace's in-cluster build. Tag 2.9.0 is the
+# first image with: talk embedding + talk↔conference matching, topic
+# vocabulary removed (migration 20260730_1000), analytics page + API,
+# multi-SME attendance, past-conference import, CFP digest rework.
+config:
+  llmBaseUrl: https://litellm-litemaas.apps.prod.rhoai.rh-aiservices-bu.com/v1
+
+image:
+  pullPolicy: Always
+  repository: image-registry.openshift-image-registry.svc:5000/daam-shared/scout-api
+  tag: 2.9.0
+
+oauth:
+  enabled: true
+
+# Node ocp-j8fns-worker-cpu-3-94p9f has corrupted container overlay
+# storage (FailedCreatePodSandBox: input/output error) — keep workloads
+# off it until cluster admins replace it.
+api:
+  affinity: &avoidBrokenNode
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                  - ocp-j8fns-worker-cpu-3-94p9f
+scheduler:
+  affinity: *avoidBrokenNode
+
+postgres:
+  affinity: *avoidBrokenNode
+  storage:
+    storageClass: ibmc-vpc-block-10iops-tier
+
+route:
+  host: ""
+
+sharedStorage:
+  storageClass: ibmc-vpc-file-500-iops

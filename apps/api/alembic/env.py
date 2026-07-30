@@ -1,10 +1,10 @@
 """Async-aware Alembic environment.
 
-Alembic runs as the Postgres SUPERUSER (POSTGRES_USER from .env), not as
-the limited `app` role the api uses for queries. DDL needs superuser
-privileges; the role separation is intentional (see ADR-0002 + plan 03).
+Alembic connects as the Postgres SUPERUSER (POSTGRES_USER), not the limited
+``app`` role the API uses for queries — DDL needs privileges the app role
+deliberately lacks. See ADR-0002 for the role split.
 
-DSN is built at runtime from POSTGRES_* env vars — never hard-coded in
+The DSN is built at runtime from POSTGRES_* env vars, never hard-coded in
 alembic.ini.
 """
 
@@ -14,23 +14,15 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from app.db.base import Base
+
+# Importing the models package registers every table on Base.metadata,
+# which is what autogenerate diffs against.
+from app.db import models  # noqa: F401
+from app.db.models import Base
 from app.settings import get_settings
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
-# ---------------------------------------------------------------------------
-# Import all model modules so Base.metadata sees every table.
-# ---------------------------------------------------------------------------
-# Models land in plan 06 pass 2. For now the import is a no-op (no models
-# defined yet), but the wiring is in place so once models exist Alembic
-# autogenerate sees them.
-try:
-    from app.db import models  # noqa: F401  -- triggers model registration
-except ImportError:
-    # Pass 2 hasn't shipped yet; that's fine. Alembic still runs (no-op).
-    pass
 
 config = context.config
 if config.config_file_name is not None:
@@ -52,6 +44,33 @@ def _set_url() -> None:
     config.set_main_option("sqlalchemy.url", settings.superuser_sync_dsn)
 
 
+# ---------------------------------------------------------------------------
+# Autogenerate safety filter
+# ---------------------------------------------------------------------------
+# ``include_schemas=True`` is required (the app spans app/vectors/audit/jobs),
+# and without a companion filter autogenerate proposes DROPping every object
+# it can see but cannot find in Base.metadata.
+#
+# Two things are owned by other systems and must never be managed here:
+#   * schema ``jobs``  — APScheduler creates and migrates its own table.
+#   * the HNSW index   — created by raw SQL in the initial migration because
+#                        Alembic cannot express pgvector's operator class or
+#                        its m / ef_construction parameters.
+#
+# Do NOT set ``version_table_schema``: ``public`` is already the default, and
+# naming it explicitly stops Alembic matching its own exclusion (which
+# compares against None), so it proposes dropping ``alembic_version``.
+_UNMANAGED_SCHEMAS = {"jobs"}
+_UNMANAGED_INDEXES = {"ix_document_chunks_embedding_hnsw"}
+
+
+def _include_object(obj, name, type_, reflected, compare_to):
+    """Return False for objects Alembic must not try to manage."""
+    if getattr(obj, "schema", None) in _UNMANAGED_SCHEMAS:
+        return False
+    return not (type_ == "index" and name in _UNMANAGED_INDEXES)
+
+
 def run_migrations_offline() -> None:
     """Generate SQL without a live DB connection.
 
@@ -65,19 +84,43 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,  # we use schemas; autogenerate must see them
-        version_table_schema="public",
+        include_object=_include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
+# Session-level advisory lock so concurrent ``alembic upgrade head`` runs
+# serialize instead of racing.
+#
+# The Helm chart runs migrations as an init container on EVERY api replica
+# (deploy/helm/scout/templates/api-deployment.yaml, replicas: 2, HPA to 5),
+# so a fresh install starts several upgrades against an empty database at
+# once. Alembic has no built-in migration lock.
+#
+# Distinct from the scheduler's leader lock in app/scheduler.py.
+_MIGRATION_LOCK_KEY = 0x5C000168
+
+
 def _do_run_migrations(connection: Connection) -> None:
     """Sync function called inside the async engine context."""
+    # Blocks (does not fail) until any other migrating process finishes.
+    #
+    # The commit() is load-bearing: exec_driver_sql opens an implicit
+    # transaction, and Alembic's own commit would nest inside it, so the
+    # upgrade would roll back on connection close. pg_advisory_lock is
+    # SESSION-scoped, so committing frees the transaction without releasing
+    # the lock — it is held until this connection closes.
+    connection.exec_driver_sql(
+        f"SELECT pg_advisory_lock({_MIGRATION_LOCK_KEY})"
+    )
+    connection.commit()
+
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
         include_schemas=True,
-        version_table_schema="public",
+        include_object=_include_object,
         compare_type=True,  # detect column type changes
         compare_server_default=True,
     )

@@ -2,7 +2,8 @@
  * Top bar: env badge + notification bell.
  *
  * The bell shows the unread count for `cfp_digest` notifications and opens
- * a dropdown rendering the latest digest grouped by close-window bucket.
+ * a dropdown listing CFPs that close today or tomorrow — a deadline
+ * alarm, not a browsing surface; the finder has filters for lead time.
  * Each entry links to the conference detail page; a copy-to-clipboard
  * button serializes the digest as Markdown for paste into Slack / email.
  */
@@ -202,7 +203,7 @@ function DigestDropdown({
 function EmptyState() {
   return (
     <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
-      <p className="text-sm text-fg-muted">No CFPs closing in the next 30 days.</p>
+      <p className="text-sm text-fg-muted">Nothing closes today or tomorrow.</p>
       <p className="text-xs text-fg-subtle">
         The daily 09:00 digest will populate this when conferences land.
       </p>
@@ -211,13 +212,12 @@ function EmptyState() {
 }
 
 const BUCKET_TITLES: Record<string, string> = {
-  "0_7": "Closing this week (0-7 days)",
-  "8_14": "Closing next week (8-14 days)",
-  "15_30": "Closing this month (15-30 days)",
+  today: "Closing TODAY",
+  tomorrow: "Closing tomorrow",
 };
 
 function DigestBody({ payload }: { payload: CfpDigestPayload }) {
-  const buckets = ["0_7", "8_14", "15_30"] as const;
+  const buckets = ["today", "tomorrow"] as const;
   const total = buckets.reduce(
     (acc, k) => acc + (payload.buckets?.[k]?.length ?? 0),
     0,

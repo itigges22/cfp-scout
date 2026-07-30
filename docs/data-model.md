@@ -6,6 +6,22 @@ column, index, and the *why* behind each design choice.
 - **Implementation**: SQLAlchemy ORM + Alembic migrations under `apps/api/app/db/models/` and `apps/api/alembic/versions/`
 - **Schema-level layout (schemas, roles)**: [docs/ops/database.md](ops/database.md) + [ADR-0002](ADR/0002-postgres-schemas-not-databases.md)
 
+> **Partial, and known to be.** This document covers 20 of the 36 tables that
+> actually exist. Undocumented: the junction tables (`conference_topics`,
+> `conference_pillars`, `conference_smes`, `conference_audiences`,
+> `sme_topics`, `sme_audiences`, `sme_pillars`, `messaging_pillars`,
+> `talk_topics`, `talk_tag_assignments`), the talks library (`talks`,
+> `talk_tags`, `talk_submissions`), `participation`, `chat_messages` and
+> `app_setting_overrides`.
+>
+> `past_conferences` and `content_versions` used to be documented here and
+> have been deleted from the schema — see `planning/06-backend-redesign.md`
+> S4 and `planning/09-restructure-plan.md` P3.
+>
+> The authoritative schema is `apps/api/app/db/models/` plus the Alembic
+> migrations. Regenerate this file after the P4–P6 restructure rather than
+> patching it further.
+
 ## Conventions
 
 Every table follows:
@@ -36,7 +52,6 @@ erDiagram
     smes ||..o{ sme_topics : ""
     smes ||..o{ sme_audiences : ""
     smes ||..o{ conference_smes : "recommended for"
-    smes ||..o{ past_conferences : "attended"
     topics ||..o{ sme_topics : ""
     topics ||..o{ conference_topics : ""
 
@@ -49,7 +64,6 @@ erDiagram
     conferences ||..o{ conference_pillars : ""
     conferences ||..o{ conference_smes : ""
     conferences ||..|o conference_series : "edition of"
-    past_conferences ||..|o conference_series : "edition of"
 
     %% ===== Vectors =====
     document_chunks }o..|| embedding_models : "embedded by"
@@ -61,7 +75,7 @@ erDiagram
 
     %% ===== Ops =====
     %% audit_log, ingest_jobs, llm_calls, chat_sessions, chat_messages,
-    %% notifications, content_versions are operational; no FK clutter shown.
+    %% notifications is operational; no FK clutter shown.
 ```
 
 ## Tables by family
@@ -69,7 +83,7 @@ erDiagram
 ### 1. Manual inputs (`app` schema)
 
 These tables hold the data the team enters via wizards (plan 09) or the
-XLSX workbook (plan 31). They're the foundation everything else matches
+the web UI. They're the foundation everything else matches
 against.
 
 #### `messaging_documents`
@@ -110,7 +124,7 @@ Your team's four-pillar strategy. Seeded; rarely changes.
 |--------|------|---------|
 | `name` | text UNIQUE | Pillar headline (e.g. "Agentic AI innovation") |
 | `description` | text | Short operator-authored tagline (~300 chars) |
-| `enriched_description` | text nullable | Long-form (500–800 word) LLM-extracted description grounded in the operator's active messaging documents. Matcher Stage B embeds this in preference to `description` because the short tagline doesn't have enough discriminative vocabulary for cosine to separate "fits this pillar" from "AI-adjacent in general." Populated by `scripts/enrich_pillars.py`. |
+| `enriched_description` | text nullable | Long-form (500–800 word) LLM-extracted description grounded in the operator's active messaging documents. Matcher Stage B embeds this in preference to `description` because the short tagline doesn't have enough discriminative vocabulary for cosine to separate "fits this pillar" from "AI-adjacent in general." Populated by `python -m app.maintenance enrich-pillars`. |
 | `display_order` | smallint | |
 
 #### `smes`
@@ -130,21 +144,6 @@ Subject-matter experts — your team members and external collaborators.
 | `languages` | text[] nullable | ISO-639-1 codes |
 | `external_links` | jsonb | Constrained keys: `linkedin`, `github`, `website` only |
 | `is_active` | bool | |
-
-#### `past_conferences`
-History of who attended what. Powers the past-attendance signal in the SME matcher AND the operator's verdict-driven feedback loop (ADR-0008 v2.5).
-
-| Column | Type | Purpose |
-|--------|------|---------|
-| `name` | text | 3–150 chars |
-| `year` | smallint | 1990 ≤ year ≤ current_year |
-| `series_id` | uuid nullable | FK to `conference_series` (plan 23) |
-| `attended_sme_ids` | uuid[] | Must reference active SMEs |
-| `role` | enum | `attendee`/`speaker`/`sponsor`/`organizer` |
-| `session_type` | enum nullable | `keynote`/`talk`/`panel`/`workshop`/`poster` |
-| `notes` | text nullable | ≤500 chars |
-| `imported_from` | text nullable | Provenance (CSV name, workbook upload tag) |
-| `verdict` | varchar(20) CHECK | `would_attend`/`unsure` (default)/`would_not_attend`. Drives the matcher's signed `series_memory` boost: trigram-matched upcoming events get +0.10 / +0.05 / −0.10 based on this verdict. The matcher reads it LIVE on every conferences-list render (no rescore needed, no LLM cost, no cache invalidation). Set via `PATCH /api/v1/past-conferences/{id}/verdict` from the 👍/—/👎 picker on the /past-conferences page. |
 
 ### 2. Discovered data (`app` schema)
 
@@ -207,7 +206,7 @@ The canonical, deduplicated conference list. The hot table.
 | `acceptance_rate_percent` | smallint nullable | 0–100, extracted where available |
 | `estimated_cost_usd` | integer nullable | |
 | `topics` | text[] | Denormalized for fast filtering; `conference_topics` junction is authoritative |
-| `enriched_description` | text nullable | 2–3 sentence factual description LLM-expanded from the bare name+topics+location (median 14 words → ~70 words). The matcher's embedder uses this in preference to the raw structural fields because cosine similarity needs real semantic surface area to separate "genuine fit" from "AI-adjacent." Populated automatically on ingest by `enrich_and_match_task`; can be refreshed via `scripts/enrich_and_reembed.py`. |
+| `enriched_description` | text nullable | 2–3 sentence factual description LLM-expanded from the bare name+topics+location (median 14 words → ~70 words). The matcher's embedder uses this in preference to the raw structural fields because cosine similarity needs real semantic surface area to separate "genuine fit" from "AI-adjacent." Populated automatically on ingest by `enrich_and_match_task`; can be refreshed via `python -m app.maintenance enrich-conferences`. |
 | `confidence_score` | real | Final = min(LLM-reported, structural). Drives routing (plan 15) |
 | `status` | enum | `discovered`/`needs_review`/`needs_review_pillar`/`needs_sme_review`/`low_messaging_fit`/`approved`/`rejected`/`quarantined`/`archived` |
 | `series_id` | uuid nullable | FK to `conference_series` (plan 23) |
@@ -250,10 +249,11 @@ Year-over-year linkage (NeurIPS 2025 ↔ NeurIPS 2026 ↔ NeurIPS 2027).
 
 Seeded with ~50 known series from `db/seeds/conference_series.yaml` (plan 23).
 
-### 3. Junction tables — the "graph" (`app` schema)
+### 3. Junction tables (`app` schema)
 
-These are the edges of Scout's knowledge graph. NetworkX (plan 16) reads
-from them at request time and computes traversals in memory.
+These carry the weights and scores the matcher reads. Every traversal is an
+explicit join written out at the call site — there is no ORM `relationship()`
+anywhere, because lazy loading breaks under async.
 
 | Table | Columns | What it models |
 |-------|---------|----------------|
@@ -372,19 +372,6 @@ Append-only audit trail.
 
 Index: `(at DESC)` for recent-activity views.
 
-#### `content_versions`
-"Git blame" for versioned entities (plan 25).
-
-| Column | Type |
-|--------|------|
-| `entity_type` | text |
-| `entity_id` | uuid |
-| `version_number` | integer |
-| `diff` | jsonb | jsonpatch |
-| `actor_label` | text |
-| `changed_at` | timestamptz |
-| `reason` | text nullable |
-
 ### 7. Operational (`app` schema)
 
 #### `ingest_jobs`
@@ -447,20 +434,20 @@ Plan 06 seeds the following on first migration:
 | Table | Row(s) |
 |-------|--------|
 | `embedding_models` | `nomic-embed-text-v1-5`, dim 768, active |
-| `strategic_pillars` | Four pillars (text TBD — entered via XLSX workbook per plan 31) |
+| `strategic_pillars` | Empty; the team enters pillars through the UI |
 | `conference_series` | ~50 known series from `db/seeds/conference_series.yaml` (plan 23) |
-| `topics` | Initial controlled vocabulary (also via the XLSX workbook) |
+| `topics` | Initial controlled vocabulary, entered through the UI |
 
 The team's collaborative content (audiences, SMEs, messaging documents,
 past conferences) is **not** seeded — it's the team's job to enter via
-the XLSX workbook (plan 31) on first install.
+the web UI on first install.
 
 ## Open questions
 
 These don't block plan 04's design but need answers before plan 06 ships the migrations:
 
-- **Four pillar wording** — the seed values for `strategic_pillars`. Entered via workbook anyway, so we can ship with an empty `strategic_pillars` table and let the team populate.
-- **Industry enum coverage** — open question whether to make this a Postgres enum or a `lookup_values` table. Recommend the latter so it's editable via the workbook.
+- **Four pillar wording** — the seed values for `strategic_pillars`. Entered through the UI, so we ship with an empty table and let the team populate it.
+- **Industry enum coverage** — open question whether to make this a Postgres enum or a `lookup_values` table. Recommend the latter so it stays editable.
 - **HNSW build parameters** — `m=16, ef_construction=64` is the proposed start; finalize in plan 11 once we have real corpus shape.
 
 ## Migration history

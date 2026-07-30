@@ -58,4 +58,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
+// The component and its variant helper ship together on purpose — that is
+// the shadcn/ui layout, and splitting them means every consumer imports
+// from two files. The cost is coarser hot-reload for this one file.
+// eslint-disable-next-line react-refresh/only-export-components
 export { buttonVariants };

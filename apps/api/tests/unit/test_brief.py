@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.services.brief.builder import (
+from app.services.reports import (
     _bucket,
     _cfp_section,
     _iso_date,

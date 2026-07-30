@@ -4,17 +4,15 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.services.extraction.dedup import build_slug, year_for
-from app.services.extraction.schema import (
+from app.services.extraction import (
     CfpDeadline,
     CfpDeadlineKind,
     ExtractedConference,
-)
-from app.services.extraction.validation import (
-    DISCOVERED_THRESHOLD,
-    NEEDS_REVIEW_THRESHOLD,
+    build_slug,
     validate_and_score,
+    year_for,
 )
+from app.settings import get_settings
 
 
 class TestBuildSlug:
@@ -72,13 +70,13 @@ class TestValidateAndScore:
     def test_well_populated_routes_discovered(self) -> None:
         out = validate_and_score(self._baseline(), today=date(2026, 10, 1))
         assert out.status == "discovered"
-        assert out.final_confidence >= DISCOVERED_THRESHOLD
+        assert out.final_confidence >= get_settings().extraction_confidence_discovered
 
     def test_low_llm_confidence_routes_quarantined(self) -> None:
         c = self._baseline(confidence=0.2)
         out = validate_and_score(c, today=date(2026, 10, 1))
         assert out.status == "quarantined"
-        assert out.final_confidence < NEEDS_REVIEW_THRESHOLD
+        assert out.final_confidence < get_settings().extraction_confidence_needs_review
 
     def test_bad_country_code_drops_confidence(self) -> None:
         c = self._baseline(location_country="ZZ")  # not ISO

@@ -80,7 +80,6 @@ function AgentPage() {
         question — and cites exactly where each fact came from. Use it for one-off lookups like
         "which conferences in Europe match our AI pillar?" or "which SMEs have spoken at KubeCon?"
         Everything here is <strong>read-only</strong>; no changes are made to the database.
-        For bulk changes, use the Workbook import in Settings.
       </PageBanner>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr]">
@@ -225,7 +224,13 @@ function ChatPanel({ sessionId }: { sessionId: string }) {
     },
   });
 
-  const messages = messagesQ.data?.messages ?? [];
+  // Memoised because the `?? []` fallback allocates a NEW array on every
+  // render, so any hook depending on `messages` re-ran every time even when
+  // nothing changed — including the cost reduce below.
+  const messages = useMemo(
+    () => messagesQ.data?.messages ?? [],
+    [messagesQ.data?.messages],
+  );
   const lastMessageCount = useRef(messages.length);
 
   // Auto-scroll to bottom when a new message arrives.

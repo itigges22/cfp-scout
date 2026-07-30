@@ -1,14 +1,30 @@
-"""structlog configuration.
+"""Log configuration — one structured record per event, secrets scrubbed.
 
-Two output modes:
-  * ``json``    - one structured log record per line. Production default. Parsable by jq.
-  * ``console`` - pretty-printed, colored. Dev override.
+WHAT THIS DOES
+    Wires structlog and the standard library's logging together so that our
+    code, SQLAlchemy and uvicorn all come out in one format. Two modes:
+    ``json`` (one machine-readable line per record, the production default)
+    and ``console`` (pretty and coloured, for local work). A redaction step
+    runs on every record, replacing values of keys like api_key,
+    authorization and password with ``***`` and masking anything that looks
+    like a bearer token or an ``sk-...`` key inside a string.
 
-A redaction processor scrubs sensitive substrings from every record. This is
-the LAST line of defense — code that logs a SecretStr will still leak its
-value if SecretStr.get_secret_value() is called and the result is logged.
-Don't do that. The processor catches accidents like logging a dict that
-includes an api_key key.
+HOW IT CONNECTS
+    Called by   app/main.py, at import time before anything can log
+    Reads       nothing; writes to stdout
+    Helpers     none beyond structlog and stdlib logging
+    Tuning      settings.log_level, settings.log_format
+
+WORTH KNOWING
+    Redaction is the last line of defence, not the first. Code that calls
+    ``SecretStr.get_secret_value()`` and logs the result still leaks; the
+    processor only catches accidents, such as logging a dict that happens to
+    contain an api_key entry.
+
+    ``configure_logging`` may be called more than once — later calls
+    reconfigure, and tests rely on that. ``get_logger`` here is a thin
+    convenience wrapper; in practice modules call ``structlog.get_logger``
+    directly, so main.py is this module's only importer.
 """
 
 from __future__ import annotations

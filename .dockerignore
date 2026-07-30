@@ -1,0 +1,51 @@
+# What must never enter the build context.
+#
+# There was no ignore file at all, and it cost two things.
+#
+# CORRECTNESS. The Containerfile does `COPY apps/web/ ./` after running
+# `pnpm install` inside the image. With node_modules in the context, the
+# host's macOS/arm64 binaries land on top of the container's linux/arm64
+# install and the build dies on:
+#
+#     Cannot find module @rollup/rollup-linux-arm64-gnu
+#
+# which reads like a dependency bug and is really a copy order problem.
+#
+# SIZE. The context was 2.3 GB, of which 1.7 GB is apps/api/.venv (it
+# contains torch) and 291 MB is node_modules — all of it re-resolved inside
+# the image anyway.
+
+# --- dependency trees: always rebuilt inside the image --------------------
+**/node_modules/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+
+# --- build output ---------------------------------------------------------
+# apps/api/static is the EXCEPTION: the runtime stage copies the SPA build
+# from the spa-builder stage, not from the host, so the host copy is dead
+# weight in the context.
+apps/web/dist/
+apps/api/static/
+**/*.tsbuildinfo
+
+# --- local state, never shipped -------------------------------------------
+.git/
+.github/
+backups/
+**/test-results/
+**/playwright-report/
+**/.DS_Store
+**/*.log
+
+# --- secrets: belt and braces --------------------------------------------
+# Config comes from the environment and from settings overrides written
+# through the admin UI. Nothing resembling a credential should be reachable
+# from a build.
+.env
+.env.*
+**/*.pem
+**/*.key

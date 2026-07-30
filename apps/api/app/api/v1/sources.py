@@ -1,15 +1,27 @@
-"""/api/v1/sources — CRUD for crawl sources (plan 14).
+"""/api/v1/sources — manage the sites the crawler pulls conference pages from.
 
-Endpoints:
+WHAT THIS DOES
+    A source is one crawlable place: a conference calendar, an
+    organization's events page. Endpoints list them (filter by ``enabled``
+    and ``kind``), create, fetch, partially update, soft-delete (DELETE only
+    sets ``enabled=false``), and ``POST /{id}/crawl-now``, which queues an
+    immediate scrape and returns the job id to poll via
+    ``/admin/jobs/runs``.
 
-  * ``GET    /sources``             — list, filterable by enabled + kind
-  * ``POST   /sources``             — create
-  * ``GET    /sources/{id}``        — fetch one
-  * ``PATCH  /sources/{id}``        — partial update
-  * ``DELETE /sources/{id}``        — soft delete (sets enabled=false)
-  * ``POST   /sources/{id}/crawl-now`` — enqueue an ad-hoc scrape
+HOW IT CONNECTS
+    Called by   main.py (registered as a router). Nothing in apps/web/src
+                calls these — sources are managed over the API today.
+    Writes      app.sources; crawl-now enqueues tasks.py,
+                whose runs are recorded in app.ingest_jobs
+    Helpers     services/discovery.py, app/scheduler.py
 
-The admin UI for managing sources lands in plan 14 pass 2.
+WORTH KNOWING
+    crawl-now 409s on a disabled source and obeys the same politeness rules
+    as the scheduled crawl (robots.txt, per-host rate limit). Calling it
+    twice in quick succession is safe: both calls collapse onto the same
+    ``scrape-<id>`` job id and the in-flight scrape continues, because
+    APScheduler is configured with ``replace_existing=True`` and
+    ``max_instances=1``.
 """
 
 from __future__ import annotations
@@ -21,10 +33,9 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.db.session import DbSession
 from app.scheduler import enqueue_now
-from app.schemas.common import Page
-from app.schemas.source import SourceCreate, SourceRead, SourceUpdate
-from app.services import source_service
-from app.tasks.scrape_source import scrape_source_task
+from app.schemas import Page, SourceCreate, SourceRead, SourceUpdate
+from app.services import discovery
+from app.tasks import scrape_source_task
 
 log = structlog.get_logger("scout.api.sources")
 router = APIRouter(prefix="/api/v1/sources", tags=["sources"])
@@ -38,34 +49,34 @@ async def list_sources(
     enabled: bool | None = None,
     kind: str | None = None,
 ) -> Page[SourceRead]:
-    return await source_service.list_sources(
+    return await discovery.list_sources(
         db, page=page, per_page=per_page, enabled=enabled, kind=kind
     )
 
 
 @router.get("/{source_id}", response_model=SourceRead)
 async def get_source(db: DbSession, source_id: UUID) -> SourceRead:
-    row = await source_service.get_source(db, source_id)
+    row = await discovery.get_source(db, source_id)
     return SourceRead.model_validate(row)
 
 
 @router.post("", response_model=SourceRead, status_code=status.HTTP_201_CREATED)
 async def create_source(db: DbSession, payload: SourceCreate) -> SourceRead:
-    row = await source_service.create_source(db, payload)
+    row = await discovery.create_source(db, payload)
     await db.commit()
     return SourceRead.model_validate(row)
 
 
 @router.patch("/{source_id}", response_model=SourceRead)
 async def update_source(db: DbSession, source_id: UUID, payload: SourceUpdate) -> SourceRead:
-    row = await source_service.update_source(db, source_id, payload)
+    row = await discovery.update_source(db, source_id, payload)
     await db.commit()
     return SourceRead.model_validate(row)
 
 
 @router.delete("/{source_id}", status_code=status.HTTP_200_OK)
 async def disable_source(db: DbSession, source_id: UUID) -> dict:
-    row = await source_service.disable_source(db, source_id)
+    row = await discovery.disable_source(db, source_id)
     await db.commit()
     return {"id": str(row.id), "enabled": row.enabled}
 
@@ -82,7 +93,7 @@ async def crawl_now(db: DbSession, source_id: UUID) -> dict:
     handle the dedupe).
     """
     # Existence check up-front so we 404 rather than enqueueing a doomed job.
-    src = await source_service.get_source(db, source_id)
+    src = await discovery.get_source(db, source_id)
     if not src.enabled:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

@@ -108,7 +108,7 @@ cross-tenant, account takeover.
 | Control | Status | Where |
 |---|---|---|
 | Backups via `make db-dump`; restore tested | ✅ | `Makefile`, `docs/ops/backups.md` |
-| `audit_log` + `content_versions` append-only at role level | ✅ | `02-roles-and-schemas.sql` (app role only has INSERT+SELECT on audit) |
+| `audit_log` append-only at role level | ✅ | `02-roles-and-schemas.sql` (app role only has INSERT+SELECT on audit) |
 | `app` role is not the Postgres superuser | ✅ | runtime uses `app`; superuser is `scout` (POSTGRES_USER) only via Alembic |
 | PII redaction in logs | ✅ | structlog redactor scrubs secret-shaped patterns; SME profiles never logged in full |
 

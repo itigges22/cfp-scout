@@ -1,11 +1,25 @@
-"""/api/v1/uploads — PDF upload + Docling-driven ingest.
+"""POST /api/v1/uploads/pdf — attach a PDF to an existing record and index it.
 
-Single endpoint for now: POST /api/v1/uploads/pdf. Multipart upload with
-`file` + form fields `owner_type`, `owner_id`, `purpose`.
+WHAT THIS DOES
+    Takes a multipart upload (``file`` plus form fields ``owner_type``,
+    ``owner_id``, ``purpose``), parses the PDF with Docling, splits the text
+    into chunks, embeds them, and stores them against the owning entity.
+    Returns the ingest job id, file path, sha256, page count and chunk
+    count. Validation problems (size, wrong MIME type, unknown owner_type)
+    give 422; processing failures give 500 with the ingest_jobs id in the
+    message.
 
-The flow runs synchronously inside the request (Docling parse + LLM embed).
-For typical PDFs this completes in seconds; very large PDFs may take longer
-and plan 13 (background jobs) will move long-running ingests to a queue.
+HOW IT CONNECTS
+    Called by   main.py (registered as a router). No code in apps/web/src
+                posts here — the UI uses the per-resource upload endpoints
+                (/messaging-documents/upload, /talks/upload) instead.
+    Writes      vectors.document_chunks and app.ingest_jobs; the PDF file
+                itself lands on disk
+    Helpers     services/pdf/ (pipeline, parser, storage)
+
+WORTH KNOWING
+    Parsing and embedding both run inside the request, so a large PDF holds
+    the HTTP connection open for the whole job.
 """
 
 from __future__ import annotations
@@ -17,9 +31,12 @@ import structlog
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from app.db.session import DbSession
-from app.services.pdf import process_pdf_upload
-from app.services.pdf.pipeline import SUPPORTED_OWNER_TYPES, PdfPipelineError
-from app.services.pdf.storage import PdfRejected
+from app.services.pdf import (
+    SUPPORTED_OWNER_TYPES,
+    PdfPipelineError,
+    PdfRejected,
+    process_pdf_upload,
+)
 
 log = structlog.get_logger("scout.api.uploads")
 router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
@@ -38,7 +55,7 @@ async def upload_pdf(
     owner_id: Annotated[UUID, Form(description="The existing entity to attach to.")],
     purpose: Annotated[
         str,
-        Form(description="messaging / audience / sme_bio / past_conference"),
+        Form(description="messaging / audience / sme_bio"),
     ],
 ) -> dict:
     """Upload a PDF, parse it with Docling, embed it, attach to the owner entity.

@@ -308,9 +308,8 @@ the full pipeline narrative.
 | Router (web) | TanStack Router | Typed routes, file-based |
 | State (web) | TanStack Query | Server state; pairs with `openapi-fetch` |
 | UI primitives | shadcn/ui + Tailwind v4 | Copy-into-repo, full customization |
-| DB | Postgres 16 + pgvector | Single store; HNSW vector search; Apache AGE not needed (NetworkX in-mem) |
+| DB | Postgres 16 + pgvector | Single store; HNSW vector search |
 | Background jobs | APScheduler in-process | No Redis; jobs persisted in Postgres |
-| Graph | NetworkX in-memory + Postgres junctions | Obsidian-style derived graph |
 | LLM client | `openai` SDK pointed at a configurable base_url | Provider-agnostic |
 | Scraping | Crawl4AI + `icalendar` + dedicated wikicfp parser | No Playwright |
 | Page fetch (discovery) | Crawl4AI `AsyncHTTPCrawlerStrategy` | HTTP-only mode keeps the api image lean; no headless browser dependency |
@@ -333,7 +332,7 @@ in plan 06.
 User-entered data is governed by strict Pydantic v2 schemas in
 `apps/api/app/schemas/` — `extra='forbid'`, length caps, enums, ISO-3166/639-1
 validation. The same schemas are reused by the manual-entry UI (plan 09)
-and the XLSX workbook import (plan 31), so both paths apply identical rules.
+so every write path applies identical rules.
 Operator runbook: [`ops/data-guardrails.md`](ops/data-guardrails.md).
 
 ## Secrets

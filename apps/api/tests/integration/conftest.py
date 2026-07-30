@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncGenerator, Generator
+from pathlib import Path
 from typing import Any
 
 import psycopg2  # type: ignore[import-untyped]
 import pytest
-import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -117,8 +117,14 @@ def run_migrations(pg_container: PostgresContainer, pg_sync_url: str) -> None:
         f"postgresql+asyncpg://scout:scoutdev@{host}:{port}/scout_test"
     )
 
-    api_dir = "/Users/itigges/Desktop/SCOUT/apps/api"
+    # tests/integration/conftest.py -> tests/integration -> tests -> apps/api
+    api_dir = str(Path(__file__).resolve().parents[2])
     env = {**os.environ, "PYTHONPATH": api_dir}
+    # alembic/env.py calls get_settings() at import, so the migration
+    # subprocess needs the non-DB settings too even though it never uses them.
+    env.setdefault("LLM_BASE_URL", "https://llm.example.invalid/v1")
+    env.setdefault("LLM_API_KEY", "sk-test-not-real")
+    env.setdefault("SCRAPER_USER_AGENT", "Scout-Test/1.0")
 
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
@@ -204,25 +210,32 @@ async def async_client(  # type: ignore[misc]
 
 @pytest.fixture()
 async def clean_db(pg_async_url: str, run_migrations: None) -> AsyncGenerator[None, None]:  # type: ignore[misc]
-    """Truncate all app.* tables after the test to leave a clean slate."""
-    yield
+    """Truncate every app.* table before AND after the test.
+
+    The table list is read from ``pg_tables`` rather than hardcoded, so it
+    cannot drift out of step with the migrations. Truncating on the way in
+    as well as out isolates a test from anything that ran before it,
+    including tests that do not use this fixture.
+    """
     engine = create_async_engine(pg_async_url, echo=False, future=True)
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                "TRUNCATE "
-                "app.talk_submissions, app.talk_tag_assignments, "
-                "app.talk_topics, app.talk_tags, app.talks, "
-                "app.pillar_gtm_strategy, app.pillar_content_roadmap, "
-                "app.sme_pillars, app.sme_topics, app.sme_audiences, "
-                "app.conference_topics, app.conference_pillars, "
-                "app.conference_smes, app.conference_audiences, "
-                "app.conference_sources, app.messaging_pillars, "
-                "app.decisions, app.matches, "
-                "app.conferences, app.audience_profiles, app.smes, "
-                "app.topics, app.strategic_pillars, app.conference_series, "
-                "app.past_conferences, app.messaging_documents "
-                "RESTART IDENTITY CASCADE"
+
+    async def _truncate() -> None:
+        async with engine.begin() as conn:
+            tables = (
+                await conn.execute(
+                    text(
+                        "SELECT tablename FROM pg_tables WHERE schemaname = 'app'"
+                    )
+                )
+            ).scalars().all()
+            if not tables:
+                return
+            qualified = ", ".join(f"app.{t}" for t in sorted(tables))
+            await conn.execute(
+                text(f"TRUNCATE {qualified} RESTART IDENTITY CASCADE")
             )
-        )
+
+    await _truncate()
+    yield
+    await _truncate()
     await engine.dispose()

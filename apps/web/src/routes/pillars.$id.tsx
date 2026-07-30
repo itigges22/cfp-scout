@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { FileText, Loader2, Plus, Trash2, Upload } from "lucide-react";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { FileText, Loader2, Plus, Trash2, Upload, RotateCcw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { useUnsavedWorkWarning } from "@/hooks/useUnsavedWorkWarning";
+import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -25,6 +27,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { SmeFormDialog } from "@/components/sme/SmeFormDialog";
+import { StatusPill } from "@/components/conferences/StatusPill";
 import { ApiError, audiencesApi, messagingApi, pillarsApi, smesApi, talksApi } from "@/lib/api";
 import type {
   AudienceProfileCreate,
@@ -40,7 +44,7 @@ import type {
   TalkRead,
 } from "@/lib/api-types";
 import { PageHeader } from "@/routes/dashboard";
-import { ErrorBox, Field, ListField } from "@/routes/audiences";
+import { ErrorBox, Field, ListField } from "@/components/form";
 
 export const Route = createFileRoute("/pillars/$id")({
   component: PillarDetailPage,
@@ -239,7 +243,201 @@ function OverviewTab({ pillar }: { pillar: PillarRead }) {
           </CardContent>
         </Card>
       ) : null}
+      <PerformanceCard pillarId={pillar.id} />
+      <TopConferencesCard pillarId={pillar.id} />
     </div>
+  );
+}
+
+// All numbers computed server-side by /pillars/{id}/analytics from the
+// "who is going" rows + per-conference outcome fields — this component
+// only renders. NOTE the attribution rule: a conference aligned to two
+// pillars counts toward both, so never total these across pillars.
+function PerformanceCard({ pillarId }: { pillarId: string }) {
+  const q = useQuery({
+    queryKey: ["pillars", pillarId, "analytics"],
+    queryFn: () => pillarsApi.analytics(pillarId),
+  });
+
+  if (q.isLoading) {
+    return (
+      <Card className="col-span-full">
+        <CardContent className="py-6">
+          <Skeleton className="h-24 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+  if (q.isError || !q.data) return null;
+  const a = q.data;
+
+  const verdictLabel: Record<string, string> = {
+    would_attend: "Would attend again",
+    unsure: "Unsure",
+    would_not_attend: "Would not attend again",
+  };
+
+  return (
+    <Card className="col-span-full">
+      <CardHeader>
+        <CardTitle className="text-sm">Performance</CardTitle>
+        <p className="mt-1 text-xs text-fg-muted">
+          From attendance tracking on conferences aligned to this pillar.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <PerfStat label="Aligned conferences" value={a.conferences_aligned} />
+          <PerfStat label="Attended" value={a.conferences_attended} />
+          <PerfStat label="Planned" value={a.conferences_planned} />
+          <PerfStat label="Total spend" value={`$${a.spend_usd_total.toLocaleString()}`} />
+          <PerfStat label="Leads" value={a.leads_total} />
+          <PerfStat
+            label="Cost per lead"
+            value={a.cost_per_lead_usd != null ? `$${a.cost_per_lead_usd}` : "—"}
+          />
+        </div>
+        {Object.keys(a.verdicts).length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {Object.entries(a.verdicts).map(([v, n]) => (
+              <span
+                key={v}
+                className="rounded-full border border-border bg-surface-2 px-3 py-1 text-xs text-fg-muted"
+              >
+                {verdictLabel[v] ?? v}: {n}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {a.attended.length > 0 ? (
+          <div className="mt-4 overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Conference</TableHead>
+                  <TableHead className="text-right">People</TableHead>
+                  <TableHead className="text-right">Spend</TableHead>
+                  <TableHead className="text-right">Leads</TableHead>
+                  <TableHead>Worth it?</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {a.attended.map((r) => (
+                  <TableRow key={r.conference_id}>
+                    <TableCell className="font-medium">{r.conference_name}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.n_people}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.spend_usd != null ? `$${r.spend_usd.toLocaleString()}` : "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.leads_generated ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-fg-muted">
+                      {r.attendance_verdict ? (verdictLabel[r.attendance_verdict] ?? r.attendance_verdict) : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-fg-muted">
+            No attended conferences recorded yet — mark people as attended on a
+            conference page and fill in "How it went" to populate this.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PerfStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-lg border border-border-subtle bg-surface-2 px-3 py-2.5">
+      <p className="text-xs text-fg-muted">{label}</p>
+      <p className="text-xl font-bold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+// Ranked by the matcher's per-pillar alignment edge (conference_pillars),
+// not by top-pillar assignment — so a conference relevant to two pillars
+// shows up on both pages, each with its own ordering.
+function TopConferencesCard({ pillarId }: { pillarId: string }) {
+  const q = useQuery({
+    queryKey: ["pillars", pillarId, "conferences"],
+    queryFn: () => pillarsApi.listConferences(pillarId),
+  });
+
+  return (
+    <Card className="col-span-full">
+      <CardHeader>
+        <CardTitle className="text-sm">Top conferences for this pillar</CardTitle>
+        <p className="mt-1 text-xs text-fg-muted">
+          Ranked by how well each conference matches this pillar specifically.
+          Overall is the same blended score the conference pages show.
+        </p>
+      </CardHeader>
+      <CardContent className="p-0">
+        {q.isLoading ? (
+          <div className="p-6">
+            <Skeleton className="h-32 w-full" />
+          </div>
+        ) : q.isError ? (
+          <div className="p-6">
+            <ErrorBox error={q.error} />
+          </div>
+        ) : (q.data ?? []).length === 0 ? (
+          <p className="p-6 text-sm text-fg-muted">
+            No scored conferences align with this pillar yet. Run the matcher
+            after adding messaging or pillar content.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Conference</TableHead>
+                <TableHead className="text-right">Pillar fit</TableHead>
+                <TableHead className="text-right">Overall</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Starts</TableHead>
+                <TableHead>CFP closes</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(q.data ?? []).map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell className="font-medium">
+                    <Link
+                      to="/conferences/$id"
+                      params={{ id: c.id }}
+                      className="hover:underline"
+                    >
+                      {c.name}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {Math.round(c.pillar_score * 100)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {c.overall_score != null ? Math.round(c.overall_score * 100) : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <StatusPill status={c.status} />
+                  </TableCell>
+                  <TableCell className="text-fg-muted">
+                    {c.start_date ? formatDate(c.start_date) : "—"}
+                  </TableCell>
+                  <TableCell className="text-fg-muted">
+                    {c.cfp_close_at ? formatDate(c.cfp_close_at) : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -307,6 +505,7 @@ function TalksTab({ pillarId }: { pillarId: string }) {
 function SmesTab({ pillarId }: { pillarId: string }) {
   const qc = useQueryClient();
   const [showLink, setShowLink] = useState(false);
+  const [showCreateSme, setShowCreateSme] = useState(false);
 
   const pillarSmesQ = useQuery({
     queryKey: ["pillars", pillarId, "smes"],
@@ -319,7 +518,11 @@ function SmesTab({ pillarId }: { pillarId: string }) {
 
   const unlink = useMutation({
     mutationFn: (smeId: string) => pillarsApi.unlinkSme(pillarId, smeId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["pillars", pillarId, "smes"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["pillars", pillarId, "smes"] });
+      // The SME directory shows pillar links too.
+      void qc.invalidateQueries({ queryKey: ["smes"] });
+    },
   });
 
   if (pillarSmesQ.isLoading || allSmesQ.isLoading) return <Skeleton className="h-40 w-full" />;
@@ -332,10 +535,18 @@ function SmesTab({ pillarId }: { pillarId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
-        <Button size="sm" onClick={() => setShowLink(true)}>
+      {/* Two actions, because there are two situations: the person already
+          exists (link them) or they do not (create them, already attached to
+          this pillar). Creating used to live on a separate top-level page,
+          which meant leaving the pillar to add someone to it. */}
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="outline" onClick={() => setShowLink(true)}>
           <Plus className="mr-2 size-4" />
-          Link SME
+          Link existing
+        </Button>
+        <Button size="sm" onClick={() => setShowCreateSme(true)}>
+          <Plus className="mr-2 size-4" />
+          New SME
         </Button>
       </div>
 
@@ -387,6 +598,12 @@ function SmesTab({ pillarId }: { pillarId: string }) {
           </CardContent>
         </Card>
       )}
+
+      <SmeFormDialog
+        open={showCreateSme}
+        onOpenChange={setShowCreateSme}
+        defaultPillarId={pillarId}
+      />
 
       <LinkSmeDialog
         open={showLink}
@@ -486,13 +703,21 @@ function AudiencesTab({ pillarId }: { pillarId: string }) {
   const [editing, setEditing] = useState<AudienceProfileRead | null>(null);
 
   const q = useQuery({
+    // Scoped QUERY key — this list is one pillar's audiences. Invalidations
+    // below use the bare ["audiences"] prefix, which still matches this.
     queryKey: ["audiences", { pillar_id: pillarId }],
     queryFn: () => audiencesApi.list({ per_page: 100, pillar_id: pillarId }),
   });
 
+  // Deactivate is reversible; without this the row was stranded inactive
+  // with no action available at all.
+  const restoreAudience = useMutation({
+    mutationFn: (a: AudienceProfileRead) => audiencesApi.restore(a),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["audiences"] }),
+  });
   const deactivate = useMutation({
     mutationFn: (id: string) => audiencesApi.deactivate(id),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["audiences", { pillar_id: pillarId }] }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["audiences"] }),
   });
 
   if (q.isLoading) return <Skeleton className="h-40 w-full" />;
@@ -552,10 +777,22 @@ function AudiencesTab({ pillarId }: { pillarId: string }) {
                           variant="ghost"
                           onClick={(e) => { e.stopPropagation(); deactivate.mutate(a.id); }}
                           disabled={deactivate.isPending}
+                          title="Deactivate"
                         >
                           <Trash2 className="size-4" />
                         </Button>
-                      ) : null}
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => { e.stopPropagation(); restoreAudience.mutate(a); }}
+                          disabled={restoreAudience.isPending}
+                          title="Restore"
+                        >
+                          <RotateCcw className="mr-1 size-4" />
+                          Restore
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -571,7 +808,7 @@ function AudiencesTab({ pillarId }: { pillarId: string }) {
         pillarId={pillarId}
         onOpenChange={(o) => { if (!o) setShowCreate(false); }}
         onSaved={() => {
-          void qc.invalidateQueries({ queryKey: ["audiences", { pillar_id: pillarId }] });
+          void qc.invalidateQueries({ queryKey: ["audiences"] });
           void qc.invalidateQueries({ queryKey: ["pillars"] });
           setShowCreate(false);
         }}
@@ -582,7 +819,7 @@ function AudiencesTab({ pillarId }: { pillarId: string }) {
         pillarId={pillarId}
         onOpenChange={(o) => { if (!o) setEditing(null); }}
         onSaved={() => {
-          void qc.invalidateQueries({ queryKey: ["audiences", { pillar_id: pillarId }] });
+          void qc.invalidateQueries({ queryKey: ["audiences"] });
           setEditing(null);
         }}
       />
@@ -709,6 +946,32 @@ const DOC_KIND_LABEL: Record<DocKind, string> = {
   other: "Document",
 };
 
+
+/** Human names for the save-schema fields, for readable validation errors. */
+const FIELD_LABELS: Record<string, string> = {
+  title: "Title",
+  elevator_pitch: "Elevator pitch",
+  target_personas: "Target personas",
+  key_themes: "Key themes",
+  talking_points: "Talking points",
+  differentiators: "Differentiators",
+  competitive_position: "Competitive position",
+};
+
+/** "One or more fields failed validation" is useless — say which and why. */
+function describeSaveError(err: unknown): string {
+  if (err instanceof ApiError) {
+    const fields = Object.entries(err.fieldErrors());
+    if (fields.length) {
+      return fields
+        .map(([k, msg]) => `${FIELD_LABELS[k.split(".")[0] ?? k] ?? k}: ${msg}`)
+        .join(" · ");
+    }
+    return err.message;
+  }
+  return String((err as Error).message);
+}
+
 type UploadPhase = "idle" | "extracting" | "review" | "saving";
 
 function PillarDocTab({ pillarId, docKind }: { pillarId: string; docKind: DocKind }) {
@@ -718,15 +981,19 @@ function PillarDocTab({ pillarId, docKind }: { pillarId: string; docKind: DocKin
   const [draft, setDraft] = useState<MessagingDocUploadPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const label = DOC_KIND_LABEL[docKind];
+  // Nothing is persisted until the review is confirmed, so a refresh during
+  // extraction or review silently discards everything. Intercept it.
+  useUnsavedWorkWarning(phase !== "idle");
 
   const q = useQuery({
+    // Scoped QUERY key; bare ["messaging"] invalidations still match it.
     queryKey: ["messaging", { pillar_id: pillarId, doc_kind: docKind }],
     queryFn: () => messagingApi.list({ pillar_id: pillarId, per_page: 50 }),
   });
 
   const deactivate = useMutation({
     mutationFn: (id: string) => messagingApi.deactivate(id),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["messaging", { pillar_id: pillarId, doc_kind: docKind }] }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["messaging"] }),
   });
 
   const extractMut = useMutation({
@@ -738,12 +1005,12 @@ function PillarDocTab({ pillarId, docKind }: { pillarId: string; docKind: DocKin
   const saveMut = useMutation({
     mutationFn: (body: MessagingDocumentCreate) => messagingApi.create(body, "ui_admin"),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["messaging", { pillar_id: pillarId, doc_kind: docKind }] });
+      void qc.invalidateQueries({ queryKey: ["messaging"] });
       setPhase("idle");
       setDraft(null);
       setError(null);
     },
-    onError: (err) => { setError(String((err as Error).message)); setPhase("review"); },
+    onError: (err) => { setError(describeSaveError(err)); setPhase("review"); },
   });
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -823,7 +1090,11 @@ function PillarDocTab({ pillarId, docKind }: { pillarId: string; docKind: DocKin
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {phase === "extracting" && (
-            <span className="text-xs text-fg-muted">Extracting fields…</span>
+            <span className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-1.5 text-xs text-warning">
+              <Loader2 className="size-3.5 animate-spin" />
+              Reading the PDF and extracting fields — typically 20–60 seconds.
+              Stay on this page: nothing is saved until you review.
+            </span>
           )}
           <Button
             size="sm"
@@ -903,7 +1174,7 @@ function DocCard({
           {!doc.is_active && <Badge variant="muted">inactive</Badge>}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-fg-subtle">{new Date(doc.updated_at).toLocaleDateString()}</span>
+          <span className="text-xs text-fg-subtle">{formatDate(doc.updated_at)}</span>
           <button
             type="button"
             className="text-xs text-fg-muted underline hover:text-fg"

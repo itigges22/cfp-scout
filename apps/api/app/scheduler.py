@@ -1,30 +1,28 @@
-"""In-process APScheduler (plan 13).
+"""The scheduler: the task registry, the cron table, and its lifecycle.
 
-Why in-process:
-  * Single user = single host. No distributed queue needed.
-  * Postgres jobstore (``jobs.apscheduler_jobs``) survives ``make down/up``,
-    so scheduled and queued work isn't lost on restarts.
-  * One fewer container to maintain.
-  * Cron + ad-hoc jobs unified in one library.
-  * AsyncIOExecutor runs alongside FastAPI's event loop with no extra threads.
+WHAT THIS DOES
+    Owns the APScheduler instance, the registry that maps a task name to
+    its callable, ``enqueue_task`` for firing one now, and
+    ``register_jobs`` which installs the cron entries at startup.
 
-The scheduler is exposed as a module-level singleton via :func:`get_scheduler`.
-:func:`start_scheduler` / :func:`stop_scheduler` are invoked from
-``app/lifespan.py``. After start, ``register_jobs`` materialises the cron
-schedule.
+HOW IT CONNECTS
+    Called by   app/lifespan.py (embedded mode) and
+                app/scheduler_standalone.py (its own process)
+    Fires       app/tasks.py
+    Tuning      settings.scheduler_mode, settings.scheduler_timezone
 
-Adding a task:
-  1. Implement the async function under ``app/tasks/`` accepting only
-     JSON-serialisable kwargs (APScheduler serialises kwargs for the
-     persistent jobstore).
-  2. Register it in :func:`register_jobs` for cron, or enqueue ad-hoc via
-     ``get_scheduler().add_job(func, 'date', ...)``.
+WORTH KNOWING
+    ``jobs.py`` existed to hold ``register_jobs`` and was described as the
+    one module allowed to import app.tasks — a rule about imports, kept by
+    putting it in a file that only the scheduler called. The rule is the
+    same now and the code is where it is used.
 
-Idempotency:
-  Tasks are written so re-running with the same arguments is safe (e.g.
-  ``embed_owner`` deletes prior chunks before inserting). APScheduler's
-  ``max_instances=1`` + ``coalesce=True`` defaults below serialise concurrent
-  fires with the same job-id.
+    Exactly one scheduler may run. In embedded mode a multi-replica API
+    would start one per replica, which is why the standalone deployment
+    exists and why ``scheduler_mode`` is not cosmetic.
+
+    APScheduler coalesces missed fires and runs one instance per job id,
+    so enqueuing the same id twice collapses into one run.
 """
 
 from __future__ import annotations
@@ -41,17 +39,18 @@ from app.settings import get_settings
 
 log = structlog.get_logger("scout.scheduler")
 
+
+# ==========================================================================
+# scheduler.py
+# ==========================================================================
+
+
 _scheduler: AsyncIOScheduler | None = None
 
-# Leader-election lock key. Picked once + frozen so every worker process
-# competes for the same advisory slot. Value is arbitrary as long as it's
-# stable and doesn't collide with Postgres' own usage (which only takes
-# user-supplied keys we provide here).
+
 _LEADER_LOCK_KEY = 0x5C0_5CCD  # ad-hoc "scout-scheduler" tag
 
-# Holds the psycopg connection that owns the advisory lock for this process.
-# We keep the connection open for the lifetime of the api worker so the lock
-# stays acquired. ``stop_scheduler`` closes it on shutdown.
+
 _leader_conn: psycopg.Connection | None = None
 
 
@@ -162,21 +161,24 @@ def _try_acquire_leader_lock() -> bool:
     return True
 
 
-def start_scheduler() -> None:
+def start_scheduler() -> bool:
     """Start the singleton scheduler + register cron jobs in the leader worker.
 
-    Safe to call once per process. Workers that don't win the leader lock
-    log ``scheduler.passive`` and return — they handle API traffic but don't
-    fire jobs.
+    Returns True if this process became the leader and is now firing jobs,
+    False if another process holds the lock.
+
+    The return value matters for ``scheduler_standalone``: that process
+    exists ONLY to be the leader, so "I am passive" is a failure there,
+    even though it is the normal outcome for an API worker.
     """
     if not _try_acquire_leader_lock():
         log.info("scheduler.passive", reason="leader_lock_held_by_other_worker")
-        return
+        return False
 
     scheduler = get_scheduler()
     if scheduler.running:
         log.warning("scheduler.already_running")
-        return
+        return True
     scheduler.start()
     log.info(
         "scheduler.started",
@@ -184,7 +186,7 @@ def start_scheduler() -> None:
         executors=list(scheduler._executors.keys()),
         jobstores=list(scheduler._jobstores.keys()),
     )
-    register_jobs(scheduler)
+    return True
 
 
 def start_scheduler_paused() -> None:
@@ -230,87 +232,33 @@ def stop_scheduler() -> None:
         _leader_conn = None
 
 
-def register_jobs(scheduler: AsyncIOScheduler) -> None:
-    """Register the recurring (cron) schedule.
+_TASKS: dict[str, Any] = {}
 
-    Each ``add_job`` uses an explicit ``id=`` so re-runs are idempotent —
-    if the job already exists in the jobstore (from a prior boot), it gets
-    replaced rather than duplicated.
 
-    Real implementations live in :mod:`app.tasks`. Tasks land plan-by-plan:
-      * 13 (this plan): heartbeat — sanity check that the scheduler is alive
-      * 14: ``poll_sources_due_for_crawl`` — every 15 min
-      * 17: ``recompute_upcoming_matches`` — daily 04:00
-      * 23: ``link_conference_series`` — weekly Mon 02:00
-      * 24: ``build_cfp_digest`` — daily 09:00
-      * 25: ``run_decay_pass`` — daily 03:00
+def register_task(name: str, func: Any) -> None:
+    """Make ``name`` enqueueable. Called once per task at startup."""
+    _TASKS[name] = func
 
-    Plans 14-25 will extend this function; we don't pre-register stubs because
-    AsyncIOScheduler eagerly imports the target function and we'd rather not
-    ship broken imports.
+
+def enqueue_task(
+    name: str,
+    *,
+    job_id: str | None = None,
+    kwargs: dict[str, Any] | None = None,
+) -> str:
+    """Queue a registered task by name.
+
+    The trade against importing the function directly: a typo here fails at
+    call time rather than import time. ``test_task_registry.py`` closes that
+    gap by asserting every name used anywhere in app/services is registered.
     """
-    from app.tasks.build_cfp_digest import build_cfp_digest_task
-    from app.tasks.heartbeat import heartbeat
-    from app.tasks.scrape_source import poll_sources_due_for_crawl
-
-    scheduler.add_job(
-        heartbeat,
-        trigger="interval",
-        minutes=10,
-        id="heartbeat",
-        replace_existing=True,
-    )
-    # Plan 14: every 15 minutes, scan ``sources`` for rows whose
-    # ``last_crawled_at`` is older than ``crawl_cadence`` and enqueue a
-    # scrape each. Per-source ``politeness_delay_seconds`` enforces inside
-    # the crawl itself.
-    scheduler.add_job(
-        poll_sources_due_for_crawl,
-        trigger="interval",
-        minutes=15,
-        id="scrape_poll",
-        replace_existing=True,
-    )
-    # Plan 24: daily 09:00 (scheduler timezone, default UTC) CFP digest.
-    # Builds the bell-badge notification. Idempotent within a day.
-    scheduler.add_job(
-        build_cfp_digest_task,
-        trigger="cron",
-        hour=9,
-        minute=0,
-        id="cfp_digest",
-        replace_existing=True,
-    )
-    # Plan 25: daily 03:00 decay pass. Recomputes conferences.freshness_score
-    # and archives events whose end_date is more than 90d old. No-op when
-    # DECAY_ENABLED=false (the task short-circuits).
-    from app.tasks.run_decay_pass import run_decay_pass_task
-
-    scheduler.add_job(
-        run_decay_pass_task,
-        trigger="cron",
-        hour=3,
-        minute=0,
-        id="decay_pass",
-        replace_existing=True,
-    )
-    # Plan 35: daily autonomous discovery (default 06:00 UTC). Searches
-    # the web via the configured provider, fetches with Crawl4AI, and
-    # runs every successful crawl through the extraction pipeline. No-op
-    # when DISCOVERY_ENABLED=false.
-    from app.settings import get_settings
-    from app.tasks.run_discovery import run_discovery_task
-
-    discovery_hour = int(getattr(get_settings(), "discovery_cron_hour_utc", 6))
-    scheduler.add_job(
-        run_discovery_task,
-        trigger="cron",
-        hour=discovery_hour,
-        minute=0,
-        id="discovery",
-        replace_existing=True,
-    )
-    log.info("scheduler.jobs_registered", count=len(scheduler.get_jobs()))
+    func = _TASKS.get(name)
+    if func is None:
+        raise KeyError(
+            f"No task registered under {name!r}. Known: {sorted(_TASKS)}. "
+            f"Tasks are registered in app/scheduler.py at startup."
+        )
+    return enqueue_now(func, job_id=job_id, kwargs=kwargs)
 
 
 def enqueue_now(

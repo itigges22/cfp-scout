@@ -1,54 +1,141 @@
 /**
- * Scout API types — frontend mirror of the Pydantic schemas in
- * `apps/api/app/schemas/` (plan 05) and the matching routes (plan 09 backend).
+ * The SPA's view of the API contract.
  *
- * Hand-written for now so the SPA can compile against typed contracts before
- * the api is reachable from this build host. `pnpm gen:api` will replace this
- * file with one generated from /api/openapi.json — at which point the
- * hand-written types disappear and the autogen takes over.
+ * WHAT THIS IS
+ *   A thin facade over `api-schema.ts`, which is GENERATED from the live
+ *   server by `pnpm gen:api` and must never be hand-edited. Everything in
+ *   the first block below is re-exported straight from the server's own
+ *   OpenAPI schema, so a renamed or removed field is a TypeScript error
+ *   here rather than an `undefined` at runtime.
  *
- * Until then, **keep this file in sync with `apps/api/app/schemas/` by hand
- * whenever you change a Pydantic schema or add a column to plan 04**.
+ * WHY IT EXISTS
+ *   `openapi-typescript` emits `components["schemas"]["Foo"]`, but ~50
+ *   files already import a flat `Foo`. The facade bridges the two without
+ *   touching every call site.
+ *
+ * HISTORY WORTH KNOWING
+ *   This file used to be 934 hand-written lines whose own header said
+ *   `pnpm gen:api` would replace it — except gen:api pointed at
+ *   `../api/openapi.json`, which never existed, so it had never once been
+ *   runnable. It was typing a `fetch` cast, not a contract: six pillar
+ *   endpoints stayed in the client long after a migration dropped the
+ *   tables underneath them, and nothing complained.
  */
 
-// ---------------------------------------------------------------------------
-// Event kinds — single source of truth for the frontend
-// ---------------------------------------------------------------------------
-export const EVENT_KINDS = ["corporate", "grassroot", "developer_day", "research", "hackathon"] as const;
-export type EventKind = typeof EVENT_KINDS[number];
-export const EVENT_KIND_LABELS: Record<EventKind, string> = {
-  corporate:     "Corporate",
-  grassroot:     "Grassroot",
-  developer_day: "Developer Day",
-  research:      "Research",
-  hackathon:     "Hackathon",
-};
+import type { components } from "./api-schema";
 
-// ---------------------------------------------------------------------------
-// Enums (mirror app/schemas/common.py)
-// ---------------------------------------------------------------------------
-export type RoleSeniority = "executive" | "director" | "manager" | "ic" | "mixed";
-export type MessagingSourceType = "structured" | "pdf";
-export type PastConferenceRole = "attendee" | "speaker" | "sponsor" | "organizer";
-export type PastConferenceSessionType =
-  | "keynote"
-  | "talk"
-  | "panel"
-  | "workshop"
-  | "poster";
+type S = components["schemas"];
 
-// ---------------------------------------------------------------------------
-// Shared shapes
-// ---------------------------------------------------------------------------
-/** Generic paginated response from any list endpoint. */
-export interface Page<T> {
-  items: T[];
-  total: number;
-  page: number;
-  per_page: number;
+export type { components, paths, operations } from "./api-schema";
+
+/* ------------------------------------------------------------------ *
+ * Derived from the server. Add nothing here by hand — regenerate.
+ * ------------------------------------------------------------------ */
+
+export type AudienceProfileCreate = S["AudienceProfileCreate"];
+export type AudienceProfileRead = S["AudienceProfileRead"];
+export type AudienceProfileUpdate = S["AudienceProfileUpdate"];
+export type ConferenceCreate = S["ConferenceCreate"];
+export type ConferenceCreateResponse = S["ConferenceCreateResponse"];
+export type ConferenceListResponse = S["ConferenceListResponse"];
+export type ConferenceMatchResponse = S["ConferenceMatchResponse"];
+export type ConferenceRead = S["ConferenceRead"];
+export type ConferenceSmesResponse = S["ConferenceSmesResponse"];
+export type ConferenceTalksResponse = S["ConferenceTalksResponse"];
+export type ImportColumnSpec = S["ImportColumnSpec"];
+export type ImportResult = S["ImportResult"];
+export type AnalyticsOverview = S["AnalyticsOverview"];
+export type PillarAnalytics = S["PillarAnalytics"];
+export type PillarConferenceItem = S["PillarConferenceItem"];
+export type SmeAnalytics = S["SmeAnalytics"];
+export type TalkMatchRead = S["TalkMatchRead"];
+export type DashboardStats = S["DashboardStats"];
+export type DecisionCreate = S["DecisionCreate"];
+export type DecisionRead = S["DecisionRead"];
+export type MessagingDocUploadPreview = S["MessagingDocUploadPreview"];
+export type MessagingDocumentCreate = S["MessagingDocumentCreate"];
+export type MessagingDocumentRead = S["MessagingDocumentRead"];
+export type MessagingDocumentUpdate = S["MessagingDocumentUpdate"];
+export type NotificationRead = S["NotificationRead"];
+export type NotificationsList = S["NotificationsList"];
+export type PillarCreate = S["PillarCreate"];
+export type PillarRead = S["PillarRead"];
+export type PillarUpdate = S["PillarUpdate"];
+export type ReuseCheckResult = S["ReuseCheckResult"];
+export type RoleSeniority = S["RoleSeniority"];
+export type SmeCreate = S["SmeCreate"];
+export type SmePillarLink = S["SmePillarLink"];
+export type SmePillarRead = S["SmePillarRead"];
+export type SmeRead = S["SmeRead"];
+export type SmeUpdate = S["SmeUpdate"];
+export type TalkCreate = S["TalkCreate"];
+export type TalkRead = S["TalkRead"];
+export type TalkSubmissionCreate = S["TalkSubmissionCreate"];
+export type TalkSubmissionRead = S["TalkSubmissionRead"];
+export type TalkUpdate = S["TalkUpdate"];
+export type TalkUploadPreview = S["TalkUploadPreview"];
+
+/* ------------------------------------------------------------------ *
+ * NOT on the server yet.
+ *
+ * Each of these describes a response whose route is annotated `-> dict`,
+ * so FastAPI publishes `additionalProperties: true` and promises nothing.
+ * They are hand-maintained and WILL drift — that is not a style problem,
+ * it is the exact failure this file was rewritten to end.
+ *
+ * The fix is a `response_model` on the route, after which the type moves
+ * into the generated block above and its definition here is deleted.
+ * Tracked as F1.
+ * ------------------------------------------------------------------ */
+
+export interface AgentCitation {
+  index: number;
+  chunk_id: string;
+  owner_type: string;
+  owner_id: string;
+  label: string;
+  similarity: number;
 }
 
-/** RFC 7807 problem+json — what the api returns on 4xx/5xx. */
+export interface AgentMessage {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  metadata_json: {
+    prompt_version?: string;
+    citations?: AgentCitation[];
+    n_snippets?: number;
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    cost_usd?: number;
+    latency_ms?: number;
+  };
+  created_at: string;
+}
+
+export interface AgentReply {
+  session_id: string;
+  user_message_id: string;
+  assistant_message_id: string;
+  role: "assistant";
+  content: string;
+  citations: AgentCitation[];
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_usd: number;
+  latency_ms: number | null;
+  prompt_version: string;
+}
+
+export interface AgentSession {
+  id: string;
+  title: string | null;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ApiProblem {
   type: string;
   title: string;
@@ -63,279 +150,127 @@ export interface ApiProblem {
   [k: string]: unknown;
 }
 
-// ---------------------------------------------------------------------------
-// Messaging documents
-// ---------------------------------------------------------------------------
-export type DocKind = "gtm_strategy" | "content_roadmap" | "other";
-
-export interface MessagingDocumentBase {
-  title: string;
-  source_type: MessagingSourceType;
-  doc_kind: DocKind;
-  elevator_pitch: string;
-  target_personas: string[];
-  key_themes: string[];
-  talking_points: string[];
-  differentiators: string[];
-  competitive_position: string;
-  pillar_id: string | null;
-  is_active: boolean;
-}
-
-export type MessagingDocumentCreate = MessagingDocumentBase;
-export type MessagingDocumentUpdate = MessagingDocumentBase;
-
-export interface MessagingDocumentRead extends MessagingDocumentBase {
-  id: string;
-  file_path: string | null;
-  created_at: string; // ISO-8601
-  updated_at: string;
-}
-
-export interface MessagingDocUploadPreview {
-  doc_kind: DocKind;
-  title: string;
-  elevator_pitch: string;
-  target_personas: string[];
-  key_themes: string[];
-  talking_points: string[];
-  differentiators: string[];
-  competitive_position: string;
-}
-
-// ---------------------------------------------------------------------------
-// Audience profiles
-// ---------------------------------------------------------------------------
-export interface AudienceProfileBase {
-  name: string;
-  description: string;
-  industry: string;
-  role_seniority: RoleSeniority;
-  primary_pain_points: string[];
-  key_messages: string[];
-  exclusion_criteria: string[];
-  pillar_id: string | null;
-  is_active: boolean;
-}
-
-export type AudienceProfileCreate = AudienceProfileBase;
-export type AudienceProfileUpdate = AudienceProfileBase;
-
-export interface AudienceProfileRead extends AudienceProfileBase {
-  id: string;
-  pillar_id: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-// ---------------------------------------------------------------------------
-// Talk upload preview (v2)
-// ---------------------------------------------------------------------------
-export interface ExtractedTalk {
-  title: string;
-  abstract: string;
-  key_themes: string[];
-  suggested_topics: string[];
-  suggested_pillar_name: string | null;
-  target_audience_description: string | null;
-  suggested_duration_minutes: number | null;
-  talk_format: string | null;
-}
-
-export interface TopicMatch {
-  raw: string;
-  topic_id: string;
-  topic_name: string;
-  confidence: number;
-}
-
-export interface TalkUploadPreview {
-  extracted: ExtractedTalk;
-  suggested_topic_matches: TopicMatch[];
-}
-
-// ---------------------------------------------------------------------------
-// SMEs
-// ---------------------------------------------------------------------------
-export interface SmeExternalLinks {
-  linkedin?: string | null;
-  github?: string | null;
-  website?: string | null;
-}
-
-export interface SmeBase {
-  full_name: string;
-  email: string | null;
-  team: string;
-  primary_topics: string[]; // UUIDs
-  audience_focus: string[];
-  location_country: string;
-  location_city: string | null;
-  bio: string;
-  languages: string[];
-  external_links: SmeExternalLinks;
-  is_active: boolean;
-}
-
-export type SmeCreate = SmeBase;
-export type SmeUpdate = SmeBase;
-
-export interface SmeRead extends SmeBase {
-  id: string;
-  created_at: string;
-  updated_at: string;
-}
-
-// ---------------------------------------------------------------------------
-// Past conferences
-// ---------------------------------------------------------------------------
-export interface PastConferenceBase {
-  name: string;
-  year: number;
-  series_id: string | null;
-  attended_sme_ids: string[];
-  /** Raw attendee names from the source CSV — captures who actually
-   * attended even if those people aren't SMEs in Scout yet. */
-  attended_by_names_raw: string[];
-  role: PastConferenceRole;
-  session_type: PastConferenceSessionType | null;
-  notes: string | null;
-  imported_from: string | null;
-  /** Operator's retrospective: would the team attend a future
-   * edition again? Drives the matcher's series_memory boost. */
-  verdict: PastConferenceVerdict;
-  event_kind: string;
-  conference_url: string | null;
-  location_city: string | null;
-  location_country: string | null;
-}
-
-export type PastConferenceVerdict = "would_attend" | "unsure" | "would_not_attend";
-
-export type PastConferenceCreate = PastConferenceBase;
-export type PastConferenceUpdate = PastConferenceBase;
-
-export interface PastConferenceRead extends PastConferenceBase {
-  id: string;
-  created_at: string;
-  updated_at: string;
-}
-
-/** CSV import response from POST /api/v1/past-conferences/import */
-export interface PastConferenceImportResult {
-  imported: number;
-  skipped: number;
-  errors: Array<{ row: number; field: string; message: string }>;
-  note?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Topics
-// ---------------------------------------------------------------------------
-export interface TopicBase {
-  name: string;
-  slug?: string | null;
-  aliases: string[];
-  is_active: boolean;
-  pending_review: boolean;
-}
-
-export type TopicCreate = TopicBase;
-export type TopicUpdate = TopicBase;
-
-export interface TopicRead extends TopicBase {
-  id: string;
-  created_at: string;
-  updated_at: string;
-}
-
-// ---------------------------------------------------------------------------
-// Conferences + matcher output (plan 17/18/19 → plan 20 UI)
-// ---------------------------------------------------------------------------
-export type ConferenceStatus =
-  | "discovered"
-  | "needs_review"
-  | "needs_review_pillar"
-  | "needs_sme_review"
-  | "approved"
-  | "rejected"
-  | "low_messaging_fit"
-  | "quarantined";
-
-export interface ConferenceRead {
-  id: string;
+export interface CfpDigestEntry {
+  conference_id: string;
   name: string;
   slug: string;
   status: string;
-  event_kind: string;
-  series_id: string | null;
-  confidence_score: number | null;
-  start_date: string | null;
-  end_date: string | null;
-  location_city: string | null;
-  location_country: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  is_virtual: boolean;
-  website: string | null;
-  cfp_url: string | null;
-  topics: string[];
-  cfp_topics_of_interest: string[];
-  cfp_close_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ConferenceListItem extends ConferenceRead {
   overall_score: number | null;
-  messaging_score: number | null;
-  pillar_score: number | null;
-  sme_score: number | null;
-  previously_attended: boolean;
+  deadline_kind: string;
+  deadline_date: string;
+  days_until: number;
+  top_sme_id: string | null;
+  top_sme_name: string | null;
+  website: string | null;
+  location: string | null;
 }
 
-export interface ConferenceListResponse {
-  items: ConferenceListItem[];
-  total: number;
-  page: number;
-  per_page: number;
+export interface CfpDigestMarkdown {
+  markdown: string;
+  generated_at: string;
+  n_entries: number;
 }
 
-export interface MatchBoosts {
-  cfp_urgency: number;
-  recency_penalty: number;
-  series_memory: number;
-  flagship_event: number;
-  total: number;
+export interface CfpDigestPayload {
+  generated_at: string;
+  buckets: {
+    today?: CfpDigestEntry[];
+    tomorrow?: CfpDigestEntry[];
+  };
+  stats?: Record<string, number>;
 }
 
-export interface ConferenceMatch {
-  id: string;
-  messaging_score: number;
-  pillar_score: number;
-  sme_score: number;
-  judge_score: number | null;
-  judge_rationale: string;
-  overall_score: number;
-  boosts: MatchBoosts;
-  recommended_sme_ids: string[];
-  rationale_text: string;
-  computed_at: string | null;
-}
-
-export interface ConferenceMatchResponse {
+export interface ConferenceBrief {
   conference_id: string;
+  generated_at: string;
   algorithm_version: string;
-  match: ConferenceMatch | null;
-}
-
-export interface ConferenceSourceRow {
-  raw_page_id: string;
-  url: string;
-  fetched_at: string | null;
-  http_status: number;
-  parse_status: string | null;
-  hash_prefix: string;
+  scout_version: string;
+  team_size: number;
+  header: {
+    name: string;
+    slug: string;
+    start_date: string | null;
+    end_date: string | null;
+    location_city: string | null;
+    location_country: string | null;
+    is_virtual: boolean;
+    venue: string | null;
+    website: string | null;
+  };
+  at_a_glance: {
+    overall_score: number | null;
+    // The matcher asks two questions, not three. `messaging_score`,
+    // `pillar_score` and `sme_score` were the old three-stage names;
+    // messaging and pillars are pooled into `fit` and rescaled once.
+    fit_score: number | null;
+    speaker_score: number | null;
+    overall_bucket: "strong" | "good" | "marginal" | "weak" | null;
+    status: string;
+    acceptance_rate_percent: number | null;
+    estimated_cost_usd: number | null;
+    series: {
+      id: string;
+      canonical_name: string;
+      typical_month: number | null;
+      past_editions_count: number;
+      team_attended_recent: number;
+    } | null;
+  };
+  why: {
+    rationale_text: string;
+    matched_pillar: {
+      name: string;
+      description: string;
+      score: number | null;
+    } | null;
+    top_topics: Array<{ name: string; slug?: string; weight?: number | null }>;
+  };
+  attendees: {
+    team_size: number;
+    members: BriefAttendee[];
+    rationale_text: string;
+    source: "team_rec" | "individual_fallback" | "empty" | "none";
+  };
+  cfp: {
+    deadlines: BriefDeadline[];
+    topics_of_interest: string[];
+    open_at: string | null;
+    close_at: string | null;
+  };
+  past_engagement: Array<{
+    name: string;
+    year: number;
+    role: string;
+    session_type: string | null;
+    notes: string;
+    attendees: Array<{ sme_id: string; full_name: string }>;
+  }>;
+  talking_points: Array<{
+    document_id: string;
+    title: string;
+    elevator_pitch: string;
+    talking_points: string[];
+    key_themes: string[];
+    similarity: number;
+  }>;
+  /** Trip logistics; free-text status per leg. Verified present in the
+   *  live payload from `build_brief`. */
+  logistics: {
+    travel: string;
+    lodging: string;
+    booth: string;
+    sponsorship: string;
+  };
+  footer: {
+    detail_url_path: string;
+    decision: {
+      decision: string;
+      decided_by_label: string;
+      decided_at: string | null;
+      reason: string | null;
+    } | null;
+    sources_count: number;
+  };
 }
 
 export interface ConferenceSourcesResponse {
@@ -343,124 +278,12 @@ export interface ConferenceSourcesResponse {
   sources: ConferenceSourceRow[];
 }
 
-export interface SmeDimensionScores {
-  topic_overlap: number;
-  audience_overlap: number;
-  bio_similarity: number;
-  location: number;
-  past_attendance: number;
-}
-
-export interface SmeBreakdown {
-  sme_id: string;
-  full_name: string;
-  team: string;
-  location_country: string | null;
-  location_city: string | null;
-  is_external: boolean;
-  dimensions: SmeDimensionScores;
-  composite: number;
-  above_gate: boolean;
-  narrative?: string | null;
-}
-
-export interface ConferenceSmesResponse {
-  conference_id: string;
-  gate: number;
-  weights: {
-    topic: number;
-    audience: number;
-    bio: number;
-    location: number;
-    past: number;
-  };
-  narrative_top_k: number;
-  above_gate: SmeBreakdown[];
-  near_misses: SmeBreakdown[];
-}
-
-export type DecisionVerdict = "approved" | "rejected" | "needs_review";
-
-export interface DecisionCreate {
-  decision: DecisionVerdict;
-  reason?: string | null;
-  decided_by_label?: string;
-}
-
-export interface DecisionRead {
-  id: string;
-  conference_id: string;
-  decision: string;
-  reason: string | null;
-  decided_by_label: string;
-  decided_at: string;
-  created_at: string;
-}
-
 export interface DecisionListResponse {
   conference_id: string;
   decisions: DecisionRead[];
 }
 
-// ---------------------------------------------------------------------------
-// Knowledge graph (plan 16 → plan 21 explorer)
-// ---------------------------------------------------------------------------
-export type GraphNodeKind =
-  | "conference"
-  | "topic"
-  | "sme"
-  | "audience"
-  | "pillar"
-  | "messaging"
-  | "source"
-  | "series";
-
-export interface GraphNode {
-  id: string;
-  kind: GraphNodeKind;
-  label: string;
-  degree?: number;
-  // Per-kind optional metadata surfaced by the loader.
-  status?: string;
-  slug?: string;
-  team?: string;
-  start_date?: string | null;
-  confidence?: number | null;
-  is_active?: boolean;
-  pending_review?: boolean;
-  industry?: string;
-  role_seniority?: string;
-  display_order?: number;
-  source_kind?: string;
-}
-
-export interface GraphLink {
-  source: string;
-  target: string;
-  relation: string;
-  weight?: number;
-}
-
-export interface GraphResponse {
-  nodes: GraphNode[];
-  links: GraphLink[];
-  stats: {
-    n_nodes: number;
-    n_edges: number;
-    truncated: boolean;
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Diagnostics (plan 26)
-// ---------------------------------------------------------------------------
-export interface LlmEndpointProbe {
-  ok: boolean;
-  status_code: number | null;
-  latency_ms: number;
-  error: string | null;
-  available_models: string[] | null;
-}
+export type DecisionVerdict = "approved" | "rejected" | "needs_review";
 
 export interface DiagnosticsResponse {
   generated_at: string;
@@ -475,8 +298,8 @@ export interface DiagnosticsResponse {
       all: Record<string, number>;
     };
     talk_submissions_total: number;
-    past_conferences_total: number;
-    past_conferences_scored: number;
+    conferences_attended: number;
+    conferences_attended_scored: number;
     smes_active: number;
   };
   llm: {
@@ -552,12 +375,10 @@ export interface DiagnosticsResponse {
     conferences_by_status: Record<string, number>;
     smes: {
       total_active: number;
-      no_topics: number;
       no_audiences: number;
       short_bio: number;
     };
     audiences_active: number;
-    pending_topics: number;
     series: { active_count: number; unlinked_conferences: number };
     embedding_model: {
       name: string;
@@ -609,187 +430,56 @@ export interface DiagnosticsRetryResponse {
   kind: string;
 }
 
-// ---------------------------------------------------------------------------
-// Notifications (plan 24)
-// ---------------------------------------------------------------------------
-export interface NotificationRead {
-  id: string;
-  kind: string;
-  payload: Record<string, unknown>;
-  seen: boolean;
-  created_at: string;
-}
+export type DocKind = "gtm_strategy" | "content_roadmap" | "other";
 
-export interface NotificationsList {
-  items: NotificationRead[];
+export interface Page<T> {
+  items: T[];
   total: number;
+  page: number;
+  per_page: number;
 }
 
-export interface CfpDigestEntry {
-  conference_id: string;
-  name: string;
-  slug: string;
-  status: string;
-  overall_score: number | null;
-  deadline_kind: string;
-  deadline_date: string;
-  days_until: number;
-  top_sme_id: string | null;
-  top_sme_name: string | null;
-  website: string | null;
-  location: string | null;
-}
-
-export interface CfpDigestPayload {
-  generated_at: string;
-  buckets: {
-    "0_7"?: CfpDigestEntry[];
-    "8_14"?: CfpDigestEntry[];
-    "15_30"?: CfpDigestEntry[];
-  };
-  stats?: Record<string, number>;
-}
-
-export interface CfpDigestMarkdown {
-  markdown: string;
-  generated_at: string;
-  n_entries: number;
-}
-
-// ---------------------------------------------------------------------------
-// Agent chat (plan 22)
-// ---------------------------------------------------------------------------
-export interface AgentSession {
+export interface PillarAudienceItem {
   id: string;
-  title: string | null;
-  archived: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AgentMessage {
-  id: string;
-  session_id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  metadata_json: {
-    prompt_version?: string;
-    citations?: AgentCitation[];
-    n_snippets?: number;
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    cost_usd?: number;
-    latency_ms?: number;
-  };
-  created_at: string;
-}
-
-export interface AgentCitation {
-  index: number;
-  chunk_id: string;
-  owner_type: string;
-  owner_id: string;
-  label: string;
-  similarity: number;
-}
-
-export interface AgentReply {
-  session_id: string;
-  user_message_id: string;
-  assistant_message_id: string;
-  role: "assistant";
-  content: string;
-  citations: AgentCitation[];
-  prompt_tokens: number;
-  completion_tokens: number;
-  cost_usd: number;
-  latency_ms: number | null;
-  prompt_version: string;
-}
-
-export interface DashboardStats {
-  cards: {
-    upcoming_approved: number;
-    pending_review: number;
-    cfp_closing_soon: number;
-    low_coverage_smes: number;
-  };
-  top_conferences: Array<{
-    id: string;
-    name: string;
-    slug: string;
-    status: string;
-    overall_score: number | null;
-    start_date: string | null;
-  }>;
-}
-
-// ---------------------------------------------------------------------------
-// Conference create (manual entry)
-// ---------------------------------------------------------------------------
-export interface ConferenceCreate {
   name: string;
-  start_date?: string | null; // ISO date YYYY-MM-DD
-  end_date?: string | null;
-  location_city?: string | null;
-  location_country?: string | null; // ISO-3166-1 alpha-2
-  is_virtual?: boolean;
-  venue?: string | null;
-  website?: string | null;
-  cfp_open_at?: string | null;
-  cfp_close_at?: string | null;
-  cfp_topics_of_interest?: string[];
-  topics?: string[];
-  acceptance_rate_percent?: number | null;
-  estimated_cost_usd?: number | null;
-  actor_label?: string;
+  description: string;
 }
 
-export interface ConferenceCreateResponse {
-  conference: import("@/lib/api-types").ConferenceRead;
-  match: {
-    overall_score: number;
-    messaging_score: number;
-    pillar_score: number;
-    sme_score: number;
-    status: string;
-    rationale_text: string;
-    recommended_sme_ids: string[];
-    matched_pillar_name: string | null;
-  } | null;
-  match_error: string | null;
+
+export interface PillarTalkItem {
+  id: string;
+  title: string;
+  review_status: TalkReviewStatus;
 }
 
-// ---------------------------------------------------------------------------
-// Team recommendations (plan 32)
-// ---------------------------------------------------------------------------
-export interface TeamPickRead {
-  team_size: number;
-  sme_ids: string[];
-  team_score: number;
-  coverage_breadth: number;
-  redundancy: number;
-  rationale_text: string;
-  computed_at: string | null;
-}
 
-export interface TeamRecommendationsResponse {
-  conference_id: string;
-  algorithm_version?: string;
-  by_size: Record<string, TeamPickRead>;
-}
 
-// ---------------------------------------------------------------------------
-// Brief (plan 33)
-// ---------------------------------------------------------------------------
+export type TalkFormat = "keynote" | "talk" | "panel" | "workshop" | "tutorial" | "other";
+
+export type TalkReviewStatus = "draft" | "pending_review" | "approved";
+
+
+
+
+/**
+ * One person on the trip.
+ *
+ * This used to describe a RECOMMENDED SME (full_name, team, bio,
+ * narrative). The brief's attendees section was changed to report who is
+ * actually going — participation rows — and the type was never updated,
+ * so every field the page read was invisible to the compiler. Verified
+ * against the live payload from `_attendees_section` in
+ * apps/api/app/services/reports.py.
+ */
 export interface BriefAttendee {
-  sme_id: string;
-  full_name: string;
-  team: string;
-  location_city: string | null;
-  location_country: string | null;
-  bio: string;
-  narrative: string;
+  person_label: string;
+  sme_id: string | null;
+  activity: string | null;
+  arrives_on: string | null;
+  departs_on: string | null;
+  /** Derived: an explicit attended mark, or departure already in the past. */
+  has_attended: boolean;
+  notes: string | null;
 }
 
 export interface BriefDeadline {
@@ -800,274 +490,40 @@ export interface BriefDeadline {
   is_next: boolean;
 }
 
-export interface ConferenceBrief {
-  conference_id: string;
-  generated_at: string;
-  algorithm_version: string;
-  scout_version: string;
-  team_size: number;
-  header: {
-    name: string;
-    slug: string;
-    start_date: string | null;
-    end_date: string | null;
-    location_city: string | null;
-    location_country: string | null;
-    is_virtual: boolean;
-    venue: string | null;
-    website: string | null;
-  };
-  at_a_glance: {
-    overall_score: number | null;
-    messaging_score: number | null;
-    pillar_score: number | null;
-    sme_score: number | null;
-    overall_bucket: "strong" | "good" | "marginal" | "weak" | null;
-    status: string;
-    acceptance_rate_percent: number | null;
-    estimated_cost_usd: number | null;
-    series: {
-      id: string;
-      canonical_name: string;
-      typical_month: number | null;
-      past_editions_count: number;
-      team_attended_recent: number;
-    } | null;
-    freshness_score: number | null;
-  };
-  why: {
-    rationale_text: string;
-    matched_pillar: {
-      name: string;
-      description: string;
-      score: number | null;
-    } | null;
-    top_topics: Array<{ name: string; slug: string; weight: number | null }>;
-  };
-  attendees: {
-    team_size: number;
-    members: BriefAttendee[];
-    rationale_text: string;
-    source: "team_rec" | "individual_fallback" | "empty" | "none";
-  };
-  cfp: {
-    deadlines: BriefDeadline[];
-    topics_of_interest: string[];
-    open_at: string | null;
-    close_at: string | null;
-  };
-  past_engagement: Array<{
-    name: string;
-    year: number;
-    role: string;
-    session_type: string | null;
-    notes: string;
-    attendees: Array<{ sme_id: string; full_name: string }>;
-  }>;
-  talking_points: Array<{
-    document_id: string;
-    title: string;
-    elevator_pitch: string;
-    talking_points: string[];
-    key_themes: string[];
-    similarity: number;
-  }>;
-  logistics_placeholder: {
-    storage_key: string;
-    fields: string[];
-  };
-  footer: {
-    detail_url_path: string;
-    decision: {
-      decision: string;
-      decided_by_label: string;
-      decided_at: string | null;
-      reason: string | null;
-    } | null;
-    sources_count: number;
-  };
+export interface ConferenceSourceRow {
+  raw_page_id: string;
+  url: string;
+  fetched_at: string | null;
+  http_status: number;
+  parse_status: string | null;
+  hash_prefix: string;
 }
 
-// ---------------------------------------------------------------------------
-// Strategic pillars (v2)
-// ---------------------------------------------------------------------------
-export interface PillarRead {
-  id: string;
-  name: string;
-  description: string;
-  enriched_description: string | null;
-  display_order: number;
-  created_at: string;
-  updated_at: string;
-  sme_count: number;
-  talk_count: number;
-  audience_count: number;
-  conference_count: number;
+export interface LlmEndpointProbe {
+  ok: boolean;
+  status_code: number | null;
+  latency_ms: number;
+  error: string | null;
+  available_models: string[] | null;
 }
 
-export interface PillarCreate {
-  name: string;
-  description: string;
-  display_order?: number | null;
-}
 
-export type PillarUpdate = Omit<PillarCreate, "display_order">;
 
-export interface SmePillarRead {
-  sme_id: string;
-  pillar_id: string;
-  is_primary: boolean;
-}
 
-export interface SmePillarLink {
-  is_primary: boolean;
-}
+export type ConferenceListItem = S["ConferenceListItem"];
 
-export interface RoadmapEntryRead {
-  id: string;
-  pillar_id: string;
-  quarter: string;
-  goals: string[];
-  owner_label: string | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-}
 
-export interface RoadmapEntryCreate {
-  quarter: string;
-  goals: string[];
-  owner_label?: string | null;
-  notes?: string | null;
-}
 
-export interface RoadmapEntryUpdate {
-  quarter?: string | null;
-  goals?: string[] | null;
-  owner_label?: string | null;
-  notes?: string | null;
-}
 
-export interface GtmStrategyRead {
-  id: string;
-  pillar_id: string;
-  objective: string | null;
-  key_messages: string[];
-  target_audience_ids: string[];
-  notes: string | null;
-  version: number;
-  created_at: string;
-  updated_at: string;
-}
 
-export interface GtmStrategyCreate {
-  objective?: string | null;
-  key_messages: string[];
-  target_audience_ids?: string[];
-  notes?: string | null;
-}
+export type SettingsResponse = S["SettingsResponse"];
 
-export interface PillarConferenceItem {
-  id: string;
-  name: string;
-  slug: string;
-  status: string;
-  event_kind: string;
-}
+export type SettingValue = S["SettingValue"];
 
-export interface PillarAudienceItem {
-  id: string;
-  name: string;
-  description: string;
-}
+export type SettingSpec = S["SettingSpec"];
 
-export interface PillarTalkItem {
-  id: string;
-  title: string;
-  review_status: TalkReviewStatus;
-}
-
-// ---------------------------------------------------------------------------
-// Talks library (v2)
-// ---------------------------------------------------------------------------
-export type TalkSourceType = "manual" | "uploaded";
-export type TalkReviewStatus = "draft" | "pending_review" | "approved";
-export type TalkFormat = "keynote" | "talk" | "panel" | "workshop" | "tutorial" | "other";
-export type TalkSubmissionOutcome = "submitted" | "accepted" | "rejected" | "withdrawn";
-
-export interface TalkTag {
-  id: string;
-  name: string;
-  color: string | null;
-  created_at: string;
-}
-
-export interface TalkSubmissionRead {
-  id: string;
-  talk_id: string;
-  conference_id: string;
-  submitted_by_sme_id: string | null;
-  submitted_at: string | null;
-  outcome: TalkSubmissionOutcome | null;
-  notes: string | null;
-  created_at: string;
-}
-
-export interface TalkRead {
-  id: string;
-  title: string;
-  abstract: string | null;
-  full_content: string | null;
-  source_type: TalkSourceType;
-  file_path: string | null;
-  pillar_id: string | null;
-  primary_sme_id: string | null;
-  co_speaker_ids: string[];
-  talk_format: TalkFormat | null;
-  suggested_duration_minutes: number | null;
-  review_status: TalkReviewStatus;
-  is_active: boolean;
-  tags: TalkTag[];
-  topics: string[]; // UUIDs
-  submissions: TalkSubmissionRead[];
-  created_at: string;
-  updated_at: string;
-  /** Total number of conferences this talk has been applied to. */
-  times_applied: number;
-  /** True when times_applied >= the configured reuse flag threshold. */
-  is_flagged: boolean;
-}
-
-export interface TalkCreate {
-  title: string;
-  abstract?: string | null;
-  full_content?: string | null;
-  pillar_id?: string | null;
-  primary_sme_id?: string | null;
-  talk_format?: TalkFormat | null;
-  suggested_duration_minutes?: number | null;
-  review_status?: TalkReviewStatus;
-  is_active?: boolean;
-}
-
-export type TalkUpdate = TalkCreate;
-
-export interface TalkSubmissionCreate {
-  conference_id: string;
-  submitted_at?: string | null;
-  submitted_by_sme_id?: string | null;
-  outcome?: string | null;
-  notes?: string | null;
-}
-
-export interface ReuseCheckResult {
-  talk_id: string;
-  submission_count_12m: number;
-  series_reuse: Array<{
-    series_id: string;
-    series_name: string;
-    submission_count: number;
-  }>;
-  risk_level: "low" | "medium" | "high";
-  warning: string | null;
-}
+/* These are published by the server now (F1) — aliased, not hand-written. */
+export type ConferenceMatch = S["MatchRead"];
+export type SmeBreakdown = S["SmeBreakdownRead"];
+export type SmeDimensionScores = S["SmeDimensionScores"];
+export type MatchBoosts = S["BoostBreakdownRead"];

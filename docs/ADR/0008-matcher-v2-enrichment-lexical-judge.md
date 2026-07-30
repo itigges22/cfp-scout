@@ -1,6 +1,23 @@
 # ADR-0008 — Matcher v2: enrichment + lexical co-signal + distinctiveness pillar + LLM-as-judge
 
-**Status:** Accepted · 2026-05-26
+**Status:** **SUPERSEDED** (2026-07-26) · originally Accepted 2026-05-26
+
+> Superseded by the S5-S8 backend redesign — see
+> `docs/planning/06-backend-redesign.md`. Kept as a record of what was decided
+> and why, not as a description of the system.
+>
+> What changed, and what the measurements said:
+> - **The lexical co-signal is gone.** Ablation on the labelled corpus showed
+>   removing it changed the ranking by zero inversions.
+> - **The judge no longer produces a score** and is not a weighted term. It
+>   returns a veto, because a veto averaged into a mean is a number nobody can
+>   explain.
+> - **The academic-venue rule below is reversed.** "Pure ML research venues are
+>   NOT strategic for a commercial vendor" was a hardcoded categorical opinion;
+>   it wrongly vetoed NeurIPS for a team that had AutoML research to present.
+>   The judge now reasons about who is in the room instead.
+> - **Four weighted stages became two signals**, after messaging and pillar
+>   were measured to correlate at r = 0.86 — one question asked twice.
 **Updated:** 2026-05-26 (v2.1: few-shot calibration · judge cache · business-logic boosts · lexical corpus-size guard)
 **Updated:** 2026-05-26 (v2.2: judge prompt reframe for strategic value · flagship-event boost · weight rebalance)
 **Updated:** 2026-05-27 (v2.3: industry-vs-academic distinction — pure ML research venues are NOT strategic for a commercial vendor)

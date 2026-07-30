@@ -1,8 +1,38 @@
-"""Async SQLAlchemy engine + session factory + FastAPI dependency.
+"""The async engine, the session factory, and the FastAPI session dependency.
 
-The engine is created lazily so import-time costs are paid only when the
-api actually starts (matters for tests that import models without needing
-a running DB).
+WHAT THIS DOES
+    Builds one connection pool per process, lazily on first use, so
+    importing a model does not require a running database (tests depend
+    on that). Two ways to get a session:
+
+      * ``DbSession`` -- the FastAPI dependency. A route annotates a
+        parameter with it and gets a session scoped to the request.
+      * ``get_session_factory()`` -- for code with no request behind it,
+        chiefly background tasks and CLI maintenance.
+
+    A session rolls back on exception and re-raises, so the connection
+    returns to the pool clean and the error handler still sees the
+    failure. ``dispose_engine`` tears the pool down at shutdown.
+
+HOW IT CONNECTS
+    Called by   all of app/api/v1/* via DbSession; all of app/tasks/* via
+                get_session_factory; app/services/*; app/lifespan.py and
+                app/scheduler_standalone.py (dispose on shutdown);
+                app/maintenance.py
+    Reads       every table, indirectly
+    Helpers     app/settings.py for database_url
+    Tuning      pool sizing is hard-coded here: pool_size=5,
+                max_overflow=10 (15 connections max per process),
+                pool_pre_ping, pool_recycle=1800s
+
+WORTH KNOWING
+    Fifteen connections per process is a hard ceiling. Code that fans out
+    database-touching work must cap its own concurrency well below it --
+    see the semaphore in tasks.py -- or every task blocks
+    waiting on the pool.
+
+    ``expire_on_commit=False`` keeps ORM objects readable after commit;
+    ``autoflush=False`` means flushes are explicit.
 """
 
 from __future__ import annotations

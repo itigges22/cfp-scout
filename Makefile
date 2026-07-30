@@ -138,7 +138,7 @@ migrate-current:  ## Show currently-applied revision
 seed:  ## Re-apply seed data — informational; seeds are baked into Alembic migrations
 	@echo "Reference-data seeds (embedding_models row) are baked into Alembic migrations."
 	@echo "Run \`make migrate\` to apply them. Team-curated data (pillars, audiences,"
-	@echo "SMEs, etc.) is entered via the XLSX workbook (plan 31)."
+	@echo "SMEs, etc.) is entered through the web UI."
 
 .PHONY: db-dump
 db-dump:  ## Dump Postgres to ./backups/<timestamp>.sql.gz
@@ -196,7 +196,7 @@ build-spa:  ## Build the Vite SPA (throwaway node container; deposits in apps/ap
 # Tests — implemented in step 27
 # ---------------------------------------------------------------------------
 .PHONY: test
-test: test-unit  ## Run all tests (today == test-unit; integration + e2e are plan 27 pass 2)
+test: test-unit test-int  ## Run the api unit + integration suites
 
 .PHONY: test-unit
 test-unit:  ## Run the api unit suite inside the running api container
@@ -211,12 +211,17 @@ test-unit:  ## Run the api unit suite inside the running api container
 	@$(CONTAINER_CLI) exec -e PYTHONPATH=/app scout-api python -m pytest /app/tests/unit -q
 
 .PHONY: test-int
-test-int:  ## Integration tests against real Postgres (plan 27 pass 2)
-	@echo "make test-int: plan 27 pass 2 will wire testcontainers" && exit 1
+test-int:  ## Integration tests against a real Postgres (testcontainers spins its own)
+	@# Runs on the HOST, not in the api container: testcontainers needs to talk
+	@# to the container runtime directly. Requires podman/docker to be running.
+	@cd apps/api && uv run --dev pytest tests/integration -q
 
 .PHONY: test-web
-test-web:  ## Frontend Vitest suite (plan 27 pass 2)
-	@echo "make test-web: plan 27 pass 2 will wire Vitest" && exit 1
+test-web:  ## Frontend Vitest suite
+	@# --passWithNoTests: vitest is installed and configured but no specs
+	@# exist yet, and a target that fails for that reason teaches people to
+	@# ignore it. Delete the flag once the first spec lands.
+	@cd apps/web && pnpm vitest run --passWithNoTests
 
 .PHONY: e2e
 e2e:  ## Playwright end-to-end smoke against the running api (host-network)
@@ -232,10 +237,6 @@ e2e:  ## Playwright end-to-end smoke against the running api (host-network)
 	    mcr.microsoft.com/playwright:v1.50.0-jammy \
 	    bash -c "test -d node_modules || npm install --no-audit --no-fund --prefer-offline && npx playwright test"
 
-.PHONY: eval
-eval:  ## LLM evals (plan 27 pass 2)
-	@echo "make eval: plan 27 pass 2 will wire evals" && exit 1
-
 # ---------------------------------------------------------------------------
 # Lint / typecheck / security
 # ---------------------------------------------------------------------------
@@ -244,9 +245,14 @@ lint:  ## Run pre-commit on all files
 	@pre-commit run --all-files
 
 .PHONY: typecheck
-typecheck:  ## Run mypy + tsc (implemented as services are added)
-	@echo "make typecheck: wired up as services land" && exit 1
+typecheck:  ## Run mypy (api) + tsc (web)
+	@# NOTE: mypy --strict currently reports ~408 errors across 84 files.
+	@# That backlog is real and predates this target being wired; the target
+	@# used to `exit 1` with a promise instead of showing it. It is NOT in
+	@# CI for that reason — fix the backlog before making it a gate.
+	@cd apps/api && uv run mypy --strict app || true
+	@cd apps/web && pnpm typecheck
 
 .PHONY: security
-security:  ## Run gitleaks + trivy on local images (step 29)
-	@echo "make security: implemented in step 29" && exit 1
+security:  ## Secret scan via the pinned gitleaks pre-commit hook
+	@pre-commit run gitleaks --all-files

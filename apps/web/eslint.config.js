@@ -26,6 +26,10 @@ export default [
       // TS project-reference build artifacts for vite.config.ts. Source
       // is vite.config.ts; the .d.ts/.js are emit-only and shouldn't be
       // linted.
+      // Test-runner config, not app source. It intentionally uses vitest's
+      // own defineConfig, which the app tsconfig does not (and should not)
+      // typecheck against.
+      "vitest.config.ts",
       "vite.config.d.ts",
       "vite.config.js",
       "*.tsbuildinfo",

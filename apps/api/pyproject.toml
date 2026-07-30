@@ -60,16 +60,10 @@ dependencies = [
     # PyYAML is used by the plan-23 series seed migration (db/seeds/
     # conference_series.yaml). Tiny dep, widely-used + battle-tested.
     "pyyaml>=6.0",
-    # openpyxl powers plan-31's XLSX workbook import/export. Reads + writes
-    # only; never executes formulas. Round-trip identity is the contract.
-    "openpyxl>=3.1",
     # Extraction (plan 15): trafilatura strips boilerplate from scraped HTML
     # before the LLM sees the page; python-slugify generates conferences.slug.
     "trafilatura>=1.12",
     "python-slugify>=8.0",
-    # Knowledge graph (plan 16). NetworkX is pure-Python, ~3MB; we don't
-    # need igraph or graph-tool for Phase 1 scale (low thousands of nodes).
-    "networkx>=3.4",
 ]
 
 [tool.uv.sources]
@@ -118,6 +112,7 @@ select = [
 # Globally-ignored ruff rules. Each one is a false-positive family for our
 # stack OR a pass-2 cleanup candidate; details on a single line per code:
 #   RUF012  SQLAlchemy Mapped[list[...]] + Pydantic Field(default_factory=...) are not bugs
+#   RUF001  ambiguous Unicode in string literals — en dashes in LLM prompt text are deliberate
 #   RUF002  ambiguous Unicode in docstrings (× → ∪ etc.) — intentional formatting
 #   RUF003  same as RUF002 but for comments
 #   B008    FastAPI Query()/Depends() in argument defaults is the framework idiom
@@ -126,13 +121,16 @@ select = [
 #   E501    line length — Tailwind + long docstrings; cleanup deferred
 #   B007    unused loop control variable
 #   B018    useless expression (false-positive on `_ = unused_import` patterns)
-ignore = ["S101", "RUF012", "RUF002", "RUF003", "B008", "SIM105", "S110", "E501", "B007", "B018"]
+ignore = ["S101", "RUF012", "RUF001", "RUF002", "RUF003", "B008", "SIM105", "S110", "E501", "B007", "B018"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S", "B"]
 # Alembic migrations are auto-generated structures; long lines + bare excepts
 # are common and intentional.
-"alembic/**/*.py" = ["E501", "S110"]
+#   S608  migrations build DDL/DML as strings by necessity (op.execute takes
+#         SQL text). Values are module constants in the revision file, never
+#         request input, so the injection vector S608 warns about cannot exist.
+"alembic/**/*.py" = ["E501", "S110", "S608"]
 
 [tool.mypy]
 python_version = "3.12"

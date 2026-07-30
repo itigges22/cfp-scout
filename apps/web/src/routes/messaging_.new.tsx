@@ -6,7 +6,7 @@
  * for edits.
  */
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -22,10 +22,16 @@ function NewMessagingDocPage() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
 
+  const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (body: import("@/lib/api-types").MessagingDocumentCreate) =>
       messagingApi.create(body),
-    onSuccess: () => navigate({ to: "/messaging" }),
+    onSuccess: () => {
+      // Without this, /messaging served its 30s-stale cache on arrival and
+      // the document you just created was invisible until a hard refresh.
+      void queryClient.invalidateQueries({ queryKey: ["messaging"] });
+      void navigate({ to: "/messaging" });
+    },
     onError: (err) => setError(String((err as Error).message)),
   });
 

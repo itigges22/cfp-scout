@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import {
+import { BarChart3,
   BookOpen,
   CalendarClock,
-  GitFork,
-  History,
   LayoutDashboard,
   Loader2,
   Plus,
@@ -31,11 +29,22 @@ import { Textarea } from "@/components/ui/textarea";
 const DISCOVER_PRIMARY = [
   { to: "/dashboard",    label: "Dashboard",   Icon: LayoutDashboard },
   { to: "/conferences",  label: "Conferences", Icon: CalendarClock },
-  { to: "/graph",        label: "Graph",       Icon: GitFork },
+  { to: "/analytics",    label: "Analytics",   Icon: BarChart3 },
 ] as const;
 
+// Talks only.
+//
+// The split is ownership. Messaging documents, SMEs and audiences belong to
+// exactly one pillar and are managed under it — giving them top-level nav
+// implied they were free-standing, and meant leaving a pillar to add
+// something to that pillar. Talks are different: the same talk gets
+// repurposed across pillars, so it has nowhere else to live.
 const DISCOVER_SECONDARY = [
-  { to: "/past-conferences", label: "Past Events", Icon: History },
+  // SMEs are pillar-owned, but people look for "the list of people" as its
+  // own destination — hiding it under each pillar made the directory feel
+  // gone. The page stays; creation there REQUIRES picking a pillar, so the
+  // ownership rule holds either way. Messaging stays pillar-only: documents
+  // are genuinely per-pillar material, not a directory anyone browses.
   { to: "/smes",             label: "SMEs",        Icon: Users },
   { to: "/talks",            label: "Talks",       Icon: BookOpen },
 ] as const;

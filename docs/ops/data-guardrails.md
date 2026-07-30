@@ -1,7 +1,7 @@
 # Data input guardrails — what's rejected and why
 
 This page is what to consult when the api returns a 422 from a manual
-form, a CSV import, or an XLSX workbook upload.
+form or a CSV import.
 
 The schemas live in `apps/api/app/schemas/`. This doc exists for
 operators ("why was my row rejected?") rather than for implementers.
@@ -46,7 +46,7 @@ Rejection examples:
 |-------|------|
 | `name` | 3-80 chars, unique |
 | `description` | 50-500 chars |
-| `industry` | 2-80 chars freeform; the *service layer* (plan 09) further checks it against the team's `industries` vocabulary maintained via the XLSX workbook |
+| `industry` | 2-80 chars freeform; the *service layer* further checks it against the team's `industries` vocabulary |
 | `role_seniority` | one of `executive` / `director` / `manager` / `ic` / `mixed` |
 | `primary_pain_points` | 2-8 items |
 | `key_messages` | 2-8 items |
@@ -109,16 +109,14 @@ LLM-discovered topics (plan 15) are inserted with `is_active=false` and
 `pending_review=true`. They do **not** appear in dropdowns or influence
 matching until an admin approves them via `/settings/topics`.
 
-## Bulk import (CSV + XLSX)
+## Bulk import (CSV)
 
-Both bulk paths run inside a single transaction:
+Bulk import runs inside a single transaction:
 
-- **All rows valid** → commit; embedding-regen jobs enqueued; audit/version rows written
+- **All rows valid** → commit; embedding-regen jobs enqueued; audit rows written
 - **Any row invalid** → no inserts, no updates. The response lists row + field + reason.
 
-To force-ignore bad rows (use sparingly), pass `?ignore_errors=true` on the
-CSV endpoint. The XLSX endpoint refuses the equivalent — workbooks are
-expected to be clean since the team collaborates on them in Google Sheets.
+To force-ignore bad rows (use sparingly), pass `?ignore_errors=true`.
 
 ## What the schemas explicitly DO NOT do
 
@@ -135,4 +133,3 @@ expected to be clean since the team collaborates on them in Google Sheets.
 - `apps/api/app/schemas/` — the schemas themselves
 - `apps/api/app/api/v1/` — UI wizards + manual entry endpoints consuming these schemas
 - `apps/api/app/services/extraction/` — LLM extraction validates against the same shapes
-- `apps/api/app/services/workbook/` — XLSX import runs every row through these schemas

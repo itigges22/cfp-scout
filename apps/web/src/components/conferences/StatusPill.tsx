@@ -16,6 +16,7 @@ const VARIANT_FOR_STATUS: Record<
   discovered: "muted",
   rejected: "danger",
   low_messaging_fit: "muted",
+  vetoed: "danger",
   quarantined: "danger",
 };
 
@@ -27,6 +28,7 @@ const LABELS: Record<string, string> = {
   discovered: "Discovered",
   rejected: "Rejected",
   low_messaging_fit: "Low messaging fit",
+  vetoed: "Vetoed — wrong audience",
   quarantined: "Quarantined",
 };
 

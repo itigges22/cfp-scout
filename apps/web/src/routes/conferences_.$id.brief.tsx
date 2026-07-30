@@ -5,36 +5,29 @@
  * clean Cmd-P → PDF. The on-screen view adds an export toolbar (Print /
  * Copy Markdown / Copy HTML / team-size switcher) — hidden in print.
  *
- * `?team_size=1|2|3` chooses the attendee section (defaults to 1).
  * The logistics block is a `<div contenteditable>` persisted per-conf
  * to localStorage; never posted to the server.
  */
 
-import { useQuery } from "@tanstack/react-query";
-import { Link, createFileRoute, useSearch } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { conferencesApi } from "@/lib/api";
 import type { ConferenceBrief } from "@/lib/api-types";
 
-type SearchSchema = { team_size?: 1 | 2 | 3 };
 
 export const Route = createFileRoute("/conferences_/$id/brief")({
-  validateSearch: (search): SearchSchema => {
-    const raw = Number((search as Record<string, unknown>).team_size);
-    const team_size = raw === 2 || raw === 3 ? raw : 1;
-    return { team_size: team_size as 1 | 2 | 3 };
-  },
+  validateSearch: () => ({}),
   component: ConferenceBriefPage,
 });
 
 function ConferenceBriefPage() {
   const { id } = Route.useParams();
-  const { team_size = 1 } = useSearch({ from: Route.id }) as SearchSchema;
   const briefQ = useQuery({
-    queryKey: ["conferences", id, "brief", team_size],
-    queryFn: () => conferencesApi.brief(id, team_size),
+    queryKey: ["conferences", id, "brief"],
+    queryFn: () => conferencesApi.brief(id),
     // The brief endpoint auto-runs the matcher when one is missing — that
     // can take 20+ seconds on first open. Keep the query patient.
     staleTime: 60_000,
@@ -56,7 +49,7 @@ function ConferenceBriefPage() {
   return (
     <div className="min-h-screen bg-slate-50 print:bg-white">
       <PrintStyles />
-      <ExportToolbar brief={brief} teamSize={team_size} conferenceId={id} />
+      <ExportToolbar brief={brief} />
       <article className="brief mx-auto my-8 max-w-3xl bg-white p-10 shadow-sm print:my-0 print:shadow-none print:max-w-none">
         <Header brief={brief} />
         <AtAGlance brief={brief} />
@@ -109,11 +102,10 @@ function AtAGlance({ brief }: { brief: ConferenceBrief }) {
       <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
         <Bar label="Overall" value={g.overall_score} bucket={g.overall_bucket} />
         <Stat label="Status" value={g.status} />
-        <Bar label="Messaging" value={g.messaging_score} />
+        <Bar label="Fit" value={g.fit_score} />
         <Stat label="Acceptance rate" value={pct(g.acceptance_rate_percent)} />
-        <Bar label="Pillar" value={g.pillar_score} />
+        <Bar label="Speakers" value={g.speaker_score} />
         <Stat label="Est. cost" value={g.estimated_cost_usd ? `$${g.estimated_cost_usd}` : "—"} />
-        <Bar label="SME" value={g.sme_score} />
         <Stat
           label="Series history"
           value={
@@ -148,7 +140,7 @@ function WhyGoing({ brief }: { brief: ConferenceBrief }) {
         <div className="mt-2 flex flex-wrap gap-1.5">
           {w.top_topics.map((t) => (
             <span
-              key={t.slug}
+              key={t.name}
               className="rounded border px-2 py-0.5 text-xs text-slate-700"
             >
               {t.name}
@@ -162,7 +154,6 @@ function WhyGoing({ brief }: { brief: ConferenceBrief }) {
 
 function Attendees({
   brief,
-  conferenceId,
 }: {
   brief: ConferenceBrief;
   conferenceId: string;
@@ -170,51 +161,36 @@ function Attendees({
   const a = brief.attendees;
   return (
     <Section
-      title={
-        a.team_size === 1
-          ? "Recommended attendee"
-          : `Recommended team of ${a.team_size}`
-      }
+      title="Who is going"
     >
       {a.members.length === 0 ? (
         <Empty>
-          No SME recommendations available. The matcher ran but found no
-          SMEs above the relevance gate — either the topic coverage is
-          thin or no active SMEs match this conference. Add or edit SMEs
-          from /smes, then reopen this brief.
+          Nobody recorded yet. Add who is attending from the conference
+          page — this section shows the people actually going, not a
+          suggestion.
         </Empty>
       ) : (
-        <>
-          {a.team_size > 1 && a.source === "individual_fallback" && (
-            <Empty>
-              Team-of-{a.team_size} recommendation not yet computed —
-              showing top individuals as a stand-in.
-            </Empty>
-          )}
-          <ul className="space-y-3">
-            {a.members.map((m) => (
-              <li key={m.sme_id} className="rounded border p-3">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm font-semibold">{m.full_name}</span>
-                  <span className="text-xs text-slate-500">
-                    {m.team}
-                    {m.location_city ? ` · ${m.location_city}` : ""}
-                  </span>
-                </div>
-                {m.narrative && (
-                  <p className="mt-1 text-xs leading-snug text-slate-700">
-                    {m.narrative}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-          {a.rationale_text && (
-            <p className="mt-2 text-sm text-slate-700">
-              {a.rationale_text}
-            </p>
-          )}
-        </>
+        <ul className="space-y-3">
+          {a.members.map((m, i) => (
+            <li key={`${m.person_label}-${m.activity}-${i}`} className="rounded border p-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm font-semibold">{m.person_label}</span>
+                <span className="text-xs text-slate-500">
+                  {m.activity}
+                  {m.has_attended ? " · attended" : " · planned"}
+                </span>
+              </div>
+              {m.arrives_on && m.departs_on ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  {m.arrives_on} to {m.departs_on}
+                </p>
+              ) : null}
+              {m.notes ? (
+                <p className="mt-1 text-sm text-slate-700">{m.notes}</p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
       )}
     </Section>
   );
@@ -331,39 +307,65 @@ function Logistics({
   conferenceId: string;
   brief: ConferenceBrief;
 }) {
-  const storageKey = brief.logistics_placeholder.storage_key;
-  const [text, setText] = useState<string>("");
-  const initialized = useRef(false);
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState(brief.logistics);
+  const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw !== null) setText(raw);
-    } catch {
-      /* localStorage unavailable — degrade silently */
-    }
-    initialized.current = true;
-  }, [storageKey]);
+  // Persisted per conference, shared with the team. These four fields
+  // used to live in localStorage under a key the BACKEND computed, so
+  // they were visible to one person on one machine and vanished on a
+  // cache clear — for four facts the team most needs to share.
+  const save = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/v1/conferences/${conferenceId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          logistics_travel: draft.travel,
+          logistics_lodging: draft.lodging,
+          logistics_booth: draft.booth,
+          logistics_sponsorship: draft.sponsorship,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+      qc.invalidateQueries({ queryKey: ["conferences", conferenceId, "brief"] });
+    },
+  });
 
-  useEffect(() => {
-    if (!initialized.current) return;
-    try {
-      localStorage.setItem(storageKey, text);
-    } catch {
-      /* quota or disabled — silent */
-    }
-  }, [text, storageKey]);
+  const field = (
+    key: keyof typeof draft,
+    label: string,
+  ) => (
+    <label className="block">
+      <span className="text-xs font-medium text-slate-600">{label}</span>
+      <textarea
+        className="mt-1 w-full min-h-[3rem] rounded border p-2 text-sm print:border-0 print:p-0"
+        value={draft[key]}
+        onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+        spellCheck={false}
+      />
+    </label>
+  );
 
   return (
-    <Section title="Logistics (editable, saved locally)">
-      <textarea
-        className="w-full min-h-[6rem] rounded border p-2 text-sm font-mono print:border-0 print:p-0"
-        placeholder={`Travel:\nLodging:\nSwag/booth:\nSponsorship status:`}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        spellCheck={false}
-        data-conference-id={conferenceId}
-      />
+    <Section title="Logistics">
+      <div className="space-y-2">
+        {field("travel", "Travel")}
+        {field("lodging", "Lodging")}
+        {field("booth", "Swag / booth")}
+        {field("sponsorship", "Sponsorship status")}
+        <div className="flex items-center gap-2 print:hidden">
+          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? "Saving…" : "Save"}
+          </Button>
+          {saved && <span className="text-xs text-slate-500">Saved</span>}
+        </div>
+      </div>
     </Section>
   );
 }
@@ -400,12 +402,8 @@ function Footer({ brief }: { brief: ConferenceBrief }) {
 // ---------------------------------------------------------------------------
 function ExportToolbar({
   brief,
-  teamSize,
-  conferenceId,
 }: {
   brief: ConferenceBrief;
-  teamSize: 1 | 2 | 3;
-  conferenceId: string;
 }) {
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -435,17 +433,7 @@ function ExportToolbar({
 
   return (
     <div className="brief-toolbar mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 pt-4 print:hidden">
-      <div className="flex gap-2">
-        {[1, 2, 3].map((n) => (
-          <a
-            key={n}
-            href={`/conferences/${conferenceId}/brief?team_size=${n}`}
-            className={`rounded border px-3 py-1 text-xs ${teamSize === n ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
-          >
-            Team of {n}
-          </a>
-        ))}
-      </div>
+        <div />
       <div className="flex gap-2">
         <Button size="sm" variant="outline" onClick={copyMarkdown}>
           {copied === "md" ? "Copied!" : "Copy as Markdown"}
@@ -547,7 +535,7 @@ function briefToMarkdown(b: ConferenceBrief): string {
     `- Overall: **${g.overall_score == null ? "—" : Math.round(g.overall_score * 100)}** (${g.overall_bucket ?? "—"})`,
   );
   lines.push(
-    `- Messaging: ${g.messaging_score == null ? "—" : Math.round(g.messaging_score * 100)} · Pillar: ${g.pillar_score == null ? "—" : Math.round(g.pillar_score * 100)} · SME: ${g.sme_score == null ? "—" : Math.round(g.sme_score * 100)}`,
+    `- Fit: ${g.fit_score == null ? "—" : Math.round(g.fit_score * 100)} · Speakers: ${g.speaker_score == null ? "—" : Math.round(g.speaker_score * 100)}`,
   );
   if (g.acceptance_rate_percent != null)
     lines.push(`- Acceptance rate: ${g.acceptance_rate_percent}%`);
@@ -561,18 +549,12 @@ function briefToMarkdown(b: ConferenceBrief): string {
   }
 
   if (b.attendees.members.length) {
-    lines.push(
-      b.attendees.team_size === 1
-        ? "## Recommended attendee"
-        : `## Recommended team of ${b.attendees.team_size}`,
-    );
+    lines.push("## Who is going");
     for (const m of b.attendees.members) {
-      lines.push(
-        `- **${m.full_name}** (${m.team}${m.location_city ? `, ${m.location_city}` : ""})`,
-      );
-      if (m.narrative) lines.push(`  ${m.narrative}`);
+      const when =
+        m.arrives_on && m.departs_on ? ` — ${m.arrives_on} to ${m.departs_on}` : "";
+      lines.push(`- **${m.person_label}** (${m.activity}${when})`);
     }
-    if (b.attendees.rationale_text) lines.push(`> ${b.attendees.rationale_text}`);
     lines.push("");
   }
 

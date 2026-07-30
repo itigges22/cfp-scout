@@ -13,28 +13,31 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useMe } from "@/hooks/useMe";
-import { ApiError, audiencesApi, pillarsApi, smesApi, topicsApi } from "@/lib/api";
+import { ApiError, audiencesApi, pillarsApi, smesApi } from "@/lib/api";
 import type { AudienceProfileRead, PillarRead, SmeCreate, SmeRead } from "@/lib/api-types";
-import { ErrorBox, Field } from "@/routes/audiences";
+import { ErrorBox, Field } from "@/components/form";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Existing SME → renders as "edit" form. Omitted → create form. */
   initial?: SmeRead | null;
+  /**
+   * Pillar to pre-select when creating. SMEs belong to a pillar, so the
+   * dialog is normally opened FROM one — this seeds it so the person is
+   * linked on save rather than created loose and linked afterwards.
+   */
+  defaultPillarId?: string | null;
 }
-
-const SME_MAX_TOPICS = 5;
 
 const EMPTY_FORM: SmeCreate = {
   full_name: "",
   email: null,
   team: "Engineering",
-  primary_topics: [],
+  expertise: "",
   audience_focus: [],
   location_country: "US",
   location_city: null,
@@ -42,9 +45,19 @@ const EMPTY_FORM: SmeCreate = {
   languages: ["en"],
   external_links: {},
   is_active: true,
+  // Strategic pillars. The sme_pillars junction and its link endpoints
+  // already existed but only the PILLAR page could reach them, so an SME
+  // added here was saved with no pillar and the matcher had less to work
+  // with than the data model allowed for.
+  pillar_ids: [],
 };
 
-export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
+export function SmeFormDialog({
+  open,
+  onOpenChange,
+  initial = null,
+  defaultPillarId = null,
+}: Props) {
   const queryClient = useQueryClient();
   const { label: meLabel } = useMe();
   const isEdit = initial !== null;
@@ -59,7 +72,7 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
         full_name: initial.full_name,
         email: initial.email,
         team: initial.team,
-        primary_topics: initial.primary_topics,
+        expertise: initial.expertise ?? "",
         audience_focus: initial.audience_focus,
         location_country: initial.location_country,
         location_city: initial.location_city,
@@ -67,20 +80,19 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
         languages: initial.languages,
         external_links: initial.external_links ?? {},
         is_active: initial.is_active,
+        pillar_ids: initial.pillar_ids ?? [],
       });
     } else {
-      setForm(EMPTY_FORM);
+      setForm({
+        ...EMPTY_FORM,
+        pillar_ids: defaultPillarId ? [defaultPillarId] : [],
+      });
     }
     setFieldErrors({});
-  }, [open, initial]);
+  }, [open, initial, defaultPillarId]);
 
   // Fetch the lookups needed for the multi-selects. Both stay open while
   // the dialog is up; cached by React Query.
-  const topicsQuery = useQuery({
-    queryKey: ["topics", "active-for-sme-picker"],
-    queryFn: () => topicsApi.list({ per_page: 200, pending_only: false }),
-    enabled: open,
-  });
   const audiencesQuery = useQuery({
     queryKey: ["audiences", "active-for-sme-picker"],
     queryFn: () => audiencesApi.list({ per_page: 200, is_active: true }),
@@ -107,6 +119,9 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["smes"] });
+      // Creating/editing may change pillar links, and each pillar page has
+      // its own SME list (["pillars", id, "smes"]) — prefix covers them all.
+      void queryClient.invalidateQueries({ queryKey: ["pillars"] });
       setForm(EMPTY_FORM);
       setFieldErrors({});
       onOpenChange(false);
@@ -118,8 +133,17 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
 
   const bioLength = form.bio.length;
   const bioOk = bioLength >= 200 && bioLength <= 2000;
+  // Audiences are no longer required to save. They sharpen matching, so the
+  // form still nudges for one — but a fresh install has no audiences yet and
+  // blocking on it made the very first SME impossible to create.
   const audienceOk = form.audience_focus.length >= 1;
-  const canSubmit = bioOk && audienceOk;
+  // A pillar is REQUIRED, create and edit alike. An SME is pillar-owned —
+  // one with no pillar is invisible to the part of the matcher that asks
+  // "who covers this theme", so allowing it just creates broken rows.
+  // Enforced here rather than in the API schema: bulk imports and restore
+  // replay legacy rows that may predate the rule.
+  const pillarOk = (form.pillar_ids ?? []).length >= 1;
+  const canSubmit = bioOk && pillarOk;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -165,17 +189,57 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
 
           {/* ----- Expertise ----- */}
           <Section title="Expertise & focus">
-            <Field label="Primary topics" error={fieldErrors.primary_topics}>
-              <PickerHint
-                hint={`Select up to ${SME_MAX_TOPICS} topics (${form.primary_topics.length}/${SME_MAX_TOPICS} selected). Approve pending topics in /topics first.`}
-              />
-              <Picker
-                query={topicsQuery}
-                renderLabel={(t) => t.name}
-                selected={form.primary_topics}
-                maxSelect={SME_MAX_TOPICS}
-                onChange={(ids) => setForm({ ...form, primary_topics: ids })}
-                emptyMessage="No active topics yet. Approve them in /topics or seed via the workbook."
+            <Field label="Strategic pillars" error={fieldErrors.pillar_ids}>
+              <PickerHint hint="Required — every SME belongs to at least one pillar. Drives which conferences they are matched against." />
+              <div className="flex flex-wrap gap-2">
+                {(pillarsQuery.data ?? []).map((p: PillarRead) => {
+                  const on = (form.pillar_ids ?? []).includes(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() =>
+                        setForm((prev) => ({
+                          ...prev,
+                          pillar_ids: on
+                            ? (prev.pillar_ids ?? []).filter((x) => x !== p.id)
+                            : [...(prev.pillar_ids ?? []), p.id],
+                        }))
+                      }
+                      className={[
+                        "rounded-full border px-3 py-1 text-sm transition-colors",
+                        on
+                          ? "border-accent bg-accent/15 text-accent"
+                          : "border-border text-fg-muted hover:bg-surface-2",
+                      ].join(" ")}
+                    >
+                      {p.name}
+                    </button>
+                  );
+                })}
+                {(pillarsQuery.data ?? []).length === 0 && (
+                  <span className="text-sm text-fg-subtle">
+                    No pillars yet — create one under Pillars first.
+                  </span>
+                )}
+              </div>
+            </Field>
+
+            {/* Replaced the "Primary topics" vocabulary picker. It asked people
+                to self-describe by scanning 130+ machine-extracted entries, so
+                they skipped it — and the matcher scored that skip as a hard 0.
+                Free text goes into the same embedding as the bio, which is the
+                dimension the ranker actually weights. */}
+            <Field label="What do they work on?" error={fieldErrors.expertise}>
+              <PickerHint hint="Their own words — projects, themes, favourite talking points. This feeds matching directly; more specific is better." />
+              <textarea
+                className="min-h-28 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg"
+                maxLength={6000}
+                placeholder={
+                  "e.g. ITS Hub (inference-time scaling) — better answers by letting the model think longer at answer time, no retraining. My favourite topic, often misunderstood around tokenomics on-prem…"
+                }
+                value={form.expertise ?? ""}
+                onChange={(e) => setForm({ ...form, expertise: e.currentTarget.value })}
               />
             </Field>
 
@@ -255,6 +319,12 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
           ) : null}
 
           {/* Inline pre-submit hints so the user knows exactly what's blocking */}
+          {canSubmit && !audienceOk && (
+            <div className="rounded-md border border-border bg-surface-2 px-3 py-2 text-xs text-fg-muted">
+              No audience selected. Optional, but it sharpens which conferences
+              this person is matched to.
+            </div>
+          )}
           {!canSubmit && (
             <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-warning">
               {!bioOk && bioLength < 200
@@ -262,9 +332,10 @@ export function SmeFormDialog({ open, onOpenChange, initial = null }: Props) {
                 : !bioOk
                   ? "Bio is too long — trim to 2000 characters."
                   : null}
-              {!audienceOk
-                ? " Select at least one audience the SME speaks to."
+              {!pillarOk
+                ? " Pick at least one strategic pillar — every SME belongs to one."
                 : null}
+
             </div>
           )}
         </div>
@@ -397,74 +468,3 @@ function BioGauge({ length, ok }: { length: number; ok: boolean }) {
   );
 }
 
-interface PickerItem {
-  id: string;
-}
-
-interface PickerProps<T extends PickerItem> {
-  query: {
-    isLoading: boolean;
-    isError: boolean;
-    data: { items: T[] } | undefined;
-  };
-  renderLabel: (item: T) => string;
-  selected: string[];
-  maxSelect?: number;
-  onChange: (ids: string[]) => void;
-  emptyMessage: string;
-}
-
-function Picker<T extends PickerItem>({
-  query,
-  renderLabel,
-  selected,
-  maxSelect,
-  onChange,
-  emptyMessage,
-}: PickerProps<T>) {
-  if (query.isLoading) {
-    return <Skeleton className="h-20 w-full" />;
-  }
-  if (query.isError || !query.data) {
-    return (
-      <div className="rounded-md border border-danger/30 bg-danger/10 p-2 text-xs text-danger">
-        Failed to load options.
-      </div>
-    );
-  }
-  if (query.data.items.length === 0) {
-    return (
-      <div className="rounded-md border border-dashed border-border-strong bg-surface-2 p-3 text-xs text-fg-muted">
-        {emptyMessage}
-      </div>
-    );
-  }
-
-  const isSelected = (id: string) => selected.includes(id);
-  const atCap = maxSelect !== undefined && selected.length >= maxSelect;
-  const toggle = (id: string) => {
-    if (isSelected(id)) onChange(selected.filter((x) => x !== id));
-    else if (!atCap) onChange([...selected, id]);
-  };
-
-  return (
-    <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto rounded-md border border-border bg-surface p-2">
-      {query.data.items.map((item) => {
-        const on = isSelected(item.id);
-        return (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => toggle(item.id)}
-            disabled={!on && atCap}
-            className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Badge variant={on ? "accent" : "muted"} className="cursor-pointer">
-              {renderLabel(item)}
-            </Badge>
-          </button>
-        );
-      })}
-    </div>
-  );
-}

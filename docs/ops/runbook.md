@@ -56,7 +56,7 @@ Symptoms: writes fail, `make migrate` hangs, `pg_size_pretty(...)` in
    ORDER BY pg_total_relation_size(relid) DESC LIMIT 10;
    ```
    Likely suspects: `vectors.document_chunks`, `app.raw_pages`,
-   `audit.content_versions`.
+   `audit.audit_log`.
 4. **Decay-archive**: confirm `DECAY_ENABLED=true` so old conferences
    get archived; otherwise trigger manually:
    `POST /api/v1/admin/jobs/run_decay_pass/trigger`.
@@ -223,8 +223,7 @@ text. They're persisted but never extracted. Plan 14's design is
 intentional — we don't ship Playwright. Two options:
 
 - Disable the source (UI: `DELETE /api/v1/sources/<id>`).
-- Manually upload the conference info via the SME form or the XLSX
-  workbook (plan 31).
+- Enter the conference by hand from `/conferences` → **New**.
 
 ---
 
@@ -271,7 +270,7 @@ Only relevant when promoting a new model (e.g. when your LLM provider publishes 
 successor to your current embedding model). Process:
 
 1. Insert the new row in `vectors.embedding_models` (manual SQL today;
-   plan 31 will surface this as a workbook sheet).
+   the UI surfaces this under Settings).
 2. Toggle `is_active`: only one row is active at a time. The current
    active row continues to be used by old chunks; new chunks use the
    new active row.
@@ -335,9 +334,9 @@ Three independent enrichment jobs, all idempotent:
 
 | Job | Script | When to run |
 |-----|--------|-------------|
-| Conference text | `podman exec scout-api /app/.venv/bin/python /app/scripts/enrich_and_reembed.py` | After bulk-importing conferences that bypassed `enrich_and_match_task`; pass `--force` to redo everyone. |
-| Pillar text | `podman exec scout-api /app/.venv/bin/python /app/scripts/enrich_pillars.py` | After editing strategic-pillar names/descriptions or adding/removing messaging documents; pass `--force` to redo. |
-| LLM judge (Stage D) | `podman exec scout-api /app/.venv/bin/python /app/scripts/bulk_judge.py` | After enriching conferences or pillars; refreshes `matches.judge_score` and `matches.overall_score` for every row. |
+| Conference text | `podman exec scout-api python -m app.maintenance enrich-conferences` | After bulk-importing conferences that bypassed `enrich_and_match_task`; pass `--force` to redo everyone. |
+| Pillar text | `podman exec scout-api python -m app.maintenance enrich-pillars` | After editing strategic-pillar names/descriptions or adding/removing messaging documents; pass `--force` to redo. |
+| Conference status | `podman exec scout-api python -m app.maintenance refresh-statuses --dry-run` | After enriching conferences or pillars. Drop `--dry-run` to apply. (The old `bulk_judge.py` was deleted: it held a fourth copy of the `overall_score` blend that disagreed with the matcher pipeline.) |
 
 The per-ingest auto-process hook (`enrich_and_match_task`) runs all
 three steps inline for one new conference, so manual runs are only

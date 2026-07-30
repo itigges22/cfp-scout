@@ -23,22 +23,26 @@ async def _create_pillar(test_engine, name: str = "TestPillar") -> str:
 
 
 @pytest.mark.asyncio
-async def test_create_conference_team_managed_status_approved(
+async def test_create_conference_grassroot_status_approved(
     async_client: AsyncClient, clean_db
 ) -> None:
-    """POST /conferences with event_kind='team_managed' → status='approved' immediately."""
+    """POST /conferences with event_kind='grassroot' → status='approved' immediately.
+
+    'team_managed' was renamed to 'grassroot' by migration 20260604_1100;
+    this test kept asserting the old value and had been failing since.
+    """
     resp = await async_client.post(
         "/api/v1/conferences",
         json={
             "name": "Our Internal Summit 2099",
-            "event_kind": "team_managed",
+            "event_kind": "grassroot",
         },
     )
     assert resp.status_code == 201
     body = resp.json()
-    assert body["conference"]["event_kind"] == "team_managed"
+    assert body["conference"]["event_kind"] == "grassroot"
     assert body["conference"]["status"] == "approved"
-    # Matcher should be skipped for team_managed
+    # Matcher should be skipped for grassroot
     assert body["match"] is None
     assert "skipped" in (body["match_error"] or "").lower()
 

@@ -14,7 +14,6 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 
-
 # ---------------------------------------------------------------------------
 # Helper to create reference data (pillar + conference)
 # ---------------------------------------------------------------------------
@@ -52,10 +51,10 @@ async def _insert_conference(test_engine, conf_id: str | None = None) -> str:
         await conn.execute(
             text(
                 "INSERT INTO app.conferences "
-                "(id, name, slug, status, event_kind, freshness_score, topics, "
+                "(id, name, slug, status, event_kind, topics, "
                 "cfp_topics_of_interest, cfp_deadlines, is_virtual) "
                 "VALUES (:id, 'IntTestConf', :slug, 'approved', 'corporate', "
-                "1.0, '{}', '{}', '[]', false)"
+                "'{}', '{}', '[]', false)"
             ),
             {"id": cid, "slug": slug},
         )
@@ -123,8 +122,6 @@ async def test_get_talk(async_client: AsyncClient, clean_db) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["id"] == talk_id
-    assert body["tags"] == []
-    assert body["topics"] == []
     assert body["submissions"] == []
 
 
@@ -133,7 +130,7 @@ async def test_update_talk(async_client: AsyncClient, clean_db) -> None:
     create_resp = await async_client.post("/api/v1/talks", json={"title": "Old Title"})
     assert create_resp.status_code == 201
     talk_id = create_resp.json()["id"]
-    old_updated = create_resp.json()["updated_at"]
+    create_resp.json()["updated_at"]
 
     resp = await async_client.put(
         f"/api/v1/talks/{talk_id}",
@@ -185,9 +182,7 @@ async def test_submit_talk_duplicate_conference_409(
     talk_id = create_resp.json()["id"]
     conf_id = await _insert_conference(test_engine)
 
-    await async_client.post(
-        f"/api/v1/talks/{talk_id}/submit", json={"conference_id": conf_id}
-    )
+    await async_client.post(f"/api/v1/talks/{talk_id}/submit", json={"conference_id": conf_id})
     resp = await async_client.post(
         f"/api/v1/talks/{talk_id}/submit", json={"conference_id": conf_id}
     )
@@ -195,9 +190,7 @@ async def test_submit_talk_duplicate_conference_409(
 
 
 @pytest.mark.asyncio
-async def test_update_submission_outcome(
-    async_client: AsyncClient, clean_db, test_engine
-) -> None:
+async def test_update_submission_outcome(async_client: AsyncClient, clean_db, test_engine) -> None:
     create_resp = await async_client.post("/api/v1/talks", json={"title": "Outcome Talk"})
     talk_id = create_resp.json()["id"]
     conf_id = await _insert_conference(test_engine)
@@ -252,9 +245,7 @@ async def test_reuse_check_high_risk_three_submissions(
 
 
 @pytest.mark.asyncio
-async def test_reuse_check_series_reuse(
-    async_client: AsyncClient, clean_db, test_engine
-) -> None:
+async def test_reuse_check_series_reuse(async_client: AsyncClient, clean_db, test_engine) -> None:
     """2 submissions to same series → series_reuse detected."""
     create_resp = await async_client.post("/api/v1/talks", json={"title": "SeriesReuse"})
     talk_id = create_resp.json()["id"]
@@ -269,10 +260,10 @@ async def test_reuse_check_series_reuse(
             await conn.execute(
                 text(
                     "INSERT INTO app.conferences "
-                    "(id, name, slug, status, event_kind, freshness_score, topics, "
+                    "(id, name, slug, status, event_kind, topics, "
                     "cfp_topics_of_interest, cfp_deadlines, is_virtual, series_id) "
                     "VALUES (:id, 'KubeCon', :slug, 'approved', 'corporate', "
-                    "1.0, '{}', '{}', '[]', false, :series_id)"
+                    "'{}', '{}', '[]', false, :series_id)"
                 ),
                 {"id": cid, "slug": slug, "series_id": series_id},
             )
@@ -290,9 +281,7 @@ async def test_reuse_check_series_reuse(
 
 
 @pytest.mark.asyncio
-async def test_filter_talks_by_pillar(
-    async_client: AsyncClient, clean_db, test_engine
-) -> None:
+async def test_filter_talks_by_pillar(async_client: AsyncClient, clean_db, test_engine) -> None:
     pillar_id = await _insert_pillar(test_engine, "FilterPillar")
 
     # Create 2 talks: one with pillar, one without
@@ -310,45 +299,11 @@ async def test_filter_talks_by_pillar(
     assert items[0]["title"] == "With Pillar"
 
 
-@pytest.mark.asyncio
-async def test_filter_talks_by_tag(
-    async_client: AsyncClient, clean_db, test_engine
-) -> None:
-    """GET /talks?tag_id=X returns only talks with that tag."""
-    # Create a tag
-    tag_resp = await async_client.post("/api/v1/talk-tags", json={"name": "filter-tag"})
-    assert tag_resp.status_code == 201
-    tag_id = tag_resp.json()["id"]
-
-    # Create two talks
-    t1 = (await async_client.post("/api/v1/talks", json={"title": "Tagged Talk"})).json()["id"]
-    await async_client.post("/api/v1/talks", json={"title": "Untagged Talk"})
-
-    # Assign tag to first talk directly
-    async with test_engine.begin() as conn:
-        await conn.execute(
-            text("INSERT INTO app.talk_tag_assignments (talk_id, tag_id) VALUES (:tid, :tagid)"),
-            {"tid": t1, "tagid": tag_id},
-        )
-
-    resp = await async_client.get(f"/api/v1/talks?tag_id={tag_id}")
-    assert resp.status_code == 200
-    items = resp.json()["items"]
-    assert len(items) == 1
-    assert items[0]["title"] == "Tagged Talk"
-
-
-# ---------------------------------------------------------------------------
-# Upload endpoint
-# ---------------------------------------------------------------------------
-
 _FIXTURE_DIR = __import__("pathlib").Path(__file__).parent.parent / "fixtures"
 
 
 @pytest.mark.asyncio
-async def test_upload_txt_returns_preview_no_db_row(
-    async_client: AsyncClient, clean_db
-) -> None:
+async def test_upload_txt_returns_preview_no_db_row(async_client: AsyncClient, clean_db) -> None:
     """POST /talks/upload with a TXT file returns ExtractedTalk preview; no DB row created."""
     sample = _FIXTURE_DIR / "sample_talk.txt"
     with open(sample, "rb") as fh:
@@ -359,7 +314,6 @@ async def test_upload_txt_returns_preview_no_db_row(
     assert resp.status_code == 200
     body = resp.json()
     assert "extracted" in body
-    assert "suggested_topic_matches" in body
     # extracted should have at minimum title and abstract
     assert body["extracted"]["title"]
     assert body["extracted"]["abstract"]
@@ -376,3 +330,116 @@ async def test_upload_unsupported_type_422(async_client: AsyncClient, clean_db) 
         files={"file": ("presentation.pptx", b"PK\x03\x04fake", "application/octet-stream")},
     )
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Talk↔conference ranking (GET /conferences/{id}/talks)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_conference_talks_unknown_conference_404(async_client: AsyncClient, clean_db) -> None:
+    resp = await async_client.get(f"/api/v1/conferences/{uuid.uuid4()}/talks")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_conference_talks_ranking_lists_active_talks(
+    async_client: AsyncClient, clean_db, test_engine
+) -> None:
+    """The ranking lists every active talk with the fields the panel needs,
+    and flips already_submitted after a submission to THIS conference."""
+    conf_id = await _insert_conference(test_engine)
+    create_resp = await async_client.post(
+        "/api/v1/talks",
+        json={"title": "Ranked Talk", "abstract": "About inference scaling."},
+    )
+    assert create_resp.status_code == 201
+    talk_id = create_resp.json()["id"]
+
+    resp = await async_client.get(f"/api/v1/conferences/{conf_id}/talks")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["conference_id"] == conf_id
+    rows = {t["talk_id"]: t for t in body["talks"]}
+    assert talk_id in rows
+    row = rows[talk_id]
+    assert row["title"] == "Ranked Talk"
+    assert row["already_submitted"] is False
+    assert 0.0 <= row["similarity"] <= 1.0
+    assert isinstance(row["has_embedding"], bool)
+
+    # Submit to this conference — the flag must flip.
+    sub = await async_client.post(
+        f"/api/v1/talks/{talk_id}/submit",
+        json={"conference_id": conf_id, "submitted_at": str(date.today())},
+    )
+    assert sub.status_code == 201
+    resp2 = await async_client.get(f"/api/v1/conferences/{conf_id}/talks")
+    rows2 = {t["talk_id"]: t for t in resp2.json()["talks"]}
+    assert rows2[talk_id]["already_submitted"] is True
+
+
+@pytest.mark.asyncio
+async def test_soft_deleted_talk_leaves_ranking_and_index(
+    async_client: AsyncClient, clean_db, test_engine
+) -> None:
+    """Retiring a talk removes it from the ranking AND deletes its chunks,
+    so it stops influencing the speaker signal too."""
+    conf_id = await _insert_conference(test_engine)
+    create_resp = await async_client.post(
+        "/api/v1/talks", json={"title": "Retired Talk", "abstract": "Old content."}
+    )
+    talk_id = create_resp.json()["id"]
+
+    del_resp = await async_client.delete(f"/api/v1/talks/{talk_id}")
+    assert del_resp.status_code == 204
+
+    resp = await async_client.get(f"/api/v1/conferences/{conf_id}/talks")
+    assert all(t["talk_id"] != talk_id for t in resp.json()["talks"])
+
+    async with test_engine.begin() as conn:
+        n = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM vectors.document_chunks "
+                    "WHERE owner_type='talk' AND owner_id=:tid"
+                ),
+                {"tid": talk_id},
+            )
+        ).scalar_one()
+    assert n == 0
+
+
+@pytest.mark.asyncio
+async def test_create_talk_embeds_chunks_when_model_available(
+    async_client: AsyncClient, clean_db, test_engine
+) -> None:
+    """A created talk gets talk-owned chunks — what makes it visible to
+    matching at all. Skipped when the fixture has no embedding model."""
+    from app.services.embeddings import get_active_embedding_model
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    Session = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with Session() as db:
+        try:
+            await get_active_embedding_model(db)
+        except Exception as exc:
+            pytest.skip(f"embedding unavailable in this fixture: {exc}")
+
+    create_resp = await async_client.post(
+        "/api/v1/talks",
+        json={"title": "Indexed Talk", "abstract": "Some abstract text."},
+    )
+    talk_id = create_resp.json()["id"]
+    async with test_engine.begin() as conn:
+        n = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM vectors.document_chunks "
+                    "WHERE owner_type='talk' AND owner_id=:tid"
+                ),
+                {"tid": talk_id},
+            )
+        ).scalar_one()
+    assert n >= 1

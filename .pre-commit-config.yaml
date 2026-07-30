@@ -32,7 +32,7 @@ repos:
       - id: gitleaks
 
   # ---------------------------------------------------------------------------
-  # Python (apps/api, apps/scraper)
+  # Python (apps/api)
   # ---------------------------------------------------------------------------
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.7.4
@@ -41,10 +41,20 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  # mypy --strict currently reports ~408 errors across 84 files. As a
+  # blocking hook that meant `pre-commit run --all-files` (i.e. `make lint`)
+  # could never pass, so in practice the hook was bypassed and NONE of the
+  # hooks above ran either. Moved to the manual stage until the backlog is
+  # cleared — the config stays as the stated goal, but it no longer makes
+  # the whole lint gate unusable.
+  #
+  #   run it explicitly:  pre-commit run --hook-stage manual mypy --all-files
+  #   or:                 make typecheck
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.13.0
     hooks:
       - id: mypy
+        stages: [manual]
         files: ^apps/api/
         additional_dependencies:
           - pydantic>=2

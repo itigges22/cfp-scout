@@ -21,7 +21,7 @@ For backups specifically, see [`backups.md`](backups.md).
 |--------|---------|--------------|
 | `app` | Application tables: conferences, sources, smes, audiences, messaging, matches, junctions | The OLTP hot path. Most reads/writes target here. |
 | `vectors` | Embedding storage (pgvector) | HNSW indexes are expensive to rebuild; separating the schema means vacuum + reindex don't fight the hot OLTP tables. |
-| `audit` | Append-only `audit_log` and `content_versions` | Write-heavy and grow-forever. App role has INSERT + SELECT only — UPDATE/DELETE forbidden at the role level (defense in depth). |
+| `audit` | Append-only `audit_log` | Grow-forever by design. App role has INSERT + SELECT only — UPDATE/DELETE forbidden at the role level (defense in depth). |
 | `jobs` | APScheduler `SQLAlchemyJobStore` | Background jobs persist here so they survive container restarts without Redis (see plan 13). |
 
 See [ADR-0002](../ADR/0002-postgres-schemas-not-databases.md) for the rationale on schemas vs separate DBs.
@@ -57,7 +57,7 @@ Loaded by `infra/postgres/init/01-extensions.sql` on first boot:
 | `unaccent` | Accent-insensitive matching (plan 15) |
 | `pgcrypto` | `gen_random_uuid()` for primary keys |
 
-No Apache AGE — the knowledge graph is computed in-memory with NetworkX (plan 16, [ADR-0001](../ADR/0001-route-1-local-install-2-containers.md)).
+No Apache AGE and no graph database. Relationships are ordinary join tables read with explicit joins.
 
 ## Connection strings
 

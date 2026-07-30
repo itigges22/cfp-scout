@@ -2,7 +2,6 @@
  * /dashboard — top events + global map + lightweight agent prompt.
  *
  * Sections:
- *   - 3 roll-up stat cards (upcoming approved · pending review · CFP closing)
  *   - Dark world map: one dot per country, sized by event count
  *   - Top picks: 6 per page, with prev/next pagination so the LLM only
  *     scores 6 cards' worth of detail per page load instead of 50+ at once
@@ -21,9 +20,7 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,9 +47,7 @@ function DashboardPage() {
   });
   const [page, setPage] = useState(0);
 
-  const stats = statsQ.data;
   const allItems = useMemo(() => allQ.data?.items ?? [], [allQ.data]);
-  const totalPages = Math.max(1, Math.ceil(allItems.length / PAGE_SIZE));
   const pageItems = allItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   // Geocoded conferences — one item per non-virtual conference whose
@@ -68,32 +63,6 @@ function DashboardPage() {
         title="Dashboard"
         description="Where to go next: top-ranked AI events, global distribution, recommended SMEs."
       />
-
-      {/* Three roll-up stats (low-coverage SMEs card removed; that's a
-          /smes-page concern, not a dashboard one) */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard
-          title="Upcoming approved"
-          hint="next 90 days"
-          value={stats?.cards.upcoming_approved}
-          loading={statsQ.isLoading}
-          error={!!statsQ.error}
-        />
-        <StatCard
-          title="Pending review"
-          hint="needs your attention"
-          value={stats?.cards.pending_review}
-          loading={statsQ.isLoading}
-          error={!!statsQ.error}
-        />
-        <StatCard
-          title="CFP closing"
-          hint="within 30 days"
-          value={stats?.cards.cfp_closing_soon}
-          loading={statsQ.isLoading}
-          error={!!statsQ.error}
-        />
-      </div>
 
       {/* Map (left) + Ask Scout chat (right). On lg+ they split the row
           50/50 and BOTH live in a fixed-height container so the chat's
@@ -391,33 +360,6 @@ function CardSkeletonGrid() {
   );
 }
 
-function StatCard({
-  title,
-  hint,
-  value,
-  loading,
-  error,
-}: {
-  title: string;
-  hint: string;
-  value: number | undefined;
-  loading: boolean;
-  error: boolean;
-}) {
-  return (
-    <Card>
-      <CardHeader className="p-4">
-        <CardDescription className="text-xs uppercase tracking-wider">
-          {title}
-        </CardDescription>
-        <CardTitle className="text-3xl font-semibold tabular-nums">
-          {error ? "—" : loading ? <Skeleton className="h-7 w-12" /> : (value ?? 0).toString()}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-4 pt-0 text-xs text-fg-subtle">{hint}</CardContent>
-    </Card>
-  );
-}
 
 // ---- exported because conferences.tsx + others re-use these ---------------
 

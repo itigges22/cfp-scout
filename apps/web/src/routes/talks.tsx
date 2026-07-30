@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, BookOpen, Loader2, Plus, Upload } from "lucide-react";
+import { Link, createFileRoute } from "@tanstack/react-router";
+import { AlertTriangle, Loader2, Plus, Trash2, Upload } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -34,10 +35,9 @@ import type {
   TalkReviewStatus,
   TalkSubmissionCreate,
   TalkUpdate,
-  TalkUploadPreview,
 } from "@/lib/api-types";
 import { PageHeader } from "@/routes/dashboard";
-import { ErrorBox } from "@/routes/audiences";
+import { ErrorBox } from "@/components/form";
 
 export const Route = createFileRoute("/talks")({
   component: TalksPage,
@@ -64,13 +64,7 @@ function TalksPage() {
   const [statusFilter, setStatusFilter] = useState<TalkReviewStatus | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<TalkRead | null>(null);
-  const [uploadPreview, setUploadPreview] = useState<TalkUploadPreview | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const uploadMutation = useMutation({
-    mutationFn: (file: File) => talksApi.upload(file),
-    onSuccess: (preview) => setUploadPreview(preview),
-  });
 
   const pillarsQuery = useQuery({
     queryKey: ["pillars"],
@@ -101,41 +95,14 @@ function TalksPage() {
         description="Track and manage talk abstracts. Submit talks to conferences and monitor reuse risk."
       />
 
-      {/* Actions */}
+      {/* Actions — one button. Uploading a document is a way of STARTING a
+          talk, not a separate operation on the library, so it lives inside
+          the new-talk pane rather than beside it. */}
       <div className="flex items-center gap-3">
         <Button size="sm" onClick={() => setShowCreate(true)}>
           <Plus className="mr-2 size-4" />
           New talk
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploadMutation.isPending}
-        >
-          {uploadMutation.isPending ? (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          ) : (
-            <Upload className="mr-2 size-4" />
-          )}
-          Upload document
-        </Button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.txt,.docx"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.currentTarget.files?.[0];
-            if (file) {
-              uploadMutation.mutate(file);
-              e.currentTarget.value = "";
-            }
-          }}
-        />
-        {uploadMutation.isError && uploadMutation.error instanceof ApiError ? (
-          <span className="text-sm text-danger">{uploadMutation.error.message}</span>
-        ) : null}
       </div>
 
       {/* Filters */}
@@ -212,7 +179,6 @@ function TalksPage() {
                   <TableHead>Status</TableHead>
                   <TableHead>Format</TableHead>
                   <TableHead>Submissions</TableHead>
-                  <TableHead>Tags</TableHead>
                   <TableHead>Updated</TableHead>
                   <TableHead className="w-8" />
                 </TableRow>
@@ -234,7 +200,7 @@ function TalksPage() {
                   >
                     <TableCell className="font-medium">{talk.title}</TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_VARIANT[talk.review_status]}>
+                      <Badge variant={STATUS_VARIANT[talk.review_status as TalkReviewStatus] ?? "muted"}>
                         {talk.review_status.replace("_", " ")}
                       </Badge>
                     </TableCell>
@@ -244,17 +210,8 @@ function TalksPage() {
                     <TableCell>
                       <UsageGauge talk={talk} />
                     </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {talk.tags.map((tag) => (
-                          <Badge key={tag.id} variant="muted" className="text-xs">
-                            {tag.name}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
                     <TableCell className="text-xs text-fg-muted">
-                      {new Date(talk.updated_at).toLocaleDateString()}
+                      {formatDate(talk.updated_at)}
                     </TableCell>
                     <TableCell>
                       <Button
@@ -262,12 +219,22 @@ function TalksPage() {
                         variant="ghost"
                         onClick={(e) => {
                           e.stopPropagation();
+                          // Destructive and previously unconfirmed — one
+                          // stray click removed an abstract and its whole
+                          // submission history.
+                          if (
+                            !window.confirm(
+                              `Delete "${talk.title}"? Its submission history goes too.`,
+                            )
+                          ) {
+                            return;
+                          }
                           deleteTalk.mutate(talk.id);
                         }}
                         disabled={deleteTalk.isPending}
                         aria-label="delete talk"
                       >
-                        <BookOpen className="size-4 text-fg-subtle" />
+                        <Trash2 className="size-4 text-fg-subtle" />
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -277,18 +244,6 @@ function TalksPage() {
           )}
         </CardContent>
       </Card>
-
-      {uploadPreview && (
-        <UploadReviewDialog
-          preview={uploadPreview}
-          pillars={pillarsQuery.data ?? []}
-          onClose={() => setUploadPreview(null)}
-          onSaved={() => {
-            setUploadPreview(null);
-            void qc.invalidateQueries({ queryKey: ["talks"] });
-          }}
-        />
-      )}
 
       <TalkDialog
         open={showCreate}
@@ -316,197 +271,16 @@ function TalksPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Upload review dialog — shows extracted talk fields for user confirmation
-// ---------------------------------------------------------------------------
-
-function UploadReviewDialog({
-  preview,
-  pillars,
-  onClose,
-  onSaved,
-}: {
-  preview: TalkUploadPreview;
-  pillars: PillarRead[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const { extracted } = preview;
-  const suggestedPillar = pillars.find(
-    (p) => p.name.toLowerCase() === (extracted.suggested_pillar_name ?? "").toLowerCase(),
-  );
-
-  const [form, setForm] = useState<TalkCreate>({
-    title: extracted.title,
-    abstract: extracted.abstract,
-    pillar_id: suggestedPillar?.id ?? null,
-    talk_format: (extracted.talk_format as TalkFormat | null) ?? null,
-    suggested_duration_minutes: extracted.suggested_duration_minutes ?? null,
-    review_status: "draft",
-  });
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-
-  const save = useMutation({
-    mutationFn: (body: TalkCreate) => talksApi.create(body),
-    onSuccess: onSaved,
-    onError: (err) => {
-      if (err instanceof ApiError) setFieldErrors(err.fieldErrors());
-    },
-  });
-
-  const setField = <K extends keyof TalkCreate>(k: K, v: TalkCreate[K]) =>
-    setForm((prev) => ({ ...prev, [k]: v }));
-
-  return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Review extracted talk</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-4 p-6">
-          {/* Key themes / topics extracted */}
-          {extracted.key_themes.length > 0 && (
-            <div className="rounded-md border border-border bg-surface-2 p-3">
-              <p className="mb-1.5 text-xs font-medium text-fg-muted">Extracted themes</p>
-              <div className="flex flex-wrap gap-1.5">
-                {extracted.key_themes.map((t) => (
-                  <span key={t} className="rounded bg-accent/15 px-2 py-0.5 text-xs text-accent">
-                    {t}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <FieldWrap label="Title *" error={fieldErrors.title}>
-            <Input
-              value={form.title}
-              onChange={(e) => setField("title", e.currentTarget.value)}
-            />
-          </FieldWrap>
-
-          <FieldWrap label="Abstract" error={fieldErrors.abstract}>
-            <Textarea
-              value={form.abstract ?? ""}
-              onChange={(e) => setField("abstract", e.currentTarget.value || null)}
-              rows={5}
-            />
-          </FieldWrap>
-
-          <div className="grid grid-cols-2 gap-4">
-            <FieldWrap label="Format" error={fieldErrors.talk_format}>
-              <select
-                className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm"
-                value={form.talk_format ?? ""}
-                onChange={(e) =>
-                  setField("talk_format", (e.currentTarget.value as TalkFormat) || null)
-                }
-              >
-                <option value="">— none —</option>
-                {FORMATS.map((f) => (
-                  <option key={f} value={f}>{f}</option>
-                ))}
-              </select>
-            </FieldWrap>
-
-            <FieldWrap label="Duration (min)" error={fieldErrors.suggested_duration_minutes}>
-              <Input
-                type="number"
-                min={1}
-                value={form.suggested_duration_minutes ?? ""}
-                onChange={(e) =>
-                  setField(
-                    "suggested_duration_minutes",
-                    e.currentTarget.value ? Number(e.currentTarget.value) : null,
-                  )
-                }
-                placeholder="45"
-              />
-            </FieldWrap>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <FieldWrap label="Pillar" error={fieldErrors.pillar_id}>
-              <select
-                className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm"
-                value={form.pillar_id ?? ""}
-                onChange={(e) => setField("pillar_id", e.currentTarget.value || null)}
-              >
-                <option value="">— none —</option>
-                {pillars.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-              {extracted.suggested_pillar_name && !suggestedPillar && (
-                <p className="mt-1 text-xs text-fg-muted">
-                  Suggested: "{extracted.suggested_pillar_name}" (no exact match)
-                </p>
-              )}
-            </FieldWrap>
-
-            <FieldWrap label="Review status" error={fieldErrors.review_status}>
-              <select
-                className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm"
-                value={form.review_status ?? "draft"}
-                onChange={(e) =>
-                  setField("review_status", e.currentTarget.value as TalkReviewStatus)
-                }
-              >
-                <option value="draft">Draft</option>
-                <option value="pending_review">Pending review</option>
-                <option value="approved">Approved</option>
-              </select>
-            </FieldWrap>
-          </div>
-
-          {/* Topic suggestions from fuzzy match */}
-          {preview.suggested_topic_matches.length > 0 && (
-            <div className="rounded-md border border-border bg-surface-2 p-3">
-              <p className="mb-1.5 text-xs font-medium text-fg-muted">
-                Suggested topic tags (review — saved separately via Tags API)
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {preview.suggested_topic_matches.map((m) => (
-                  <span
-                    key={m.topic_id}
-                    className="rounded border border-border px-2 py-0.5 text-xs"
-                    title={`${Math.round(m.confidence * 100)}% confidence`}
-                  >
-                    {m.topic_name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {save.isError && save.error instanceof ApiError && Object.keys(fieldErrors).length === 0 ? (
-            <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-              {save.error.message}
-            </div>
-          ) : null}
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={save.isPending}>
-            Discard
-          </Button>
-          <Button
-            onClick={() => save.mutate(form)}
-            disabled={save.isPending || !form.title.trim()}
-          >
-            {save.isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-            Save to library
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Talk create / edit dialog
 // ---------------------------------------------------------------------------
 
 const EMPTY_TALK: TalkCreate = {
   title: "",
+  // Both carry server-side defaults ("manual" / true). Stated here because
+  // the generated type includes defaulted fields, and because a form that
+  // relies on an invisible default is one rename away from being wrong.
+  source_type: "manual",
+  is_active: true,
   abstract: null,
   pillar_id: null,
   talk_format: null,
@@ -530,11 +304,38 @@ function TalkDialog({
   const isEdit = initial !== null;
   const [form, setForm] = useState<TalkCreate>(EMPTY_TALK);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Uploading a document PRE-FILLS this form rather than opening a second
+  // review dialog. There used to be two: a toolbar "Upload document" button
+  // that opened its own near-identical form, which meant two places to keep
+  // in step and two answers to "where do I add a talk?".
+  const upload = useMutation({
+    mutationFn: (file: File) => talksApi.upload(file),
+    onSuccess: (preview) => {
+      const ex = preview.extracted;
+      const suggested = pillars.find(
+        (p) =>
+          p.name.toLowerCase() ===
+          (ex.suggested_pillar_name ?? "").toLowerCase(),
+      );
+      setForm((prev) => ({
+        ...prev,
+        title: ex.title || prev.title,
+        abstract: ex.abstract ?? prev.abstract,
+        pillar_id: suggested?.id ?? prev.pillar_id,
+        talk_format: (ex.talk_format as TalkFormat | null) ?? prev.talk_format,
+        suggested_duration_minutes:
+          ex.suggested_duration_minutes ?? prev.suggested_duration_minutes,
+      }));
+    },
+  });
 
   useEffect(() => {
     if (!open) return;
     if (initial) {
       setForm({
+        ...EMPTY_TALK,
         title: initial.title,
         abstract: initial.abstract,
         pillar_id: initial.pillar_id,
@@ -570,6 +371,46 @@ function TalkDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? `Edit "${initial?.title}"` : "New talk"}</DialogTitle>
         </DialogHeader>
+
+        {/* Start from a document. Creation only — on an existing talk this
+            would silently overwrite fields the user already curated. */}
+        {!isEdit && (
+          <div className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-surface-2/50 px-4 py-3">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={upload.isPending}
+            >
+              {upload.isPending ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 size-4" />
+              )}
+              Fill from a document
+            </Button>
+            <span className="text-xs text-fg-muted">
+              PDF, DOCX or TXT — the fields below are filled in for you to check.
+            </span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.txt,.docx"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.currentTarget.files?.[0];
+                if (file) {
+                  upload.mutate(file);
+                  e.currentTarget.value = "";
+                }
+              }}
+            />
+          </div>
+        )}
+        {upload.isError && upload.error instanceof ApiError ? (
+          <p className="text-sm text-danger">{upload.error.message}</p>
+        ) : null}
         <div className="flex flex-col gap-4 p-6">
           <FieldWrap label="Title *" error={fieldErrors.title}>
             <Input
@@ -802,12 +643,20 @@ function SubmissionsPanel({ talk }: { talk: TalkRead }) {
       {talk.submissions.length > 0 && (
         <ul className="space-y-1">
           {talk.submissions.map((s) => (
-            <li key={s.id} className="flex items-center justify-between text-xs">
-              <span className="font-mono text-fg-muted">{s.conference_id.slice(0, 8)}…</span>
-              <span className="flex items-center gap-2 text-fg-subtle">
+            <li key={s.id} className="flex items-center justify-between gap-3 text-xs">
+              <Link
+                to="/conferences/$id"
+                params={{ id: s.conference_id }}
+                className="truncate text-fg hover:underline"
+              >
+                {s.conference_name ?? `${s.conference_id.slice(0, 8)}…`}
+              </Link>
+              <span className="flex shrink-0 items-center gap-2 text-fg-subtle">
                 {s.outcome ? (
                   <span className={outcomeColor(s.outcome)}>{s.outcome}</span>
-                ) : null}
+                ) : (
+                  <span className="text-fg-subtle">pending</span>
+                )}
                 {s.submitted_at ? s.submitted_at : null}
               </span>
             </li>

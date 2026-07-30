@@ -3,7 +3,7 @@
  *
  * Backend: GET / PATCH / DELETE /api/v1/admin/settings.
  * Surfaces the LLM API key (masked), matcher gates and weights, SME
- * ranker weights, team scoring weights, decay flag, scraper politeness,
+ * ranker weights, decay flag, scraper politeness,
  * and logging level. Each section has its own save button so unrelated
  * edits don't bundle. Restart-required keys show a yellow banner; values
  * not yet overridden render their env-default with a "default" pill.
@@ -31,8 +31,10 @@ export const Route = createFileRoute("/settings_/tunables")({
 
 type SettingSpec = {
   name: string;
-  kind: "int" | "float" | "bool" | "str" | "secret" | "list_str";
-  group: "llm" | "matcher" | "sme" | "team" | "decay" | "discovery" | "scraper" | "logging" | "talks" | "conferences";
+  kind: "int" | "float" | "bool" | "str" | "text" | "secret" | "list_str";
+  // Plain string, not a union: the server owns this vocabulary and adds to
+  // it. A union here silently drops any group the literal does not name.
+  group: string;
   label: string;
   description: string;
   restart_required: boolean;
@@ -52,11 +54,15 @@ type SettingItem = {
 
 type SettingsListResponse = { items: SettingItem[] };
 
-const GROUP_ORDER: SettingSpec["group"][] = [
+// Preferred display order. NOT the set of groups that exist — a group the
+// server publishes but this list omits used to render nowhere at all, and
+// 25 settings (every prompt among them) were unreachable in the UI while
+// looking perfectly present in the API. Anything not named here is appended
+// rather than dropped.
+const GROUP_ORDER: string[] = [
   "llm",
   "matcher",
   "sme",
-  "team",
   "decay",
   "discovery",
   "conferences",
@@ -65,26 +71,46 @@ const GROUP_ORDER: SettingSpec["group"][] = [
   "logging",
 ];
 
-const GROUP_TITLE: Record<SettingSpec["group"], string> = {
+const GROUP_TITLE: Record<string, string> = {
   llm: "LLM API",
   matcher: "Matcher gates & weights",
   sme: "SME ranker weights",
-  team: "Team recommendations",
   decay: "Decay",
   discovery: "Web discovery",
   conferences: "Conferences",
   talks: "Talks library",
   scraper: "Scraper",
   logging: "Logging",
+  prompts: "Prompts",
+  extraction: "Extraction quality",
+  embeddings: "Embeddings",
+  agent: "Agent",
+  reports: "Briefs & digest",
+  api: "API limits",
 };
 
-const GROUP_NOTE: Partial<Record<SettingSpec["group"], string>> = {
+/** Title-cases an unknown group so a new one is readable without a code change. */
+function groupTitle(group: string): string {
+  return (
+    GROUP_TITLE[group] ??
+    group.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
+/** Every group the server actually published, in preferred order first. */
+function orderedGroups(items: { spec: { group: string } }[]): string[] {
+  const present = [...new Set(items.map((i) => i.spec.group))];
+  const known = GROUP_ORDER.filter((g) => present.includes(g));
+  const rest = present.filter((g) => !GROUP_ORDER.includes(g)).sort();
+  return [...known, ...rest];
+}
+
+const GROUP_NOTE: Record<string, string> = {
   talks: "Controls the talks library reuse-detection system and the topic auto-approval filter. The flag threshold is the number of distinct conferences a talk must be applied to before it turns red and requires a confirmation step. The noise blocklist is a list of substrings (one per line) — any topic whose name contains one of these is silently dropped instead of being added to the vocabulary. Add logistics terms that keep slipping through.",
   llm: "The API key is masked after saving. To rotate it, paste the new value and save. Budget limit cuts off LLM calls for the billing period — set to 0 to disable the cap.",
   matcher: "Gates (M/P/S) are the minimum score a conference must reach before advancing to the next stage — below the gate it gets a 'needs review' status instead of 'approved'. Weights control how much each stage contributes to the final overall score; the pipeline normalizes them so they don't need to sum to 1.0.",
-  sme: "The five dimensions that produce each SME's composite score. Must sum to exactly 1.0. Topic and bio are the strongest signals; location and past attendance are secondary nudges.",
-  team: "Controls the multi-SME team recommendation engine that picks complementary groups of 1, 2, or 3 speakers per conference.",
-  decay: "Applies a freshness penalty to older embedding chunks so stale conference descriptions influence scores less over time. Disable if you want raw cosine scores with no time weighting.",
+  sme: "The five dimensions that produce each SME's composite score. Must sum to exactly 1.0. Topic and bio are the strongest signals; location and past attendance are secondary nudges. A dimension whose inputs are entirely missing is dropped and the rest renormalised, so an unanswerable question does not cap every candidate's score.",
+  decay: "Applies a freshness penalty to older embedding chunks, using each chunk's own last-used date, so stale evidence counts for less. Disable for raw cosine with no time weighting. The nightly conference-level decay pass was removed - nothing ranked on it.",
   scraper: "Controls how aggressively the conference discovery scraper runs. Politeness delay limits how fast it hits external sites — lower values are faster but risk rate-limiting or bans.",
   logging: "Structured log level for the API process. 'info' is the production default. 'debug' logs every DB query and LLM prompt — very noisy but useful when diagnosing a specific issue.",
 };
@@ -125,7 +151,7 @@ function TunablesPage() {
       )}
 
       {query.data &&
-        GROUP_ORDER.map((g) => (
+        orderedGroups(query.data.items).map((g) => (
           <GroupCard
             key={g}
             group={g}
@@ -140,7 +166,7 @@ function GroupCard({
   group,
   items,
 }: {
-  group: SettingSpec["group"];
+  group: string;
   items: SettingItem[];
 }) {
   const queryClient = useQueryClient();
@@ -194,7 +220,7 @@ function GroupCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{GROUP_TITLE[group]}</CardTitle>
+        <CardTitle>{groupTitle(group)}</CardTitle>
         {GROUP_NOTE[group] && (
           <CardDescription>{GROUP_NOTE[group]}</CardDescription>
         )}
@@ -337,6 +363,19 @@ function SettingRow({
         rows={Math.min(16, Math.max(4, asArray.length))}
         className="min-h-[6rem] resize-y rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs"
         placeholder="One item per line"
+      />
+    );
+  } else if (kind === "text") {
+    // Long-form prose (the judge's operator profile). A one-line input
+    // makes it impossible to see what you are editing, and this is the
+    // text that decides which conferences get vetoed.
+    const value = (live as string) ?? "";
+    control = (
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.currentTarget.value)}
+        rows={Math.min(24, Math.max(8, value.split("\n").length + 2))}
+        className="min-h-[12rem] resize-y rounded-md border border-border bg-surface px-3 py-2 text-sm leading-relaxed"
       />
     );
   } else {

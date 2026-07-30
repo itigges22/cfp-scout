@@ -79,7 +79,9 @@ Use **Route 1** but locally installed:
   Postgres jobstore gives us cron + persistence without the operational
   overhead of Redis or a second container.
 - **Apache AGE for graph queries** — Considered. Lost because: the graph
-  is small enough to compute in memory with NetworkX from junction tables.
+  is small enough to answer with ordinary joins over junction tables.
+  (The in-memory NetworkX graph this originally described was removed in
+  2026-07 — see planning/09-restructure-plan.md P1.)
   Same Postgres, fewer extensions to manage.
 - **Next.js for the frontend** — Considered. Lost because: no SSR need,
   and shipping a Node runtime alongside our Python runtime doubles the
