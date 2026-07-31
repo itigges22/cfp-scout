@@ -303,21 +303,47 @@ _FIXTURE_DIR = __import__("pathlib").Path(__file__).parent.parent / "fixtures"
 
 
 @pytest.mark.asyncio
-async def test_upload_txt_returns_preview_no_db_row(async_client: AsyncClient, clean_db) -> None:
-    """POST /talks/upload with a TXT file returns ExtractedTalk preview; no DB row created."""
+async def test_upload_starts_job_and_status_returns_extraction(
+    async_client: AsyncClient, clean_db, monkeypatch, tmp_path
+) -> None:
+    """POST /talks/upload returns 202 + a job id; the task fills the row;
+    GET /talks/upload/{id} hands the extraction back. The task runs
+    directly here — tests don't run the scheduler."""
+    import app.scheduler as sched
+    from app.settings import get_settings
+
+    monkeypatch.setattr(get_settings(), "storage_path", str(tmp_path))
+
+    captured: dict = {}
+    monkeypatch.setattr(
+        sched, "enqueue_now", lambda func, **kw: captured.update(kw) or "jid"
+    )
+
     sample = _FIXTURE_DIR / "sample_talk.txt"
     with open(sample, "rb") as fh:
         resp = await async_client.post(
             "/api/v1/talks/upload",
             files={"file": ("sample_talk.txt", fh, "text/plain")},
         )
-    assert resp.status_code == 200
-    body = resp.json()
-    assert "extracted" in body
-    # extracted should have at minimum title and abstract
+    assert resp.status_code == 202, resp.text
+    job_id = resp.json()["job_id"]
+
+    status0 = await async_client.get(f"/api/v1/talks/upload/{job_id}")
+    assert status0.status_code == 200
+    assert status0.json()["status"] == "queued"
+
+    from app.tasks import talk_upload_extract_task
+
+    await talk_upload_extract_task(**captured["kwargs"])
+
+    status1 = await async_client.get(f"/api/v1/talks/upload/{job_id}")
+    body = status1.json()
+    assert body["status"] == "complete", body
+    assert body["stage"] == "done"
     assert body["extracted"]["title"]
     assert body["extracted"]["abstract"]
-    # Verify no talk row was created
+
+    # Preview only — no talk row was created.
     list_resp = await async_client.get("/api/v1/talks")
     assert list_resp.json()["total"] == 0
 

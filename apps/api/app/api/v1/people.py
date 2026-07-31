@@ -23,7 +23,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.db.session import DbSession
 from app.schemas import (
@@ -40,11 +40,6 @@ from app.schemas import (
     TalkUpdate,
 )
 from app.services import people, reports
-from app.services.pdf import parse_and_chunk
-from app.services.people import (
-    TalkUploadPreview,
-    extract_talk_from_text,
-)
 
 log = structlog.get_logger("scout.api.people")
 
@@ -228,12 +223,41 @@ async def reuse_check_(db: DbSession, talk_id: UUID) -> ReuseCheckResult:
     return await people.reuse_check(db, talk_id)
 
 
-@_r_talks.post("/upload", response_model=TalkUploadPreview, status_code=status.HTTP_200_OK)
-async def upload_(db: DbSession, file: UploadFile) -> TalkUploadPreview:
-    """Parse an uploaded document and return an ExtractedTalk preview.
+class TalkUploadStarted(BaseModel):
+    job_id: str
 
-    Accepts PDF, TXT, and DOCX. Does NOT persist anything — the caller
-    reviews the extracted fields and confirms via POST /talks to save.
+
+class TalkUploadPreviewBody(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    title: str
+    abstract: str
+    key_themes: list[str] = []
+    suggested_pillar_name: str | None = None
+    target_audience_description: str | None = None
+    suggested_duration_minutes: int | None = None
+    talk_format: str | None = None
+
+
+class TalkUploadStatus(BaseModel):
+    job_id: str
+    #: queued | running | complete | failed
+    status: str
+    #: queued | parsing | extracting | done | failed
+    stage: str
+    filename: str | None = None
+    error: str | None = None
+    extracted: TalkUploadPreviewBody | None = None
+
+
+@_r_talks.post("/upload", response_model=TalkUploadStarted, status_code=status.HTTP_202_ACCEPTED)
+async def upload_(db: DbSession, file: UploadFile) -> dict:
+    """Accept a document and start extraction as a tracked background job.
+
+    Docling + the LLM take ~a minute for a real PDF. Running that inside
+    the request meant a blind wait and a fight with every proxy timeout
+    between browser and worker; as a job the UI polls real stages and a
+    mid-run refresh loses nothing. Poll GET /talks/upload/{job_id}.
     """
     filename = (file.filename or "").lower()
     ext = next((e for e in _SUPPORTED_EXTENSIONS if filename.endswith(e)), None)
@@ -245,7 +269,6 @@ async def upload_(db: DbSession, file: UploadFile) -> TalkUploadPreview:
                 f"Accepted: {sorted(_SUPPORTED_EXTENSIONS)}"
             ),
         )
-
     raw_bytes = await file.read()
     if len(raw_bytes) > _MAX_FILE_BYTES:
         raise HTTPException(
@@ -253,45 +276,63 @@ async def upload_(db: DbSession, file: UploadFile) -> TalkUploadPreview:
             detail=f"File too large ({len(raw_bytes)} bytes); max is {_MAX_FILE_BYTES}.",
         )
 
-    if ext == ".txt":
-        try:
-            full_text = raw_bytes.decode("utf-8", errors="replace")
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Could not decode text file: {exc}",
-            ) from exc
-    else:
-        # PDF or DOCX: run Docling in a thread pool
-        import tempfile
-        from pathlib import Path
+    # Shared storage, not /tmp: in production the job executes on the
+    # scheduler pod, which sees the same RWX volume but not this pod's tmp.
+    from pathlib import Path
+    from uuid import uuid4
 
-        from fastapi.concurrency import run_in_threadpool
+    from app.db.models import IngestJob
+    from app.scheduler import enqueue_now
+    from app.settings import get_settings
+    from app.tasks import talk_upload_extract_task
 
+    job_id = uuid4()
+    updir = Path(get_settings().storage_path) / "talk_uploads"
+    updir.mkdir(parents=True, exist_ok=True)
+    dest = updir / f"{job_id}{ext}"
+    dest.write_bytes(raw_bytes)
 
-        suffix = ext
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            tmp.write(raw_bytes)
-            tmp_path = Path(tmp.name)
-
-        try:
-            parsed = await run_in_threadpool(parse_and_chunk, tmp_path)
-            full_text = parsed.full_text
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Could not parse document: {exc}",
-            ) from exc
-        finally:
-            tmp_path.unlink(missing_ok=True)
-
-    extracted = await extract_talk_from_text(db=db, full_text=full_text)
-    # Nothing talk-shaped persists here, but the LLM client stages its
-    # spend row on this session — without the commit every upload's
-    # llm_calls row rolled back and the cost ledger was blind to the
-    # heaviest endpoint in the app. Same bug the messaging upload had.
+    db.add(
+        IngestJob(
+            id=job_id,
+            kind="talk_upload",
+            status="queued",
+            stats={"stage": "queued", "filename": file.filename or ""},
+        )
+    )
     await db.commit()
-    return TalkUploadPreview(extracted=extracted)
+    enqueue_now(
+        talk_upload_extract_task,
+        job_id=f"talk-upload-{job_id}",
+        kwargs={
+            "job_id": str(job_id),
+            "file_path": str(dest),
+            "filename": filename,
+        },
+    )
+    return {"job_id": str(job_id)}
+
+
+@_r_talks.get("/upload/{job_id}", response_model=TalkUploadStatus)
+async def upload_status(db: DbSession, job_id: UUID) -> dict:
+    from app.db.models import IngestJob
+
+    row = await db.get(IngestJob, job_id)
+    if row is None or row.kind != "talk_upload":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="upload job not found"
+        )
+    stats = row.stats or {}
+    return {
+        "job_id": str(job_id),
+        "status": row.status,
+        "stage": stats.get("stage", row.status),
+        "filename": stats.get("filename"),
+        "error": (row.error_text or "").split("\n")[0] or None
+        if row.status == "failed"
+        else None,
+        "extracted": stats.get("extracted"),
+    }
 
 
 router = APIRouter()

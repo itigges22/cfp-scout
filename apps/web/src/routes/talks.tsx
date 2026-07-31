@@ -310,14 +310,40 @@ function TalkDialog({
   // review dialog. There used to be two: a toolbar "Upload document" button
   // that opened its own near-identical form, which meant two places to keep
   // in step and two answers to "where do I add a talk?".
-  const upload = useMutation({
-    mutationFn: (file: File) => talksApi.upload(file),
-    onSuccess: (preview) => {
-      const ex = preview.extracted;
+  // Upload is a tracked backend job: POST returns a job id instantly, and
+  // we poll real stages (queued → parsing → extracting) so the operator
+  // watches progress instead of a spinner. Elapsed time shown because
+  // Docling legitimately takes ~a minute on a cold pod.
+  const [uploadJob, setUploadJob] = useState<string | null>(null);
+  const [uploadStart, setUploadStart] = useState<number>(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const jobQ = useQuery({
+    queryKey: ["talk-upload", uploadJob],
+    queryFn: () => talksApi.uploadStatus(uploadJob!),
+    enabled: uploadJob !== null,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      return s === "complete" || s === "failed" ? false : 1500;
+    },
+  });
+  useEffect(() => {
+    if (!uploadJob) return;
+    const t = setInterval(() => setElapsed(Math.round((Date.now() - uploadStart) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [uploadJob, uploadStart]);
+  useEffect(() => {
+    const d = jobQ.data;
+    if (!d || !uploadJob) return;
+    if (d.status === "failed") {
+      setUploadError(d.error ?? "Extraction failed.");
+      setUploadJob(null);
+      return;
+    }
+    if (d.status === "complete" && d.extracted) {
+      const ex = d.extracted;
       const suggested = pillars.find(
-        (p) =>
-          p.name.toLowerCase() ===
-          (ex.suggested_pillar_name ?? "").toLowerCase(),
+        (p) => p.name.toLowerCase() === (ex.suggested_pillar_name ?? "").toLowerCase(),
       );
       setForm((prev) => ({
         ...prev,
@@ -328,8 +354,30 @@ function TalkDialog({
         suggested_duration_minutes:
           ex.suggested_duration_minutes ?? prev.suggested_duration_minutes,
       }));
+      setUploadJob(null);
+    }
+  }, [jobQ.data, uploadJob, pillars]);
+  const upload = useMutation({
+    mutationFn: (file: File) => talksApi.upload(file),
+    onSuccess: (r) => {
+      setUploadError(null);
+      setUploadStart(Date.now());
+      setElapsed(0);
+      setUploadJob(r.job_id);
+    },
+    onError: (err) => {
+      setUploadError(err instanceof ApiError ? err.message : String(err));
     },
   });
+  const uploadBusy = upload.isPending || uploadJob !== null;
+  const stage = jobQ.data?.stage ?? "queued";
+  const STAGE_LABEL: Record<string, string> = {
+    queued: "Queued…",
+    parsing: "Reading the document (Docling)…",
+    extracting: "Extracting talk fields (LLM)…",
+    done: "Done",
+  };
+  const STAGE_PCT: Record<string, number> = { queued: 10, parsing: 45, extracting: 85, done: 100 };
 
   useEffect(() => {
     if (!open) return;
@@ -381,9 +429,9 @@ function TalkDialog({
               size="sm"
               variant="outline"
               onClick={() => fileInputRef.current?.click()}
-              disabled={upload.isPending}
+              disabled={uploadBusy}
             >
-              {upload.isPending ? (
+              {uploadBusy ? (
                 <Loader2 className="mr-2 size-4 animate-spin" />
               ) : (
                 <Upload className="mr-2 size-4" />
@@ -408,9 +456,25 @@ function TalkDialog({
             />
           </div>
         )}
-        {upload.isError && upload.error instanceof ApiError ? (
-          <p className="text-sm text-danger">{upload.error.message}</p>
+        {uploadJob !== null ? (
+          <div className="flex flex-col gap-1.5 rounded-lg border border-accent/40 bg-accent/5 px-4 py-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-fg">{STAGE_LABEL[stage] ?? stage}</span>
+              <span className="tabular-nums text-fg-muted">{elapsed}s</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
+              <div
+                className="h-full bg-accent transition-all duration-700"
+                style={{ width: `${STAGE_PCT[stage] ?? 10}%` }}
+              />
+            </div>
+            <p className="text-xs text-fg-muted">
+              First document on a fresh pod takes the longest — the parser
+              loads its models once, then later uploads are much faster.
+            </p>
+          </div>
         ) : null}
+        {uploadError ? <p className="text-sm text-danger">{uploadError}</p> : null}
         <div className="flex flex-col gap-4 p-6">
           <FieldWrap label="Title *" error={fieldErrors.title}>
             <Input

@@ -720,8 +720,10 @@ export const talksApi = {
   upload: (file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return request<TalkUploadPreview>(`${BASE}/talks/upload`, { method: "POST", form });
+    return request<{ job_id: string }>(`${BASE}/talks/upload`, { method: "POST", form });
   },
+  uploadStatus: (jobId: string) =>
+    request<import("@/lib/api-types").TalkUploadStatus>(`${BASE}/talks/upload/${jobId}`),
   submit: (talkId: string, body: TalkSubmissionCreate) =>
     request<TalkSubmissionRead>(`${BASE}/talks/${talkId}/submit`, {
       method: "POST",

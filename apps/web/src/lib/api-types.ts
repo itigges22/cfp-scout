@@ -73,7 +73,8 @@ export type TalkRead = S["TalkRead"];
 export type TalkSubmissionCreate = S["TalkSubmissionCreate"];
 export type TalkSubmissionRead = S["TalkSubmissionRead"];
 export type TalkUpdate = S["TalkUpdate"];
-export type TalkUploadPreview = S["TalkUploadPreview"];
+export type TalkUploadPreview = S["TalkUploadPreviewBody"];
+export type TalkUploadStatus = S["TalkUploadStatus"];
 
 /* ------------------------------------------------------------------ *
  * NOT on the server yet.

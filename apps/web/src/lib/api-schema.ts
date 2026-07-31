@@ -557,12 +557,31 @@ export interface paths {
         put?: never;
         /**
          * Upload
-         * @description Parse an uploaded document and return an ExtractedTalk preview.
+         * @description Accept a document and start extraction as a tracked background job.
          *
-         *     Accepts PDF, TXT, and DOCX. Does NOT persist anything — the caller
-         *     reviews the extracted fields and confirms via POST /talks to save.
+         *     Docling + the LLM take ~a minute for a real PDF. Running that inside
+         *     the request meant a blind wait and a fight with every proxy timeout
+         *     between browser and worker; as a job the UI polls real stages and a
+         *     mid-run refresh loses nothing. Poll GET /talks/upload/{job_id}.
          */
         post: operations["upload__api_v1_talks_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/talks/upload/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Upload Status */
+        get: operations["upload_status_api_v1_talks_upload__job_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2851,26 +2870,6 @@ export interface components {
              */
             purpose: string;
         };
-        /** ExtractedTalk */
-        ExtractedTalk: {
-            /** Title */
-            title: string;
-            /** Abstract */
-            abstract: string;
-            /**
-             * Key Themes
-             * @default []
-             */
-            key_themes: string[];
-            /** Suggested Pillar Name */
-            suggested_pillar_name?: string | null;
-            /** Target Audience Description */
-            target_audience_description?: string | null;
-            /** Suggested Duration Minutes */
-            suggested_duration_minutes?: number | null;
-            /** Talk Format */
-            talk_format?: string | null;
-        };
         /** FeedIngestRequest */
         FeedIngestRequest: {
             /**
@@ -4336,9 +4335,44 @@ export interface components {
             /** Is Active */
             is_active?: boolean | null;
         };
-        /** TalkUploadPreview */
-        TalkUploadPreview: {
-            extracted: components["schemas"]["ExtractedTalk"];
+        /** TalkUploadPreviewBody */
+        TalkUploadPreviewBody: {
+            /** Title */
+            title: string;
+            /** Abstract */
+            abstract: string;
+            /**
+             * Key Themes
+             * @default []
+             */
+            key_themes: string[];
+            /** Suggested Pillar Name */
+            suggested_pillar_name?: string | null;
+            /** Target Audience Description */
+            target_audience_description?: string | null;
+            /** Suggested Duration Minutes */
+            suggested_duration_minutes?: number | null;
+            /** Talk Format */
+            talk_format?: string | null;
+        };
+        /** TalkUploadStarted */
+        TalkUploadStarted: {
+            /** Job Id */
+            job_id: string;
+        };
+        /** TalkUploadStatus */
+        TalkUploadStatus: {
+            /** Job Id */
+            job_id: string;
+            /** Status */
+            status: string;
+            /** Stage */
+            stage: string;
+            /** Filename */
+            filename?: string | null;
+            /** Error */
+            error?: string | null;
+            extracted?: components["schemas"]["TalkUploadPreviewBody"] | null;
         };
         /** TalksAnalytics */
         TalksAnalytics: {
@@ -5813,12 +5847,43 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TalkUploadStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_status_api_v1_talks_upload__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TalkUploadPreview"];
+                    "application/json": components["schemas"]["TalkUploadStatus"];
                 };
             };
             /** @description Validation Error */

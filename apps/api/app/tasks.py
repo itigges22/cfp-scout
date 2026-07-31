@@ -631,3 +631,84 @@ __all__ = [
     "run_fit_match_task",
     "scrape_source_task",
 ]
+
+
+# ==========================================================================
+# talk upload — parse + extract as a tracked job
+# ==========================================================================
+#
+# "Fill from document" used to run Docling + the LLM inside one HTTP
+# request: ~50 blind seconds for the operator, and every proxy/router
+# timeout between browser and worker had to be raised above it. As a job,
+# the request returns a job id immediately, the UI polls real stages
+# (queued → parsing → extracting), and a refresh mid-run loses nothing.
+
+
+async def _update_upload_job(job_id: str, **values: Any) -> None:
+    async with get_session_factory()() as session:
+        await session.execute(
+            update(IngestJob).where(IngestJob.id == uuid.UUID(job_id)).values(**values)
+        )
+        await session.commit()
+
+
+async def _merge_upload_stats(job_id: str, extra: dict[str, Any]) -> None:
+    async with get_session_factory()() as session:
+        row = await session.get(IngestJob, uuid.UUID(job_id))
+        if row is None:
+            return
+        row.stats = {**(row.stats or {}), **extra}
+        await session.commit()
+
+
+async def talk_upload_extract_task(
+    *, job_id: str, file_path: str, filename: str
+) -> None:
+    """Parse an uploaded talk document and extract fields, updating the
+    tracking row's ``stats.stage`` as it goes. The extracted preview lands
+    in ``stats.extracted`` for the poll endpoint to hand back."""
+    from pathlib import Path
+
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.services.pdf import parse_and_chunk
+    from app.services.people import extract_talk_from_text
+
+    path = Path(file_path)
+    try:
+        await _update_upload_job(
+            job_id, status="running", started_at=datetime.now(tz=UTC)
+        )
+        await _merge_upload_stats(job_id, {"stage": "parsing"})
+
+        if filename.lower().endswith(".txt"):
+            full_text = path.read_bytes().decode("utf-8", errors="replace")
+        else:
+            parsed = await run_in_threadpool(parse_and_chunk, path)
+            full_text = parsed.full_text
+
+        await _merge_upload_stats(job_id, {"stage": "extracting"})
+        async with get_session_factory()() as session:
+            extracted = await extract_talk_from_text(db=session, full_text=full_text)
+            # The LLM client stages its spend row on this session.
+            await session.commit()
+
+        await _merge_upload_stats(
+            job_id, {"stage": "done", "extracted": extracted.model_dump()}
+        )
+        await _update_upload_job(
+            job_id, status="complete", finished_at=datetime.now(tz=UTC)
+        )
+    except Exception as exc:
+        log.warning(
+            "talk_upload.failed", job_id=job_id, error=f"{type(exc).__name__}: {exc}"
+        )
+        await _merge_upload_stats(job_id, {"stage": "failed"})
+        await _update_upload_job(
+            job_id,
+            status="failed",
+            finished_at=datetime.now(tz=UTC),
+            error_text=f"{type(exc).__name__}: {exc}",
+        )
+    finally:
+        path.unlink(missing_ok=True)
