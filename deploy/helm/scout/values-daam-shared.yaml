@@ -31,6 +31,15 @@ api:
                   - ocp-j8fns-worker-cpu-3-94p9f
 scheduler:
   affinity: *avoidBrokenNode
+  # Chart default (512Mi limit) OOMKilled once on day one — discovery +
+  # embedding batches run inside this pod.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1.5Gi
 
 postgres:
   affinity: *avoidBrokenNode

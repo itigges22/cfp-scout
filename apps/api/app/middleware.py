@@ -50,6 +50,7 @@ from starlette.exceptions import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from app.services.llm import LLMNotConfiguredError
 from app.settings import get_settings
 
 log = structlog.get_logger("scout.middleware")
@@ -270,6 +271,23 @@ def install_error_handlers(app: FastAPI) -> None:
                 "constraint. Check for duplicates and required references."
             ),
             type_="https://scout.example/errors/conflict",
+        )
+
+    @app.exception_handler(LLMNotConfiguredError)
+    async def _llm_not_configured_handler(
+        request: Request, exc: LLMNotConfiguredError
+    ) -> JSONResponse:
+        """First-day state, not an outage — say what to do about it."""
+        log.warning("llm.not_configured", path=request.url.path)
+        return _problem(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            title="LLM not configured",
+            detail=str(exc)
+            or (
+                "No LLM API key is set yet. Enter one in Settings → "
+                "Tunables & API keys, then retry."
+            ),
+            type_="https://scout.example/errors/llm-not-configured",
         )
 
     @app.exception_handler(SQLAlchemyError)

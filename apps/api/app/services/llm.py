@@ -620,9 +620,20 @@ class LLMClient:
 
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
+        # Placeholder when no key is configured yet. The OpenAI SDK raises
+        # from its CONSTRUCTOR on missing credentials, which crashed the
+        # request before chat()/embed()'s llm_is_configured() gate could
+        # return its clean "enter a key in Settings" error — surfacing to
+        # the operator as a bare 502 from the oauth proxy. The placeholder
+        # never reaches the wire: the gate raises first on every real call.
+        _key = (
+            self._settings.llm_api_key.get_secret_value()
+            if _has_secret(self._settings.llm_api_key)
+            else "not-configured"
+        )
         self._openai = AsyncOpenAI(
             base_url=normalize_openai_base_url(self._settings.llm_base_url),
-            api_key=self._settings.llm_api_key.get_secret_value(),
+            api_key=_key,
             # Default timeout. Long enough for slow LLM responses; short
             # enough that hung connections don't tie up workers forever.
             timeout=120.0,

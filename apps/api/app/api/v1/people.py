@@ -286,6 +286,11 @@ async def upload_(db: DbSession, file: UploadFile) -> TalkUploadPreview:
             tmp_path.unlink(missing_ok=True)
 
     extracted = await extract_talk_from_text(db=db, full_text=full_text)
+    # Nothing talk-shaped persists here, but the LLM client stages its
+    # spend row on this session — without the commit every upload's
+    # llm_calls row rolled back and the cost ledger was blind to the
+    # heaviest endpoint in the app. Same bug the messaging upload had.
+    await db.commit()
     return TalkUploadPreview(extracted=extracted)
 
 
