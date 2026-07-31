@@ -63,6 +63,11 @@ function TalksPage() {
   const [pillarFilter, setPillarFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<TalkReviewStatus | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  // A refresh mid-upload closed the dialog and orphaned the progress view;
+  // reopen it when a stored upload job exists so polling resumes.
+  useEffect(() => {
+    if (localStorage.getItem("scout.talk-upload.job")) setShowCreate(true);
+  }, []);
   const [editing, setEditing] = useState<TalkRead | null>(null);
 
 
@@ -314,8 +319,25 @@ function TalkDialog({
   // we poll real stages (queued → parsing → extracting) so the operator
   // watches progress instead of a spinner. Elapsed time shown because
   // Docling legitimately takes ~a minute on a cold pod.
-  const [uploadJob, setUploadJob] = useState<string | null>(null);
-  const [uploadStart, setUploadStart] = useState<number>(0);
+  // Survives refresh: the job runs server-side regardless, so losing the
+  // id on reload meant a healthy extraction had nowhere to deliver. The
+  // talks page auto-reopens this dialog when a stored job exists.
+  const [uploadJob, setUploadJob] = useState<string | null>(() => {
+    try {
+      const raw = localStorage.getItem("scout.talk-upload.job");
+      return raw ? (JSON.parse(raw).job_id as string) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [uploadStart, setUploadStart] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem("scout.talk-upload.job");
+      return raw ? (JSON.parse(raw).started_at as number) : 0;
+    } catch {
+      return 0;
+    }
+  });
   const [elapsed, setElapsed] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const jobQ = useQuery({
@@ -338,6 +360,7 @@ function TalkDialog({
     if (d.status === "failed") {
       setUploadError(d.error ?? "Extraction failed.");
       setUploadJob(null);
+      localStorage.removeItem("scout.talk-upload.job");
       return;
     }
     if (d.status === "complete" && d.extracted) {
@@ -355,15 +378,21 @@ function TalkDialog({
           ex.suggested_duration_minutes ?? prev.suggested_duration_minutes,
       }));
       setUploadJob(null);
+      localStorage.removeItem("scout.talk-upload.job");
     }
   }, [jobQ.data, uploadJob, pillars]);
   const upload = useMutation({
     mutationFn: (file: File) => talksApi.upload(file),
     onSuccess: (r) => {
       setUploadError(null);
-      setUploadStart(Date.now());
+      const started = Date.now();
+      setUploadStart(started);
       setElapsed(0);
       setUploadJob(r.job_id);
+      localStorage.setItem(
+        "scout.talk-upload.job",
+        JSON.stringify({ job_id: r.job_id, started_at: started }),
+      );
     },
     onError: (err) => {
       setUploadError(err instanceof ApiError ? err.message : String(err));
@@ -457,7 +486,7 @@ function TalkDialog({
           </div>
         )}
         {uploadJob !== null ? (
-          <div className="flex flex-col gap-1.5 rounded-lg border border-accent/40 bg-accent/5 px-4 py-3">
+          <div className="mx-1 my-3 flex flex-col gap-2 rounded-lg border border-accent/40 bg-accent/5 px-4 py-3.5">
             <div className="flex items-center justify-between text-sm">
               <span className="text-fg">{STAGE_LABEL[stage] ?? stage}</span>
               <span className="tabular-nums text-fg-muted">{elapsed}s</span>
