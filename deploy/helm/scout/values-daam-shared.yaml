@@ -20,6 +20,16 @@ oauth:
 # storage (FailedCreatePodSandBox: input/output error) — keep workloads
 # off it until cluster admins replace it.
 api:
+  # Docling parses PDFs in-process — its layout models need well over the
+  # chart's 1Gi default. An upload OOMKilled the worker mid-parse (exit
+  # 137), which the oauth proxy surfaced as "bad gateway".
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 3Gi
   affinity: &avoidBrokenNode
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:

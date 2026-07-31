@@ -153,6 +153,12 @@ spec:
             - --http-address=
             - --email-domain={{ .Values.oauth.emailDomain | default "redhat.com" }}
             - --upstream=http://localhost:8000
+            # Document uploads legitimately take ~1 minute (Docling parse +
+            # LLM extraction). The proxy's default 30s upstream timeout
+            # 502'd responses the API went on to complete successfully —
+            # the LAST of three stacked lids (route timeout, memory limit,
+            # this) that all had to rise for uploads to survive.
+            - --upstream-timeout={{ .Values.oauth.upstreamTimeout | default "300s" }}
             - --openshift-service-account={{ include "scout.serviceAccountName" . }}
             - --tls-key=/etc/tls/private/tls.key
             - --tls-cert=/etc/tls/private/tls.crt
