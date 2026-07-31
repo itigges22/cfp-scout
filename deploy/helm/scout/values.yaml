@@ -167,6 +167,9 @@ sharedStorage:
 # ---------------------------------------------------------------------------
 route:
   enabled: true
+  # HAProxy request timeout for this route. Document-upload requests
+  # (Docling parse + LLM extraction) routinely exceed the 30s default.
+  timeout: 300s
   host: ""            # empty → auto-generated like scout-<ns>.<wildcard-domain>
   tls:
     enabled: true

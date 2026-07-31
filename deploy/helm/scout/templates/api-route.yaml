@@ -14,6 +14,11 @@ metadata:
   name: {{ include "scout.fullname" . }}
   labels:
     {{- include "scout.componentLabels" (dict "ctx" . "component" "api") | nindent 4 }}
+  annotations:
+    # Document uploads run Docling + an LLM call in-request; the router's
+    # default 30s cuts them off mid-parse and serves its HTML timeout
+    # page. Value is operator-tunable via route.timeout.
+    haproxy.router.openshift.io/timeout: {{ .Values.route.timeout | default "300s" | quote }}
 spec:
   {{- if .Values.route.host }}
   host: {{ .Values.route.host | quote }}
