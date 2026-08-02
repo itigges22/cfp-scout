@@ -429,7 +429,11 @@ function TalkDialog({
   const mutate = useMutation({
     mutationFn: (body: TalkCreate) => {
       if (isEdit && initial) {
-        return talksApi.update(initial.id, body as TalkUpdate);
+        // TalkUpdate forbids unknown fields and has no source_type — the
+        // shared form state carries it for creation, and sending it made
+        // every edit 422 on a field the form doesn't even display.
+        const { source_type: _sourceType, ...updateBody } = body;
+        return talksApi.update(initial.id, updateBody as TalkUpdate);
       }
       return talksApi.create(body);
     },
