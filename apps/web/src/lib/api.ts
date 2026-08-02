@@ -80,9 +80,17 @@ export class ApiError extends Error {
   fieldErrors(): Record<string, string> {
     const out: Record<string, string> = {};
     for (const err of this.problem.errors ?? []) {
-      // Pydantic gives loc as ['body', 'field_name']; we strip the prefix.
-      const path = err.loc.filter((p) => p !== "body").join(".");
-      if (path) out[path] = err.msg;
+      // Pydantic gives loc as ['body', 'field_name'] — or, for list-item
+      // errors, ['body', 'field_name', 0]. Key by the FIELD, not the
+      // dotted item path: "primary_pain_points.0" matches no input, which
+      // used to make item-level errors invisible (they also suppressed
+      // the generic banner because fieldErrors was non-empty).
+      const parts = err.loc.filter((p) => p !== "body");
+      const field = parts.find((p) => typeof p === "string");
+      if (typeof field === "string" && !(field in out)) {
+        const idx = parts.find((p) => typeof p === "number");
+        out[field] = typeof idx === "number" ? `Item ${idx + 1}: ${err.msg}` : err.msg;
+      }
     }
     return out;
   }

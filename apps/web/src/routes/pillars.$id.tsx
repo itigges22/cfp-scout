@@ -884,6 +884,20 @@ function AudienceDialog({
     onError: (err) => { if (err instanceof ApiError) setFieldErrors(err.fieldErrors()); },
   });
 
+  // The backend enforces quality floors (they feed the matcher's audience
+  // embeddings); surface them BEFORE save instead of as a rejected 422.
+  const unmet: string[] = [];
+  if (form.name.trim().length < 3) unmet.push("Name needs at least 3 characters.");
+  if (form.description.trim().length < 50)
+    unmet.push(
+      `Description needs at least 50 characters (currently ${form.description.trim().length}).`,
+    );
+  if (form.industry.trim().length < 2) unmet.push("Industry is required.");
+  if (form.primary_pain_points.filter((s) => s.trim()).length < 2)
+    unmet.push("At least 2 primary pain points.");
+  if (form.key_messages.filter((s) => s.trim()).length < 2)
+    unmet.push("At least 2 key messages.");
+
   const updateList = (field: "primary_pain_points" | "key_messages") => (index: number, value: string) =>
     setForm((prev) => { const next = [...prev[field]]; next[index] = value; return { ...prev, [field]: next }; });
   const addListItem = (field: "primary_pain_points" | "key_messages") => () =>
@@ -900,7 +914,10 @@ function AudienceDialog({
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} placeholder="Platform Engineering Lead" />
           </Field>
           <Field label="Description" error={fieldErrors.description}>
-            <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.currentTarget.value })} rows={3} />
+            <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.currentTarget.value })} rows={3} placeholder="Who they are, what they own, and what they're trying to achieve — this text is embedded and matched against conferences." />
+            <p className="mt-1 text-xs text-fg-muted">
+              {form.description.trim().length}/50 characters minimum — the matcher embeds this text.
+            </p>
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Industry" error={fieldErrors.industry}>
@@ -917,10 +934,20 @@ function AudienceDialog({
           {mutate.isError && mutate.error instanceof ApiError && Object.keys(fieldErrors).length === 0 ? (
             <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">{mutate.error.message}</div>
           ) : null}
+          {unmet.length > 0 ? (
+            <div className="rounded-md border border-warning/40 bg-warning/5 p-3 text-xs text-warning">
+              <p className="mb-1 font-medium">Before this can save:</p>
+              <ul className="list-inside list-disc space-y-0.5">
+                {unmet.map((u) => (
+                  <li key={u}>{u}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={mutate.isPending}>Cancel</Button>
-          <Button onClick={() => mutate.mutate(form)} disabled={mutate.isPending}>
+          <Button onClick={() => mutate.mutate(form)} disabled={mutate.isPending || unmet.length > 0}>
             {mutate.isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
             {isEdit ? "Save changes" : "Create audience"}
           </Button>
