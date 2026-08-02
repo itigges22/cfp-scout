@@ -699,6 +699,7 @@ async def talk_upload_extract_task(
         await _update_upload_job(
             job_id, status="complete", finished_at=datetime.now(tz=UTC)
         )
+        path.unlink(missing_ok=True)
     except Exception as exc:
         log.warning(
             "talk_upload.failed", job_id=job_id, error=f"{type(exc).__name__}: {exc}"
@@ -710,8 +711,9 @@ async def talk_upload_extract_task(
             finished_at=datetime.now(tz=UTC),
             error_text=f"{type(exc).__name__}: {exc}",
         )
+        return
     finally:
-        path.unlink(missing_ok=True)
+        pass
 
 
 async def messaging_upload_extract_task(
@@ -749,6 +751,7 @@ async def messaging_upload_extract_task(
         await _update_upload_job(
             job_id, status="complete", finished_at=datetime.now(tz=UTC)
         )
+        path.unlink(missing_ok=True)
     except Exception as exc:
         log.warning(
             "messaging_upload.failed", job_id=job_id, error=f"{type(exc).__name__}: {exc}"
