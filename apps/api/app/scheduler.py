@@ -284,6 +284,12 @@ def enqueue_now(
         kwargs=kwargs or {},
         id=job_id,
         replace_existing=bool(job_id),
-        misfire_grace_time=300,
+        # None = run no matter how late. The standalone scheduler only
+        # discovers externally-enqueued jobs at its next wakeup — which
+        # was ~10 minutes out on a quiet jobstore, past the old 300s
+        # grace, so APScheduler silently DISCARDED the job and the
+        # operator watched "queued" forever. Late beats never for every
+        # caller of this helper.
+        misfire_grace_time=None,
     )
     return job.id

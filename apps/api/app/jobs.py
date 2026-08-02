@@ -61,6 +61,11 @@ def register_tasks() -> None:
     log.info("scheduler.tasks_registered", count=len(ENQUEUEABLE))
 
 
+async def _jobstore_tick() -> None:
+    """No-op; exists so the scheduler wakes (and re-reads the jobstore)
+    every 15 seconds. See registration comment."""
+
+
 def register_jobs(scheduler: AsyncIOScheduler) -> None:
     """Register the recurring (cron) schedule.
 
@@ -141,6 +146,18 @@ def register_jobs(scheduler: AsyncIOScheduler) -> None:
         hour=discovery_hour,
         minute=0,
         id="discovery",
+        replace_existing=True,
+    )
+    # A 15-second no-op tick. Its real job is forcing the scheduler to
+    # re-read the shared Postgres jobstore that often: APScheduler only
+    # wakes for runs it already knows about, so jobs enqueued by the API
+    # pods used to wait for the NEXT unrelated wakeup — up to 10 minutes —
+    # before being noticed. With this tick, pickup is <=15s.
+    scheduler.add_job(
+        _jobstore_tick,
+        trigger="interval",
+        seconds=15,
+        id="jobstore_tick",
         replace_existing=True,
     )
     log.info("scheduler.jobs_registered", count=len(scheduler.get_jobs()))
