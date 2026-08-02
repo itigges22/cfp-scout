@@ -170,16 +170,30 @@ async def upload_preview(
         )
     )
     await db.commit()
-    enqueue_now(
-        messaging_upload_extract_task,
-        job_id=f"messaging-upload-{job_id}",
-        kwargs={
-            "job_id": str(job_id),
-            "file_path": str(dest),
-            "filename": (file.filename or "").lower(),
-            "doc_kind": doc_kind,
-        },
-    )
+    try:
+        enqueue_now(
+            messaging_upload_extract_task,
+            job_id=f"messaging-upload-{job_id}",
+            kwargs={
+                "job_id": str(job_id),
+                "file_path": str(dest),
+                "filename": (file.filename or "").lower(),
+                "doc_kind": doc_kind,
+            },
+        )
+    except Exception as exc:
+        # Committed-queued row + failed enqueue = eternal spinner. Mark it
+        # failed now and surface the problem.
+        row = await db.get(IngestJob, job_id)
+        if row is not None:
+            row.status = "failed"
+            row.stats = {**(row.stats or {}), "stage": "failed"}
+            row.error_text = f"enqueue failed: {type(exc).__name__}: {exc}"
+            await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not queue the extraction job — try again shortly.",
+        ) from exc
     return {"job_id": str(job_id)}
 
 

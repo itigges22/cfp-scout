@@ -137,11 +137,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 # keeping the task imports out of scheduler.py is what stops
                 # services -> scheduler -> tasks -> services cycling.
                 register_jobs(get_scheduler())
+            else:
+                # Leader lock held elsewhere (or by a stale session). This
+                # process still needs a PAUSED scheduler attached to the
+                # shared jobstore, or every enqueue_now buffers into a
+                # never-started scheduler's pending list and the job
+                # silently evaporates.
+                start_scheduler_paused()
         except Exception as exc:
             # Don't block API startup on a scheduler-only failure — the
             # manual routes still work without it, and operators can
             # repair via ``/api/v1/admin/jobs``.
             log.error("scout.scheduler_failed", error=str(exc))
+            try:
+                start_scheduler_paused()
+            except Exception as exc2:
+                log.error("scout.scheduler_paused_failed", error=str(exc2))
     else:
         try:
             start_scheduler_paused()

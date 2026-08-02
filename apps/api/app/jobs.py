@@ -37,6 +37,7 @@ from app.tasks import (
     rescore_stale_matches,
     run_discovery_task,
     run_fit_match_task,
+    upload_jobs_reaper_task,
 )
 
 log = structlog.get_logger("scout.jobs")
@@ -153,6 +154,15 @@ def register_jobs(scheduler: AsyncIOScheduler) -> None:
     # wakes for runs it already knows about, so jobs enqueued by the API
     # pods used to wait for the NEXT unrelated wakeup — up to 10 minutes —
     # before being noticed. With this tick, pickup is <=15s.
+    # Terminal-state guarantee for the async upload pipeline; see the
+    # task's docstring for the exact bounds.
+    scheduler.add_job(
+        upload_jobs_reaper_task,
+        trigger="interval",
+        minutes=5,
+        id="upload_reaper",
+        replace_existing=True,
+    )
     scheduler.add_job(
         _jobstore_tick,
         trigger="interval",

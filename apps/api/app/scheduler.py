@@ -266,6 +266,7 @@ def enqueue_now(
     *,
     job_id: str | None = None,
     kwargs: dict[str, Any] | None = None,
+    misfire_grace_time: int | None = None,
 ) -> str:
     """Convenience helper used by API services to enqueue ad-hoc work.
 
@@ -284,12 +285,12 @@ def enqueue_now(
         kwargs=kwargs or {},
         id=job_id,
         replace_existing=bool(job_id),
-        # None = run no matter how late. The standalone scheduler only
-        # discovers externally-enqueued jobs at its next wakeup — which
-        # was ~10 minutes out on a quiet jobstore, past the old 300s
-        # grace, so APScheduler silently DISCARDED the job and the
-        # operator watched "queued" forever. Late beats never for every
-        # caller of this helper.
-        misfire_grace_time=None,
+        # Default None = run no matter how late. The standalone scheduler
+        # only discovers externally-enqueued jobs at its next wakeup, and
+        # the old unconditional 300s grace silently DISCARDED jobs picked
+        # up late — the operator watched "queued" forever. Callers whose
+        # work goes stale (debounced embeds of mutable entities) pass an
+        # explicit bound instead.
+        misfire_grace_time=misfire_grace_time,
     )
     return job.id

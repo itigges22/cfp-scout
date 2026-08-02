@@ -842,7 +842,15 @@ class LLMClient:
             )
             return fake
 
-        if not self._settings.llm_dry_run and not self._settings.llm_is_configured():
+        # A dedicated embedding key is sufficient for EMBEDDING calls —
+        # providers issue per-model keys, and gating embeds on the chat
+        # key blocked operators who configured only llm_embedding_api_key.
+        embed_key_ok = _has_secret(getattr(self._settings, "llm_embedding_api_key", None))
+        if (
+            not self._settings.llm_dry_run
+            and not self._settings.llm_is_configured()
+            and not embed_key_ok
+        ):
             raise LLMNotConfiguredError(
                 "No LLM API key is set. Enter one in Settings, or turn on "
                 "LLM_DRY_RUN to work offline against canned responses."

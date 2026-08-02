@@ -65,6 +65,23 @@ export function useDocUploadJob<T>(opts: {
     return () => clearInterval(t);
   }, [jobId, startedAt]);
 
+  // A dead poll must not brick the UI forever: a 404 means the job row is
+  // gone (stale localStorage id, pruned row) — clear immediately; other
+  // persistent errors clear after several consecutive failures.
+  useEffect(() => {
+    if (!jobId || !jobQ.error) return;
+    const notFound = jobQ.error instanceof ApiError && jobQ.error.status === 404;
+    if (notFound || jobQ.failureCount >= 4) {
+      setError(
+        notFound
+          ? null // stale job id — silent cleanup, nothing user-actionable
+          : "Lost contact with the upload job — check the diagnostics page.",
+      );
+      setJobId(null);
+      localStorage.removeItem(storageKey);
+    }
+  }, [jobQ.error, jobQ.failureCount, jobId, storageKey]);
+
   useEffect(() => {
     const d = jobQ.data;
     if (!d || !jobId) return;

@@ -116,6 +116,18 @@ def run_migrations(pg_container: PostgresContainer, pg_sync_url: str) -> None:
     os.environ["DATABASE_URL"] = (
         f"postgresql+asyncpg://scout:scoutdev@{host}:{port}/scout_test"
     )
+    # get_settings() is lru_cached: if any unit test touched it before this
+    # fixture ran (combined `pytest tests/` runs), the cache holds the
+    # placeholder DATABASE_URL (host "postgres") and every code path that
+    # opens its own session — background tasks especially — dies on DNS.
+    # Same for the memoized engine built from that stale settings object.
+    from app.settings import get_settings
+
+    get_settings.cache_clear()
+    import app.db.session as _dbs
+
+    _dbs._engine = None
+    _dbs._session_factory = None
 
     # tests/integration/conftest.py -> tests/integration -> tests -> apps/api
     api_dir = str(Path(__file__).resolve().parents[2])

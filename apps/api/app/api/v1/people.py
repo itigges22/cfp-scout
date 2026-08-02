@@ -69,7 +69,13 @@ async def list_smes(
     is_active: bool | None = None,
 ) -> Page[SmeRead]:
     return await people.list_smes(
-        db, page=page, per_page=per_page, q=q, team=team, is_active=is_active
+        db,
+        page=page,
+        per_page=per_page,
+        q=q,
+        team=team,
+        external_only=external_only,
+        is_active=is_active,
     )
 
 
@@ -301,15 +307,30 @@ async def upload_(db: DbSession, file: UploadFile) -> dict:
         )
     )
     await db.commit()
-    enqueue_now(
-        talk_upload_extract_task,
-        job_id=f"talk-upload-{job_id}",
-        kwargs={
-            "job_id": str(job_id),
-            "file_path": str(dest),
-            "filename": filename,
-        },
-    )
+    try:
+        enqueue_now(
+            talk_upload_extract_task,
+            job_id=f"talk-upload-{job_id}",
+            kwargs={
+                "job_id": str(job_id),
+                "file_path": str(dest),
+                "filename": filename,
+            },
+        )
+    except Exception as exc:
+        # The row is already committed as queued; if the enqueue itself
+        # fails, nothing will ever come to run it. Mark it failed NOW and
+        # tell the caller instead of leaving an eternal spinner.
+        row = await db.get(IngestJob, job_id)
+        if row is not None:
+            row.status = "failed"
+            row.stats = {**(row.stats or {}), "stage": "failed"}
+            row.error_text = f"enqueue failed: {type(exc).__name__}: {exc}"
+            await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not queue the extraction job — try again shortly.",
+        ) from exc
     return {"job_id": str(job_id)}
 
 

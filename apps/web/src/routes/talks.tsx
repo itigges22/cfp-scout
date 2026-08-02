@@ -324,6 +324,9 @@ function TalkDialog({
     start: (file) => talksApi.upload(file),
     poll: (id) => talksApi.uploadStatus(id),
     onDone: (ex) => {
+      // A resumed job finishing while the SAME dialog instance shows an
+      // EDIT form must not overwrite curated fields with extraction.
+      if (isEdit) return;
       const suggested = pillars.find(
         (p) => p.name.toLowerCase() === (ex.suggested_pillar_name ?? "").toLowerCase(),
       );

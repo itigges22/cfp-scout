@@ -763,5 +763,79 @@ async def messaging_upload_extract_task(
             finished_at=datetime.now(tz=UTC),
             error_text=f"{type(exc).__name__}: {exc}",
         )
-    finally:
-        path.unlink(missing_ok=True)
+        # File deliberately KEPT on failure so the retry endpoint can
+        # re-run extraction without a re-upload; the queue reaper sweeps
+        # long-failed leftovers.
+
+
+async def upload_jobs_reaper_task() -> dict[str, Any]:
+    """Give abandoned upload jobs a terminal state, and sweep old files.
+
+    The async upload pipeline has no other guarantee of termination: if
+    the scheduler was down when a job was enqueued (or a worker died
+    mid-run), the ingest row sat in queued/running forever and the UI
+    polled a spinner that could never finish. Runs every 5 minutes:
+
+      * queued  > 15 min  -> failed ("never picked up")
+      * running > 3 hours -> failed ("worker died mid-run")
+      * failed  > 7 days  -> leftover source file deleted from storage
+    """
+    from pathlib import Path
+
+    now = datetime.now(tz=UTC)
+    reaped_queued = reaped_running = swept_files = 0
+    async with get_session_factory()() as session:
+        rows = (
+            await session.execute(
+                select(IngestJob).where(
+                    IngestJob.kind.in_(("talk_upload", "messaging_upload")),
+                    IngestJob.status.in_(("queued", "running", "failed")),
+                )
+            )
+        ).scalars().all()
+        storage = Path(get_settings().storage_path)
+        for row in rows:
+            age = now - (row.started_at or row.created_at)
+            if row.status == "queued" and age.total_seconds() > 15 * 60:
+                row.status = "failed"
+                row.stats = {**(row.stats or {}), "stage": "failed"}
+                row.error_text = (
+                    "Never picked up by the scheduler within 15 minutes — it may "
+                    "have been down. Use Retry on the diagnostics page, or "
+                    "re-upload the document."
+                )
+                row.finished_at = now
+                reaped_queued += 1
+            elif row.status == "running" and age.total_seconds() > 3 * 3600:
+                row.status = "failed"
+                row.stats = {**(row.stats or {}), "stage": "failed"}
+                row.error_text = (
+                    "Worker did not finish within 3 hours — it likely died "
+                    "mid-run. Use Retry on the diagnostics page."
+                )
+                row.finished_at = now
+                reaped_running += 1
+            elif (
+                row.status == "failed"
+                and row.finished_at is not None
+                and (now - row.finished_at).total_seconds() > 7 * 86400
+            ):
+                subdir = (
+                    "talk_uploads" if row.kind == "talk_upload" else "messaging_uploads"
+                )
+                for f in (storage / subdir).glob(f"{row.id}.*"):
+                    f.unlink(missing_ok=True)
+                    swept_files += 1
+        await session.commit()
+    if reaped_queued or reaped_running or swept_files:
+        log.info(
+            "upload_reaper.done",
+            reaped_queued=reaped_queued,
+            reaped_running=reaped_running,
+            swept_files=swept_files,
+        )
+    return {
+        "reaped_queued": reaped_queued,
+        "reaped_running": reaped_running,
+        "swept_files": swept_files,
+    }

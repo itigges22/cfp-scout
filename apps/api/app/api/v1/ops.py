@@ -144,8 +144,33 @@ async def clear_llm_errors(db: DbSession) -> dict:
     return {"cleared_at": now_iso}
 
 
-def _kwargs_for(kind: str, stats: dict | None) -> dict:
+def _kwargs_for(kind: str, stats: dict | None, job_id: str | None = None) -> dict:
     stats = stats or {}
+    if kind in ("talk_upload", "messaging_upload"):
+        # The task keeps the source file on failure precisely so this
+        # endpoint can re-run extraction against the SAME ingest row.
+        from pathlib import Path
+
+        from app.settings import get_settings
+
+        filename = (stats.get("filename") or "").lower()
+        if kind == "talk_upload":
+            ext = next(
+                (e for e in (".pdf", ".docx", ".txt") if filename.endswith(e)), ".pdf"
+            )
+            path = Path(get_settings().storage_path) / "talk_uploads" / f"{job_id}{ext}"
+            out = {"job_id": job_id, "file_path": str(path), "filename": filename}
+        else:
+            path = (
+                Path(get_settings().storage_path) / "messaging_uploads" / f"{job_id}.pdf"
+            )
+            out = {
+                "job_id": job_id,
+                "file_path": str(path),
+                "filename": filename,
+                "doc_kind": stats.get("doc_kind") or "other",
+            }
+        return out
     if kind == "scrape_source":
         return {"source_id": stats.get("source_id")}
     if kind == "parse_raw_page":
@@ -180,6 +205,14 @@ def _import_task(kind: str):
     if kind == "heartbeat":
 
         return heartbeat
+    if kind == "talk_upload":
+        from app.tasks import talk_upload_extract_task
+
+        return talk_upload_extract_task
+    if kind == "messaging_upload":
+        from app.tasks import messaging_upload_extract_task
+
+        return messaging_upload_extract_task
     return None
 
 
@@ -212,7 +245,23 @@ async def retry_job(db: DbSession, job_id: UUID) -> dict:
             status_code=409,
             detail=f"No retry handler registered for kind={row.kind!r}.",
         )
-    kwargs = _kwargs_for(row.kind, row.stats)
+    kwargs = _kwargs_for(row.kind, row.stats, job_id=str(job_id))
+    if row.kind in ("talk_upload", "messaging_upload"):
+        from pathlib import Path
+
+        fp = kwargs.get("file_path")
+        if not fp or not Path(fp).exists():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The uploaded source file is no longer on shared storage — "
+                    "re-upload the document instead of retrying."
+                ),
+            )
+        row.status = "queued"
+        row.stats = {**(row.stats or {}), "stage": "queued"}
+        row.error_text = None
+        await db.commit()
     _last_retry[key] = now
     new_job_id = enqueue_now(
         target,
