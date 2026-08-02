@@ -20,7 +20,6 @@ import type {
   AudienceProfileCreate,
   AudienceProfileRead,
   AudienceProfileUpdate,
-  TalkUploadPreview,
   ConferenceBrief,
   ConferenceCreate,
   ConferenceCreateResponse,
@@ -36,7 +35,6 @@ import type {
   CfpDigestMarkdown,
   DiagnosticsResponse,
   DiagnosticsRetryResponse,
-  MessagingDocUploadPreview,
   MessagingDocumentCreate,
   MessagingDocumentRead,
   MessagingDocumentUpdate,
@@ -211,20 +209,18 @@ export const messagingApi = {
       method: "DELETE",
       query: { actor_label },
     }),
-  uploadPreview: async (file: File, doc_kind: string): Promise<MessagingDocUploadPreview> => {
+  uploadStart: (file: File, doc_kind: string) => {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch(`${BASE}/messaging-documents/upload?doc_kind=${encodeURIComponent(doc_kind)}`, {
-      method: "POST",
-      body: fd,
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      const detail = (data as { detail?: string }).detail ?? `HTTP ${res.status}`;
-      throw new ApiError({ type: "about:blank", status: res.status, title: detail, detail });
-    }
-    return (await res.json()) as MessagingDocUploadPreview;
+    return request<{ job_id: string }>(
+      `${BASE}/messaging-documents/upload?doc_kind=${encodeURIComponent(doc_kind)}`,
+      { method: "POST", form: fd },
+    );
   },
+  uploadStatus: (jobId: string) =>
+    request<import("@/lib/api-types").MessagingUploadStatus>(
+      `${BASE}/messaging-documents/upload/${jobId}`,
+    ),
 };
 
 export const audiencesApi = {

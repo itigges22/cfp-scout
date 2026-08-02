@@ -204,12 +204,32 @@ export interface paths {
         put?: never;
         /**
          * Upload Preview
-         * @description Parse a PDF and extract messaging fields via LLM.
+         * @description Accept a PDF and start extraction as a tracked background job.
          *
-         *     Returns a preview for operator review — does NOT persist to the database.
-         *     After reviewing/editing, POST to /api/v1/messaging-documents to save.
+         *     Same architecture as /talks/upload, for the same reasons: a real GTM
+         *     PDF took 176s in-request (dead air, operator walked away, extraction
+         *     discarded) and a heavier one OOMKilled the API pod. The job runs on
+         *     the scheduler pod; poll GET /messaging-documents/upload/{job_id}.
+         *     Nothing persists until the operator reviews and saves.
          */
         post: operations["upload_preview_api_v1_messaging_documents_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/messaging-documents/upload/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Upload Status */
+        get: operations["upload_status_api_v1_messaging_documents_upload__job_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3193,6 +3213,25 @@ export interface components {
          * @enum {string}
          */
         MessagingSourceType: "structured" | "pdf";
+        /** MessagingUploadStarted */
+        MessagingUploadStarted: {
+            /** Job Id */
+            job_id: string;
+        };
+        /** MessagingUploadStatus */
+        MessagingUploadStatus: {
+            /** Job Id */
+            job_id: string;
+            /** Status */
+            status: string;
+            /** Stage */
+            stage: string;
+            /** Filename */
+            filename?: string | null;
+            /** Error */
+            error?: string | null;
+            extracted?: components["schemas"]["MessagingDocUploadPreview"] | null;
+        };
         /** NotificationRead */
         NotificationRead: {
             /**
@@ -4772,12 +4811,43 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagingUploadStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_status_api_v1_messaging_documents_upload__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MessagingDocUploadPreview"];
+                    "application/json": components["schemas"]["MessagingUploadStatus"];
                 };
             };
             /** @description Validation Error */

@@ -712,3 +712,53 @@ async def talk_upload_extract_task(
         )
     finally:
         path.unlink(missing_ok=True)
+
+
+async def messaging_upload_extract_task(
+    *, job_id: str, file_path: str, filename: str, doc_kind: str
+) -> None:
+    """Messaging/GTM/roadmap document upload as a tracked job — same shape
+    as talk_upload_extract_task. A real GTM PDF took 176s of Docling + LLM
+    inside one HTTP request (three minutes of dead air), and a heavier one
+    OOMKilled the API pod at 3Gi. The scheduler pod owns Docling now."""
+    from pathlib import Path
+
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.services.pdf import parse_and_chunk
+    from app.services.positioning import extract_messaging_from_text
+
+    path = Path(file_path)
+    try:
+        await _update_upload_job(
+            job_id, status="running", started_at=datetime.now(tz=UTC)
+        )
+        await _merge_upload_stats(job_id, {"stage": "parsing"})
+        parsed = await run_in_threadpool(parse_and_chunk, path)
+
+        await _merge_upload_stats(job_id, {"stage": "extracting"})
+        async with get_session_factory()() as session:
+            preview = await extract_messaging_from_text(
+                db=session, full_text=parsed.full_text, doc_kind=doc_kind
+            )
+            await session.commit()  # LLM spend row rides this session
+
+        await _merge_upload_stats(
+            job_id, {"stage": "done", "extracted": preview.model_dump()}
+        )
+        await _update_upload_job(
+            job_id, status="complete", finished_at=datetime.now(tz=UTC)
+        )
+    except Exception as exc:
+        log.warning(
+            "messaging_upload.failed", job_id=job_id, error=f"{type(exc).__name__}: {exc}"
+        )
+        await _merge_upload_stats(job_id, {"stage": "failed"})
+        await _update_upload_job(
+            job_id,
+            status="failed",
+            finished_at=datetime.now(tz=UTC),
+            error_text=f"{type(exc).__name__}: {exc}",
+        )
+    finally:
+        path.unlink(missing_ok=True)

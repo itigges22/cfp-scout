@@ -41,15 +41,16 @@ api:
                   - ocp-j8fns-worker-cpu-3-94p9f
 scheduler:
   affinity: *avoidBrokenNode
-  # Chart default (512Mi limit) OOMKilled once on day one — discovery +
-  # embedding batches run inside this pod.
+  # This pod now owns ALL Docling parsing (talk + messaging upload jobs)
+  # plus discovery/embedding batches. A heavy GTM PDF OOMKilled an API
+  # pod at 3Gi, so the parser's new home gets 4Gi.
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 500m
+      memory: 1Gi
     limits:
-      cpu: "1"
-      memory: 1.5Gi
+      cpu: "2"
+      memory: 4Gi
 
 postgres:
   affinity: *avoidBrokenNode

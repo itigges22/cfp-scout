@@ -23,7 +23,6 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
-from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from app.db.session import DbSession
@@ -41,8 +40,7 @@ from app.schemas import (
     SmePillarRead,
 )
 from app.services import positioning, reports
-from app.services.pdf import PdfRejected, parse_and_chunk, save_pdf, validate_pdf_bytes
-from app.services.positioning import extract_messaging_from_text
+from app.services.pdf import PdfRejected, validate_pdf_bytes
 
 log = structlog.get_logger("scout.api.positioning")
 
@@ -109,42 +107,100 @@ async def deactivate_(
     await positioning.deactivate_messaging_document(db, doc_id, actor_label=actor_label)
 
 
-@_r_messaging.post("/upload", response_model=MessagingDocUploadPreview)
+class MessagingUploadStarted(BaseModel):
+    job_id: str
+
+
+class MessagingUploadStatus(BaseModel):
+    job_id: str
+    status: str
+    stage: str
+    filename: str | None = None
+    error: str | None = None
+    extracted: MessagingDocUploadPreview | None = None
+
+
+@_r_messaging.post(
+    "/upload", response_model=MessagingUploadStarted, status_code=status.HTTP_202_ACCEPTED
+)
 async def upload_preview(
     db: DbSession,
     file: UploadFile,
     doc_kind: str = Query("other", description=f"One of: {', '.join(DOC_KIND_VALUES)}"),
-) -> MessagingDocUploadPreview:
-    """Parse a PDF and extract messaging fields via LLM.
+) -> dict:
+    """Accept a PDF and start extraction as a tracked background job.
 
-    Returns a preview for operator review — does NOT persist to the database.
-    After reviewing/editing, POST to /api/v1/messaging-documents to save.
+    Same architecture as /talks/upload, for the same reasons: a real GTM
+    PDF took 176s in-request (dead air, operator walked away, extraction
+    discarded) and a heavier one OOMKilled the API pod. The job runs on
+    the scheduler pod; poll GET /messaging-documents/upload/{job_id}.
+    Nothing persists until the operator reviews and saves.
     """
     if doc_kind not in DOC_KIND_VALUES:
         raise HTTPException(
             status_code=422,
             detail=f"doc_kind must be one of: {', '.join(DOC_KIND_VALUES)}",
         )
-
     raw = await file.read()
     try:
         validate_pdf_bytes(raw)
     except PdfRejected as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    on_disk, _ = save_pdf(raw)
-    parsed = await run_in_threadpool(parse_and_chunk, on_disk)
+    from pathlib import Path
+    from uuid import uuid4
 
-    preview = await extract_messaging_from_text(
-        db=db,
-        full_text=parsed.full_text,
-        doc_kind=doc_kind,
+    from app.db.models import IngestJob
+    from app.scheduler import enqueue_now
+    from app.settings import get_settings
+    from app.tasks import messaging_upload_extract_task
+
+    job_id = uuid4()
+    updir = Path(get_settings().storage_path) / "messaging_uploads"
+    updir.mkdir(parents=True, exist_ok=True)
+    dest = updir / f"{job_id}.pdf"
+    dest.write_bytes(raw)
+
+    db.add(
+        IngestJob(
+            id=job_id,
+            kind="messaging_upload",
+            status="queued",
+            stats={"stage": "queued", "filename": file.filename or "", "doc_kind": doc_kind},
+        )
     )
-    # Nothing document-shaped is persisted here — but the LLM client stages
-    # its spend row on this session, and without a commit the whole preview
-    # path left app.llm_calls empty. Every upload was an invisible cost.
     await db.commit()
-    return preview
+    enqueue_now(
+        messaging_upload_extract_task,
+        job_id=f"messaging-upload-{job_id}",
+        kwargs={
+            "job_id": str(job_id),
+            "file_path": str(dest),
+            "filename": (file.filename or "").lower(),
+            "doc_kind": doc_kind,
+        },
+    )
+    return {"job_id": str(job_id)}
+
+
+@_r_messaging.get("/upload/{job_id}", response_model=MessagingUploadStatus)
+async def upload_status(db: DbSession, job_id: UUID) -> dict:
+    from app.db.models import IngestJob
+
+    row = await db.get(IngestJob, job_id)
+    if row is None or row.kind != "messaging_upload":
+        raise HTTPException(status_code=404, detail="upload job not found")
+    stats = row.stats or {}
+    return {
+        "job_id": str(job_id),
+        "status": row.status,
+        "stage": stats.get("stage", row.status),
+        "filename": stats.get("filename"),
+        "error": (row.error_text or "").split("\n")[0] or None
+        if row.status == "failed"
+        else None,
+        "extracted": stats.get("extracted"),
+    }
 
 
 # ==========================================================================

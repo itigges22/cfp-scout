@@ -4,6 +4,8 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { FileText, Loader2, Plus, Trash2, Upload, RotateCcw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { useDocUploadJob } from "@/hooks/useDocUploadJob";
+import { UploadStageBanner } from "@/components/upload/UploadStageBanner";
 import { useUnsavedWorkWarning } from "@/hooks/useUnsavedWorkWarning";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -996,11 +998,27 @@ function PillarDocTab({ pillarId, docKind }: { pillarId: string; docKind: DocKin
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["messaging"] }),
   });
 
-  const extractMut = useMutation({
-    mutationFn: (file: File) => messagingApi.uploadPreview(file, docKind),
-    onSuccess: (data) => { setDraft(data); setPhase("review"); setError(null); },
-    onError: (err) => { setError(String((err as Error).message)); setPhase("idle"); },
+  // Job-backed upload: heavy parse runs server-side (scheduler pod), we
+  // poll stages, and a refresh rejoins the same job — the sync version
+  // showed 3 minutes of dead air and then lost the result if you left.
+  const uploadJob = useDocUploadJob<MessagingDocUploadPreview>({
+    storageKey: `scout.messaging-upload.${docKind}.${pillarId}`,
+    start: (file) => messagingApi.uploadStart(file, docKind),
+    poll: (id) => messagingApi.uploadStatus(id),
+    onDone: (data) => {
+      setDraft(data);
+      setPhase("review");
+      setError(null);
+    },
   });
+  useEffect(() => {
+    if (uploadJob.active && phase === "idle") setPhase("extracting");
+    if (uploadJob.error && phase === "extracting") {
+      setError(uploadJob.error);
+      setPhase("idle");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadJob.active, uploadJob.error]);
 
   const saveMut = useMutation({
     mutationFn: (body: MessagingDocumentCreate) => messagingApi.create(body, "ui_admin"),
@@ -1018,7 +1036,7 @@ function PillarDocTab({ pillarId, docKind }: { pillarId: string; docKind: DocKin
     if (!file) return;
     setError(null);
     setPhase("extracting");
-    extractMut.mutate(file);
+    uploadJob.upload(file);
     e.target.value = "";
   }
 
@@ -1089,17 +1107,10 @@ function PillarDocTab({ pillarId, docKind }: { pillarId: string; docKind: DocKin
           Upload a PDF to extract and store {label} content. The extracted fields are used by the matcher.
         </p>
         <div className="flex shrink-0 items-center gap-2">
-          {phase === "extracting" && (
-            <span className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-1.5 text-xs text-warning">
-              <Loader2 className="size-3.5 animate-spin" />
-              Reading the PDF and extracting fields — typically 20–60 seconds.
-              Stay on this page: nothing is saved until you review.
-            </span>
-          )}
           <Button
             size="sm"
             onClick={() => fileInputRef.current?.click()}
-            disabled={phase === "extracting"}
+            disabled={uploadJob.busy}
           >
             <Upload className="mr-1.5 size-4" />
             Upload PDF
@@ -1113,6 +1124,10 @@ function PillarDocTab({ pillarId, docKind }: { pillarId: string; docKind: DocKin
           />
         </div>
       </div>
+
+      {uploadJob.active && (
+        <UploadStageBanner stage={uploadJob.stage} elapsed={uploadJob.elapsed} />
+      )}
 
       {error && (
         <div className="rounded border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{error}</div>

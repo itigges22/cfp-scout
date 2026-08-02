@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Trash2, Upload, RotateCcw } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 
 import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
+import { useDocUploadJob } from "@/hooks/useDocUploadJob";
+import { UploadStageBanner } from "@/components/upload/UploadStageBanner";
 import { useUnsavedWorkWarning } from "@/hooks/useUnsavedWorkWarning";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -286,19 +288,26 @@ function UploadReviewDialog({
   // or mid-review silently discards the work, so intercept the unload.
   useUnsavedWorkWarning(phase !== "pick");
 
-  const extractMut = useMutation({
-    mutationFn: ({ file, kind }: { file: File; kind: DocKind }) =>
-      messagingApi.uploadPreview(file, kind),
-    onSuccess: (data) => {
+  // Job-backed upload — heavy parse on the scheduler pod, polled stages,
+  // refresh-safe. Same flow as talk and pillar-tab uploads.
+  const uploadJob = useDocUploadJob<MessagingDocUploadPreview>({
+    storageKey: "scout.messaging-upload.dialog",
+    start: (file) => messagingApi.uploadStart(file, docKind),
+    poll: (id) => messagingApi.uploadStatus(id),
+    onDone: (data) => {
       setDraft(data);
       setPhase("review");
       setError(null);
     },
-    onError: (err) => {
-      setError(String((err as Error).message));
-      setPhase("pick");
-    },
   });
+  useEffect(() => {
+    if (uploadJob.active && phase === "pick") setPhase("extracting");
+    if (uploadJob.error && phase === "extracting") {
+      setError(uploadJob.error);
+      setPhase("pick");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadJob.active, uploadJob.error]);
 
   const saveMut = useMutation({
     mutationFn: (body: MessagingDocumentCreate) =>
@@ -312,7 +321,7 @@ function UploadReviewDialog({
     if (!file) return;
     setError(null);
     setPhase("extracting");
-    extractMut.mutate({ file, kind: docKind });
+    uploadJob.upload(file);
   }
 
   function handleSave() {
@@ -381,12 +390,16 @@ function UploadReviewDialog({
                 </p>
               </div>
 
+              {uploadJob.active && (
+                <UploadStageBanner stage={uploadJob.stage} elapsed={uploadJob.elapsed} />
+              )}
+
               <div>
                 <Button
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={phase === "extracting"}
+                  disabled={uploadJob.busy}
                 >
-                  {phase === "extracting" ? "Extracting fields…" : "Choose PDF…"}
+                  {uploadJob.busy ? "Working…" : "Choose PDF…"}
                 </Button>
                 <input
                   ref={fileInputRef}

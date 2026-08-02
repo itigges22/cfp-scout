@@ -53,6 +53,7 @@ export type DashboardStats = S["DashboardStats"];
 export type DecisionCreate = S["DecisionCreate"];
 export type DecisionRead = S["DecisionRead"];
 export type MessagingDocUploadPreview = S["MessagingDocUploadPreview"];
+export type MessagingUploadStatus = S["MessagingUploadStatus"];
 export type MessagingDocumentCreate = S["MessagingDocumentCreate"];
 export type MessagingDocumentRead = S["MessagingDocumentRead"];
 export type MessagingDocumentUpdate = S["MessagingDocumentUpdate"];

@@ -469,3 +469,40 @@ async def test_create_talk_embeds_chunks_when_model_available(
             )
         ).scalar_one()
     assert n >= 1
+
+
+@pytest.mark.asyncio
+async def test_messaging_upload_starts_job_and_status_returns_preview(
+    async_client: AsyncClient, clean_db, monkeypatch, tmp_path
+) -> None:
+    """Messaging/GTM uploads ride the same job flow as talk uploads —
+    202 + job id, task fills the row, poll returns the preview."""
+    import app.scheduler as sched
+    from app.settings import get_settings
+
+    monkeypatch.setattr(get_settings(), "storage_path", str(tmp_path))
+    captured: dict = {}
+    monkeypatch.setattr(
+        sched, "enqueue_now", lambda func, **kw: captured.update(kw) or "jid"
+    )
+
+    pdf = _FIXTURE_DIR / "sample_talk.pdf"
+    if not pdf.exists():
+        pytest.skip("no sample pdf fixture")
+    with open(pdf, "rb") as fh:
+        resp = await async_client.post(
+            "/api/v1/messaging-documents/upload?doc_kind=gtm_strategy",
+            files={"file": ("gtm.pdf", fh, "application/pdf")},
+        )
+    assert resp.status_code == 202, resp.text
+    job_id = resp.json()["job_id"]
+
+    from app.tasks import messaging_upload_extract_task
+
+    await messaging_upload_extract_task(**captured["kwargs"])
+
+    status1 = await async_client.get(f"/api/v1/messaging-documents/upload/{job_id}")
+    body = status1.json()
+    assert body["status"] in ("complete", "failed")
+    if body["status"] == "complete":
+        assert body["extracted"]["title"]

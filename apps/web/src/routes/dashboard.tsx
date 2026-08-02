@@ -33,10 +33,6 @@ export const Route = createFileRoute("/dashboard")({
 const PAGE_SIZE = 6;
 
 function DashboardPage() {
-  const statsQ = useQuery({
-    queryKey: ["dashboard", "stats"],
-    queryFn: () => conferencesApi.dashboardStats(),
-  });
   // Pull a much larger pool so we can paginate locally — far cheaper
   // than re-issuing the list endpoint per page, and the per-card LLM
   // queries (rationale + SMEs) only fire for the currently-visible

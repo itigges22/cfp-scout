@@ -35,7 +35,10 @@ import type {
   TalkReviewStatus,
   TalkSubmissionCreate,
   TalkUpdate,
+  TalkUploadPreview,
 } from "@/lib/api-types";
+import { useDocUploadJob } from "@/hooks/useDocUploadJob";
+import { UploadStageBanner } from "@/components/upload/UploadStageBanner";
 import { PageHeader } from "@/routes/dashboard";
 import { ErrorBox } from "@/components/form";
 
@@ -315,56 +318,12 @@ function TalkDialog({
   // review dialog. There used to be two: a toolbar "Upload document" button
   // that opened its own near-identical form, which meant two places to keep
   // in step and two answers to "where do I add a talk?".
-  // Upload is a tracked backend job: POST returns a job id instantly, and
-  // we poll real stages (queued → parsing → extracting) so the operator
-  // watches progress instead of a spinner. Elapsed time shown because
-  // Docling legitimately takes ~a minute on a cold pod.
-  // Survives refresh: the job runs server-side regardless, so losing the
-  // id on reload meant a healthy extraction had nowhere to deliver. The
-  // talks page auto-reopens this dialog when a stored job exists.
-  const [uploadJob, setUploadJob] = useState<string | null>(() => {
-    try {
-      const raw = localStorage.getItem("scout.talk-upload.job");
-      return raw ? (JSON.parse(raw).job_id as string) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [uploadStart, setUploadStart] = useState<number>(() => {
-    try {
-      const raw = localStorage.getItem("scout.talk-upload.job");
-      return raw ? (JSON.parse(raw).started_at as number) : 0;
-    } catch {
-      return 0;
-    }
-  });
-  const [elapsed, setElapsed] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const jobQ = useQuery({
-    queryKey: ["talk-upload", uploadJob],
-    queryFn: () => talksApi.uploadStatus(uploadJob!),
-    enabled: uploadJob !== null,
-    refetchInterval: (q) => {
-      const s = q.state.data?.status;
-      return s === "complete" || s === "failed" ? false : 1500;
-    },
-  });
-  useEffect(() => {
-    if (!uploadJob) return;
-    const t = setInterval(() => setElapsed(Math.round((Date.now() - uploadStart) / 1000)), 1000);
-    return () => clearInterval(t);
-  }, [uploadJob, uploadStart]);
-  useEffect(() => {
-    const d = jobQ.data;
-    if (!d || !uploadJob) return;
-    if (d.status === "failed") {
-      setUploadError(d.error ?? "Extraction failed.");
-      setUploadJob(null);
-      localStorage.removeItem("scout.talk-upload.job");
-      return;
-    }
-    if (d.status === "complete" && d.extracted) {
-      const ex = d.extracted;
+  const uploadJob = useDocUploadJob<TalkUploadPreview>({
+    storageKey: "scout.talk-upload.job",
+    start: (file) => talksApi.upload(file),
+    poll: (id) => talksApi.uploadStatus(id),
+    onDone: (ex) => {
       const suggested = pillars.find(
         (p) => p.name.toLowerCase() === (ex.suggested_pillar_name ?? "").toLowerCase(),
       );
@@ -377,36 +336,12 @@ function TalkDialog({
         suggested_duration_minutes:
           ex.suggested_duration_minutes ?? prev.suggested_duration_minutes,
       }));
-      setUploadJob(null);
-      localStorage.removeItem("scout.talk-upload.job");
-    }
-  }, [jobQ.data, uploadJob, pillars]);
-  const upload = useMutation({
-    mutationFn: (file: File) => talksApi.upload(file),
-    onSuccess: (r) => {
-      setUploadError(null);
-      const started = Date.now();
-      setUploadStart(started);
-      setElapsed(0);
-      setUploadJob(r.job_id);
-      localStorage.setItem(
-        "scout.talk-upload.job",
-        JSON.stringify({ job_id: r.job_id, started_at: started }),
-      );
-    },
-    onError: (err) => {
-      setUploadError(err instanceof ApiError ? err.message : String(err));
     },
   });
-  const uploadBusy = upload.isPending || uploadJob !== null;
-  const stage = jobQ.data?.stage ?? "queued";
-  const STAGE_LABEL: Record<string, string> = {
-    queued: "Queued…",
-    parsing: "Reading the document (Docling)…",
-    extracting: "Extracting talk fields (LLM)…",
-    done: "Done",
-  };
-  const STAGE_PCT: Record<string, number> = { queued: 10, parsing: 45, extracting: 85, done: 100 };
+  useEffect(() => {
+    if (uploadJob.error) setUploadError(uploadJob.error);
+  }, [uploadJob.error]);
+  const uploadBusy = uploadJob.busy;
 
   useEffect(() => {
     if (!open) return;
@@ -482,30 +417,15 @@ function TalkDialog({
               onChange={(e) => {
                 const file = e.currentTarget.files?.[0];
                 if (file) {
-                  upload.mutate(file);
+                  uploadJob.upload(file);
                   e.currentTarget.value = "";
                 }
               }}
             />
           </div>
         )}
-        {uploadJob !== null ? (
-          <div className="mx-1 my-3 flex flex-col gap-2 rounded-lg border border-accent/40 bg-accent/5 px-4 py-3.5">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-fg">{STAGE_LABEL[stage] ?? stage}</span>
-              <span className="tabular-nums text-fg-muted">{elapsed}s</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
-              <div
-                className="h-full bg-accent transition-all duration-700"
-                style={{ width: `${STAGE_PCT[stage] ?? 10}%` }}
-              />
-            </div>
-            <p className="text-xs text-fg-muted">
-              First document on a fresh pod takes the longest — the parser
-              loads its models once, then later uploads are much faster.
-            </p>
-          </div>
+        {uploadJob.active ? (
+          <UploadStageBanner stage={uploadJob.stage} elapsed={uploadJob.elapsed} />
         ) : null}
         {uploadError ? <p className="text-sm text-danger">{uploadError}</p> : null}
         <div className="flex flex-col gap-4 p-6">
