@@ -1072,6 +1072,58 @@ def _parse_import_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
     return out
 
 
+def match_sme_by_name(name: str, smes: list[Sme]) -> Sme | None:
+    """Match a spreadsheet attendee name to the SME roster, forgivingly.
+
+    People write "Cedric" when the roster says "Cedric Cylburn". Matching
+    tiers, first hit wins, and every tier requires UNIQUENESS — an
+    ambiguous name (two Cedrics) links nobody rather than guessing:
+
+      1. exact full name (case-insensitive)
+      2. unique first-name match ("cedric" -> "Cedric Cylburn")
+      3. unique "first last-initial" ("cedric c" -> "Cedric Cylburn")
+      4. unique substring of the full name ("ced cylburn" tokens all
+         present in one roster name)
+    """
+    q = " ".join(name.strip().lower().split())
+    if not q:
+        return None
+
+    by_full = {" ".join(s.full_name.strip().lower().split()): s for s in smes}
+    if q in by_full:
+        return by_full[q]
+
+    q_parts = q.split()
+
+    # Tier 2: first name only.
+    if len(q_parts) == 1:
+        hits = [s for s in smes if s.full_name.strip().lower().split()[0] == q]
+        if len(hits) == 1:
+            return hits[0]
+        return None
+
+    # Tier 3: first name + last-name initial ("cedric c").
+    if len(q_parts) == 2 and len(q_parts[1]) == 1:
+        hits = []
+        for s in smes:
+            parts = s.full_name.strip().lower().split()
+            if len(parts) >= 2 and parts[0] == q_parts[0] and parts[-1][0] == q_parts[1]:
+                hits.append(s)
+        if len(hits) == 1:
+            return hits[0]
+        return None
+
+    # Tier 4: every query token appears as a prefix of some name token.
+    hits = []
+    for s in smes:
+        parts = s.full_name.strip().lower().split()
+        if all(any(p.startswith(t) for p in parts) for t in q_parts):
+            hits.append(s)
+    if len(hits) == 1:
+        return hits[0]
+    return None
+
+
 async def import_past_conferences(
     db: AsyncSession, *, filename: str, raw: bytes, actor_label: str = "import"
 ) -> dict:
@@ -1094,7 +1146,6 @@ async def import_past_conferences(
     smes = (
         await db.execute(select(Sme).where(Sme.is_active.is_(True)))
     ).scalars().all()
-    sme_by_name = {s.full_name.strip().lower(): s for s in smes}
 
     def _parse_date(v: str | None) -> date | None:
         if not v:
@@ -1182,7 +1233,7 @@ async def import_past_conferences(
         for person in attendees:
             if person.lower() in existing_labels:
                 continue
-            sme = sme_by_name.get(person.lower())
+            sme = match_sme_by_name(person, smes)
             db.add(
                 Participation(
                     conference_id=conf.id,

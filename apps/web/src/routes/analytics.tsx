@@ -466,9 +466,9 @@ function AnalyticsPage() {
 
           <SparseAwareCard
             title="Events per team member"
-            sub={`${q.data.smes.with_expertise} of ${q.data.smes.active_total} SMEs have expertise described`}
+            sub={`${q.data.smes.with_expertise} of ${q.data.smes.active_total} SMEs have expertise described · guests included`}
             points={q.data.smes.events_per_sme.map((r) => ({
-              label: String(r.name),
+              label: r.on_roster === false ? `${String(r.name)} (guest)` : String(r.name),
               count: Number(r.events),
             }))}
             emptyText="No participation recorded yet."

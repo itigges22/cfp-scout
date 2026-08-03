@@ -1278,24 +1278,42 @@ async def analytics_overview(
             select(Sme.id, Sme.full_name, Sme.expertise).where(Sme.is_active.is_(True))
         )
     ).all()
-    sme_event_rows = (
+    # Everyone who has been to anything — roster SMEs by id, guests and
+    # not-yet-registered colleagues by their free-text label. The team's
+    # reality includes people who are not SME records, and hiding them
+    # made the imported history look like nobody went anywhere.
+    person_rows = (
         await db.execute(
-            select(Participation.sme_id, func.count(Participation.id))
-            .where(Participation.sme_id.is_not(None))
-            .group_by(Participation.sme_id)
+            select(
+                Participation.sme_id,
+                Participation.person_label,
+                func.count(Participation.id),
+            ).group_by(Participation.sme_id, Participation.person_label)
         )
     ).all()
-    events_by_sme = {sid: int(n) for sid, n in sme_event_rows}
+    sme_name_by_id = {sid: name for sid, name, _e in sme_rows}
+    events_by_person: dict[str, dict] = {}
+    for sid, label, n in person_rows:
+        if sid is not None and sid in sme_name_by_id:
+            key, on_roster = sme_name_by_id[sid], True
+        else:
+            key, on_roster = (label or "Unknown").strip(), False
+        entry = events_by_person.setdefault(
+            key, {"name": key, "events": 0, "on_roster": on_roster}
+        )
+        entry["events"] += int(n)
+        entry["on_roster"] = entry["on_roster"] or on_roster
+    # Roster members with zero events still show — coverage gaps matter.
+    for sid, name, _e in sme_rows:
+        events_by_person.setdefault(
+            name, {"name": name, "events": 0, "on_roster": True}
+        )
     smes = {
         "active_total": len(sme_rows),
         "with_expertise": sum(1 for _i, _n, e in sme_rows if (e or "").strip()),
         "events_per_sme": sorted(
-            (
-                {"name": name, "events": events_by_sme.get(sid, 0)}
-                for sid, name, _e in sme_rows
-            ),
-            key=lambda r: -r["events"],
-        )[:15],
+            events_by_person.values(), key=lambda r: -r["events"]
+        )[:20],
     }
 
     # ---- Pillar alignment --------------------------------------------
