@@ -37,18 +37,10 @@ MODELS = APP / "db" / "models.py"
 #: owed. Tracked in D17. This set may only ever get SMALLER — a new entry
 #: means someone shipped another silent zero.
 #:
-#: conference_audiences   read by services/matcher.py to compute the
-#:                        `audience_overlap` dimension, which is therefore
-#:                        permanently 0.0 and silently redistributes
-#:                        sme_w_audience onto the other dimensions. It is
-#:                        also the diagram's "Target Audience of
-#:                        Conference", so this is a coverage gap too.
 #: (talk_tag_assignments was here. It and talk_tags are now deleted —
 #: migration 20260727_2400 — because the assignment junction had no writer,
 #: so an operator could create a tag and never put it on a talk.)
-TOLERATED_UNWRITTEN = {
-    "ConferenceAudience",
-}
+TOLERATED_UNWRITTEN: set[str] = set()
 
 
 def _model_names() -> set[str]:

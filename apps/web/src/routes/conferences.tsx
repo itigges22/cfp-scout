@@ -50,25 +50,45 @@ type Stage = {
   engagement?: Engagement;
 };
 
-const STAGES: Stage[] = [
-  { value: "all", label: "Everything open", group: "Pipeline" },
-  { value: "undecided", label: "Not decided yet", group: "Pipeline", engagement: "none" },
+// "Everything open" excludes vetoed/rejected: the finder's default view
+// is the actionable pipeline, and vetoed rows drowned it (445 of 812 at
+// one point) with no way to hide them. They get their own stage instead.
+const PIPELINE_STATUSES = [
+  "discovered",
+  "needs_review",
+  "needs_sme_review",
+  "low_messaging_fit",
+  "approved",
+];
+
+type StageDef = Stage & { statuses?: string[]; showClosed?: boolean };
+
+const STAGES: StageDef[] = [
+  { value: "all", label: "Everything open", group: "Pipeline", statuses: PIPELINE_STATUSES },
+  { value: "undecided", label: "Not decided yet", group: "Pipeline", engagement: "none", statuses: PIPELINE_STATUSES },
   { value: "approved", label: "Approved", group: "Pipeline", status: "approved" },
   { value: "going", label: "We're going", group: "Pipeline", engagement: "going" },
-  { value: "attended", label: "Attended", group: "Pipeline", engagement: "attended" },
-  { value: "needs_review", label: "Needs review", group: "Filtered out", status: "needs_review" },
+  // Attended events are past by definition — their CFPs are closed, so
+  // the closed-CFP default would blank the view.
+  { value: "attended", label: "Attended", group: "Pipeline", engagement: "attended", showClosed: true },
+  // Explicit-status views show EVERYTHING in that status: hiding
+  // closed-CFP rows here made "Low fit" etc. look mysteriously partial.
+  { value: "needs_review", label: "Needs review", group: "Filtered out", status: "needs_review", showClosed: true },
   {
     value: "needs_sme_review",
     label: "No speaker yet",
     group: "Filtered out",
     status: "needs_sme_review",
+    showClosed: true,
   },
   {
     value: "low_messaging_fit",
     label: "Low fit",
     group: "Filtered out",
     status: "low_messaging_fit",
+    showClosed: true,
   },
+  { value: "vetoed", label: "Vetoed", group: "Filtered out", status: "vetoed", showClosed: true },
 ] as const;
 
 type SortOpt = "score" | "fit" | "speakers" | "date" | "name" | "cfp_close";
@@ -207,7 +227,8 @@ function ConferencesPage() {
   const [startsBefore, setStartsBefore] = useState("");
   // Falls back to "Everything open" if a stale value ever survives in state.
   const activeStage = STAGES.find((x) => x.value === stage);
-  const status = activeStage?.status ?? null;
+  const status = activeStage?.statuses ?? activeStage?.status ?? null;
+  const stageShowsClosed = Boolean(activeStage?.showClosed);
   const engagement: Engagement = activeStage?.engagement ?? "all";
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -289,7 +310,7 @@ function ConferencesPage() {
         ...(thenBy ? { then_by: thenBy } : {}),
         attendance_filter: attendanceFilter,
         engagement,
-        include_closed_cfp: includeClosedCfp,
+        include_closed_cfp: includeClosedCfp || stageShowsClosed,
         ...(country.trim() ? { country: [country.trim().toUpperCase()] } : {}),
         ...(city.trim() ? { city: city.trim() } : {}),
         ...(cfpWindow ? { cfp_closes_within_days: Number(cfpWindow) } : {}),

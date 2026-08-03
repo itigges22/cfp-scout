@@ -52,6 +52,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
+    AudienceProfile,
     Conference,
     ConferenceAudience,
     ConferencePillar,
@@ -63,6 +64,7 @@ from app.db.models import (
     Participation,
     Sme,
     SmeAudience,
+    SmePillar,
     StrategicPillar,
     Talk,
     TalkSubmission,
@@ -733,6 +735,73 @@ def _jaccard(a: set, b: set) -> float:
     return inter / union
 
 
+async def compute_audience_edges(
+    db: AsyncSession, conference_id: UUID
+) -> list[tuple[UUID, float]]:
+    """Which audience profiles this conference speaks to, from embeddings.
+
+    conference_audiences was read by the ranker's audience dimension and
+    written by NOTHING — so the dimension showed "n/a" forever no matter
+    how many profiles the operator created. Same mechanism as the pillar
+    edges: top-K mean cosine between the conference's chunks and each
+    audience profile's chunks, rescaled to the shared band, floored.
+    """
+    conf_chunks = [
+        c
+        for c in (
+            await db.execute(
+                select(DocumentChunk).where(
+                    DocumentChunk.owner_type == "conference",
+                    DocumentChunk.owner_id == conference_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+        if c.embedding is not None
+    ]
+    if not conf_chunks:
+        return []
+    audiences = (
+        (await db.execute(select(AudienceProfile).where(AudienceProfile.is_active.is_(True))))
+        .scalars()
+        .all()
+    )
+    if not audiences:
+        return []
+    aud_chunks = (
+        (
+            await db.execute(
+                select(DocumentChunk).where(
+                    DocumentChunk.owner_type == "audience",
+                    DocumentChunk.owner_id.in_([a.id for a in audiences]),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_aud: dict[UUID, list] = {}
+    for ch in aud_chunks:
+        if ch.embedding is not None:
+            by_aud.setdefault(ch.owner_id, []).append(ch)
+
+    s = get_settings()
+    out: list[tuple[UUID, float]] = []
+    for a in audiences:
+        chunks = by_aud.get(a.id, [])
+        if not chunks:
+            continue
+        sims = [
+            cosine_similarity(cc.embedding, ac.embedding)
+            for cc in conf_chunks
+            for ac in chunks
+        ]
+        score = rescale_score(topk_mean(sims, k=s.matcher_topk_pillar))
+        out.append((a.id, round(score, 4)))
+    return out
+
+
 async def _bio_similarity(
     db: AsyncSession, sme_id: UUID, conference_chunks: list[DocumentChunk]
 ) -> float:
@@ -1107,6 +1176,10 @@ class SmeRecommendation:
     label: str
     team: str | None
     score: float
+    #: The person's ACTUAL pillar memberships. The rationale prompt lists
+    #: these explicitly because the model used to see only the conference's
+    #: matched pillar next to the name and attributed the person to it.
+    pillar_names: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -1144,6 +1217,21 @@ async def stage_c_sme_match(db: AsyncSession, conference_id: UUID, gate: float) 
         n_above_gate=len(above),
         n_near_misses=len(ranker.near_misses),
     )
+    # Real pillar memberships per recommended SME, for the rationale
+    # prompt — the model must never infer a person's pillar from the
+    # conference's pillar tie.
+    pillar_map: dict[str, tuple[str, ...]] = {}
+    if recs:
+        rows = (
+            await db.execute(
+                select(SmePillar.sme_id, StrategicPillar.name)
+                .join(StrategicPillar, StrategicPillar.id == SmePillar.pillar_id)
+                .where(SmePillar.sme_id.in_([UUID(b.sme_id) for b in recs]))
+            )
+        ).all()
+        for sid, pname in rows:
+            pillar_map[str(sid)] = (*pillar_map.get(str(sid), ()), pname)
+
     return SmeStageResult(
         # bio_similarity lives on b.dimensions, not on b. The old line read
         # getattr(b, "bio_similarity", None) — always None — so the guard
@@ -1159,6 +1247,7 @@ async def stage_c_sme_match(db: AsyncSession, conference_id: UUID, gate: float) 
                 label=b.full_name,
                 team=b.team,
                 score=b.composite,
+                pillar_names=pillar_map.get(b.sme_id, ()),
             )
             for b in recs
         ],
@@ -1852,7 +1941,16 @@ def _build_rationale_prompt(
     if sme_recs:
         parts.append("Recommended SMEs (with shared-expertise overlap):")
         for r in sme_recs[:3]:
-            parts.append(f"  - {r.label} (team {r.team or '?'}, score {r.score:.2f})")
+            pillars_txt = (
+                f", pillars: {', '.join(r.pillar_names)}" if r.pillar_names else ""
+            )
+            parts.append(
+                f"  - {r.label} (team {r.team or '?'}, score {r.score:.2f}{pillars_txt})"
+            )
+        parts.append(
+            "Only state a person's pillar or team if it is listed above — "
+            "never infer it from the conference's pillar tie."
+        )
         parts.append("")
     else:
         parts.append("No SME recommendations passed the gate.\n")
@@ -2178,6 +2276,24 @@ async def run_fit_match(db: AsyncSession, conference_id: UUID) -> MatchResult:
                 score=float(hit.score),
             )
         )
+    # Audience edges — same lifecycle as pillar edges. These are what the
+    # SME ranker's audience dimension measures against; without them it
+    # renders "n/a" for every SME regardless of operator effort.
+    audience_edges = await compute_audience_edges(db, conference.id)
+    await db.execute(
+        delete(ConferenceAudience).where(ConferenceAudience.conference_id == conference.id)
+    )
+    for aud_id, a_score in audience_edges:
+        if a_score < EDGE_FLOOR:
+            continue
+        db.add(
+            ConferenceAudience(
+                conference_id=conference.id,
+                audience_id=aud_id,
+                weight=float(a_score),
+            )
+        )
+
     await db.execute(delete(ConferenceSme).where(ConferenceSme.conference_id == conference.id))
     for rec in sm.recommendations:
         if rec.score < EDGE_FLOOR:
