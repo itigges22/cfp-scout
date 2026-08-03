@@ -745,12 +745,43 @@ async def link_conference_series_orphans(db: AsyncSession) -> OrphanLinkResult:
         )
     ).all()
 
+    # Conferences somebody ATTENDED are the highest-signal series seeds we
+    # have: the whole point of series identity is "we went to an earlier
+    # edition of this" — which is also the SME ranker's Past dimension.
+    # Imported history had no series (nothing minted them), so Past could
+    # never fire. Mint a series from each attended orphan that matches no
+    # existing series, so future editions found by discovery auto-link.
+    attended_ids = {
+        cid
+        for (cid,) in (
+            await db.execute(select(Participation.conference_id).distinct())
+        ).all()
+    }
+    series_rows = list(series_rows)
+
     linked = skipped = 0
     for conf in orphans:
         match = next(
             (sid for sid, canonical in series_rows if same_series(conf.name, canonical)),
             None,
         )
+        if match is None and conf.id in attended_ids:
+            new_series = ConferenceSeries(
+                canonical_name=conf.name,
+                aliases=[],
+                description="",
+                typical_topics=[],
+                is_active=True,
+            )
+            db.add(new_series)
+            await db.flush()
+            series_rows.append((new_series.id, new_series.canonical_name))
+            match = new_series.id
+            log.info(
+                "conference.series.minted_from_attended",
+                series_id=str(new_series.id),
+                name=conf.name,
+            )
         if match is None:
             skipped += 1
             continue
