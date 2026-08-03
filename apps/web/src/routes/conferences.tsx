@@ -64,7 +64,7 @@ const PIPELINE_STATUSES = [
 type StageDef = Stage & { statuses?: string[]; showClosed?: boolean };
 
 const STAGES: StageDef[] = [
-  { value: "all", label: "Everything open", group: "Pipeline", statuses: PIPELINE_STATUSES },
+  { value: "all", label: "Everything open (vetoed hidden)", group: "Pipeline", statuses: PIPELINE_STATUSES },
   { value: "undecided", label: "Not decided yet", group: "Pipeline", engagement: "none", statuses: PIPELINE_STATUSES },
   { value: "approved", label: "Approved", group: "Pipeline", status: "approved" },
   { value: "going", label: "We're going", group: "Pipeline", engagement: "going" },
@@ -73,7 +73,9 @@ const STAGES: StageDef[] = [
   { value: "attended", label: "Attended", group: "Pipeline", engagement: "attended", showClosed: true },
   // Explicit-status views show EVERYTHING in that status: hiding
   // closed-CFP rows here made "Low fit" etc. look mysteriously partial.
-  { value: "needs_review", label: "Needs review", group: "Filtered out", status: "needs_review", showClosed: true },
+  // ("Needs review" was removed: the status exists in the vocabulary but
+  // the matcher never assigns it — a dropdown option that always shows
+  // zero rows reads as a broken filter.)
   {
     value: "needs_sme_review",
     label: "No speaker yet",
@@ -88,7 +90,7 @@ const STAGES: StageDef[] = [
     status: "low_messaging_fit",
     showClosed: true,
   },
-  { value: "vetoed", label: "Vetoed", group: "Filtered out", status: "vetoed", showClosed: true },
+  { value: "vetoed", label: "Vetoed only", group: "Filtered out", status: "vetoed", showClosed: true },
 ] as const;
 
 type SortOpt = "score" | "fit" | "speakers" | "date" | "name" | "cfp_close";
