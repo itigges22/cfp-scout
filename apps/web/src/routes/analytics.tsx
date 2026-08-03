@@ -480,7 +480,7 @@ function AnalyticsPage() {
           {q.data.pillar_alignment.length > 0 ? (
             <ChartCard
               title="Pillar alignment"
-              sub="Average alignment score per pillar (0-100); hover for how many conferences align"
+              sub="How many conferences match each pillar BEST — hover for avg score and total aligned"
               wide
             >
               <BarChart
@@ -492,10 +492,11 @@ function AnalyticsPage() {
               >
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
                 <XAxis dataKey="pillar" tick={TICK} tickLine={false} axisLine={false} />
-                <YAxis tick={TICK} tickLine={false} axisLine={false} domain={[0, 100]} />
+                <YAxis tick={TICK} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="avg_score_100" name="Avg alignment (0-100)" fill={INDIGO} radius={[4, 4, 0, 0]} maxBarSize={72} />
-                <Bar dataKey="conferences" name="Aligned conferences" hide />
+                <Bar dataKey="top_count" name="Best-match conferences" fill={INDIGO} radius={[4, 4, 0, 0]} maxBarSize={72} />
+                <Bar dataKey="conferences" name="Total aligned" hide />
+                <Bar dataKey="avg_score_100" name="Avg alignment (0-100)" hide />
               </BarChart>
             </ChartCard>
           ) : null}

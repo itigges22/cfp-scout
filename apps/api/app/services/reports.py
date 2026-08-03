@@ -1317,20 +1317,43 @@ async def analytics_overview(
     }
 
     # ---- Pillar alignment --------------------------------------------
-    pillar_rows = (
+    # "Average edge score" is flat by construction — averaging everything
+    # above the floor compresses every pillar to the middle of the cosine
+    # band (observed: 0.24-0.27 across pillars whose best-match counts
+    # were 208 vs 21). The differentiated, honest metric is: how many
+    # conferences match THIS pillar best.
+    edge_rows = (
         await db.execute(
             select(
+                ConferencePillar.conference_id,
+                ConferencePillar.score,
                 StrategicPillar.name,
-                func.count(ConferencePillar.conference_id),
-                func.avg(ConferencePillar.score),
-            )
-            .join(ConferencePillar, ConferencePillar.pillar_id == StrategicPillar.id)
-            .group_by(StrategicPillar.name)
+            ).join(StrategicPillar, StrategicPillar.id == ConferencePillar.pillar_id)
         )
     ).all()
+    best_by_conf: dict = {}
+    per_pillar_stats: dict[str, dict] = {}
+    for conf_id, score, pname in edge_rows:
+        st = per_pillar_stats.setdefault(
+            pname, {"pillar": pname, "conferences": 0, "score_sum": 0.0, "top_count": 0}
+        )
+        st["conferences"] += 1
+        st["score_sum"] += float(score)
+        prev = best_by_conf.get(conf_id)
+        if prev is None or float(score) > prev[1]:
+            best_by_conf[conf_id] = (pname, float(score))
+    for pname, _sc in best_by_conf.values():
+        per_pillar_stats[pname]["top_count"] += 1
     pillar_alignment = [
-        {"pillar": name, "conferences": int(n), "avg_score": round(float(avg), 4)}
-        for name, n, avg in pillar_rows
+        {
+            "pillar": st["pillar"],
+            "conferences": st["conferences"],
+            "avg_score": round(st["score_sum"] / st["conferences"], 4)
+            if st["conferences"]
+            else 0.0,
+            "top_count": st["top_count"],
+        }
+        for st in sorted(per_pillar_stats.values(), key=lambda s: -s["top_count"])
     ]
 
     return {
