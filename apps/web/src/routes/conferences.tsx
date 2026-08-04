@@ -65,6 +65,12 @@ type StageDef = Stage & { statuses?: string[]; showClosed?: boolean };
 
 const STAGES: StageDef[] = [
   { value: "all", label: "Everything open (vetoed hidden)", group: "Pipeline", statuses: PIPELINE_STATUSES },
+  {
+    value: "everything",
+    label: "Everything (incl. vetoed)",
+    group: "Pipeline",
+    statuses: [...PIPELINE_STATUSES, "vetoed", "rejected"],
+  },
   { value: "undecided", label: "Not decided yet", group: "Pipeline", engagement: "none", statuses: PIPELINE_STATUSES },
   { value: "approved", label: "Approved", group: "Pipeline", status: "approved" },
   { value: "going", label: "We're going", group: "Pipeline", engagement: "going" },
