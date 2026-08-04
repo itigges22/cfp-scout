@@ -26,7 +26,7 @@ import type { components } from "./api-schema";
 
 type S = components["schemas"];
 
-export type { components, paths, operations } from "./api-schema";
+export type { components } from "./api-schema";
 
 /* ------------------------------------------------------------------ *
  * Derived from the server. Add nothing here by hand — regenerate.
@@ -48,7 +48,6 @@ export type AnalyticsOverview = S["AnalyticsOverview"];
 export type PillarAnalytics = S["PillarAnalytics"];
 export type PillarConferenceItem = S["PillarConferenceItem"];
 export type SmeAnalytics = S["SmeAnalytics"];
-export type TalkMatchRead = S["TalkMatchRead"];
 export type DashboardStats = S["DashboardStats"];
 export type DecisionCreate = S["DecisionCreate"];
 export type DecisionRead = S["DecisionRead"];
@@ -520,12 +519,8 @@ export type ConferenceListItem = S["ConferenceListItem"];
 
 export type SettingsResponse = S["SettingsResponse"];
 
-export type SettingValue = S["SettingValue"];
-
 export type SettingSpec = S["SettingSpec"];
 
 /* These are published by the server now (F1) — aliased, not hand-written. */
 export type ConferenceMatch = S["MatchRead"];
 export type SmeBreakdown = S["SmeBreakdownRead"];
-export type SmeDimensionScores = S["SmeDimensionScores"];
-export type MatchBoosts = S["BoostBreakdownRead"];

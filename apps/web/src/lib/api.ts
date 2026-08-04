@@ -549,30 +549,6 @@ export const diagnosticsApi = {
 // ---------------------------------------------------------------------------
 // Discovery (plan 35) — autonomous conference finder
 // ---------------------------------------------------------------------------
-export type DiscoveryHitOutcome = {
-  url: string;
-  title: string;
-  crawl_ok: boolean;
-  parse_status: string | null;
-  conference_id: string | null;
-  error: string | null;
-};
-
-export type DiscoveryResult = {
-  prompt: string;
-  provider: string;
-  requested: number;
-  search_hits: number;
-  crawled: number;
-  new_conferences: number;
-  updated_conferences: number;
-  parse_failures: number;
-  outcomes: DiscoveryHitOutcome[];
-  search_error: string | null;
-  started_at: string;
-  finished_at: string;
-};
-
 // ---------------------------------------------------------------------------
 // Participation — who is going, when, and what they are doing there
 // ---------------------------------------------------------------------------
@@ -737,6 +713,3 @@ export const talksApi = {
     request<ReuseCheckResult>(`${BASE}/talks/${id}/reuse-check`),
 };
 
-// ---------------------------------------------------------------------------
-// Talk tags (v2)
-// ---------------------------------------------------------------------------

@@ -13,7 +13,6 @@
  * keeps the explanation visible without taking over the screen.
  */
 
-import {} from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 
 export function TeamGuidance({

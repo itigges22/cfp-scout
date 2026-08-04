@@ -665,7 +665,7 @@ function SystemPanel({ d }: { d: DiagnosticsResponse }) {
       </CardHeader>
       <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <InfoRow k="Env" v={s.env} />
-        <InfoRow k="Uptime" v={formatUptime(s.uptime_seconds)} />
+        <InfoRow k="Uptime" v={formatElapsed(s.uptime_seconds)} />
         <InfoRow k="Postgres" v={shorten(s.postgres.version)} />
         <InfoRow k="DB size" v={s.postgres.db_size_pretty} />
         <InfoRow k="Storage" v={s.storage_path} mono />
@@ -723,10 +723,6 @@ function formatElapsed(seconds: number | null): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
   return `${Math.floor(seconds / 86400)}d ${Math.floor((seconds % 86400) / 3600)}h`;
-}
-
-function formatUptime(seconds: number | null): string {
-  return formatElapsed(seconds);
 }
 
 function formatBytes(n: number): string {
