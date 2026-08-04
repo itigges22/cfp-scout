@@ -2,147 +2,111 @@
 
 **Find AI conferences worth attending. Pick the right teammate to send.**
 
-Scout is a private web app for AI-event discovery. It crawls the public web for AI events, scores each one against your team's messaging and four-pillar strategy, and tells you which of your subject-matter experts is the best fit to submit a talk or attend.
+Scout is a private web app for AI-event discovery. It crawls the public web for AI events, scores each one against your team's messaging and strategy, and recommends which subject-matter expert should submit a talk or attend.
 
-It runs entirely on your laptop. The only outside service Scout talks to is your LLM endpoint for chat and embeddings — everything else (database, scoring, UI, scraping) is local.
+Runs entirely on your laptop. The only outside service is your LLM endpoint for chat and embeddings.
 
 ---
 
 ## Why use it
 
-If you're on a developer-advocacy or AI-marketing team, you've probably done some version of this manually:
+If you're on a developer-advocacy or AI-marketing team, you've probably done some version of this manually: subscribing to newsletters, bookmarking CFP pages, debating which events fit which narrative, and trying to remember who spoke where last year.
 
-- Subscribed to ten newsletters that surface AI conferences.
-- Bookmarked CFP pages and forgotten which deadlines are coming up.
-- Argued in Slack about whether *this* event fits *that* product narrative.
-- Tried to remember which SME has spoken at this conference series before.
+Scout collapses that into one place. Load your reference data once (SMEs, audiences, messaging), and Scout:
 
-Scout collapses that into one place. You load in your reference data once (who your SMEs are, what each one knows, what audiences you target, what your products are saying this quarter), and Scout does the rest:
-
-- Pulls thousands of upcoming AI events from public feeds.
-- Filters them with a multilingual keyword list (so you don't miss events in LATAM, Asia, or Europe).
-- Scores each one against your messaging, your strategic pillars, and your SME bench.
-- Surfaces a ranked list with rationale you can hand to a manager.
-- Generates a print-ready one-page brief for any event so the SME going can walk into the venue prepared.
+- Pulls thousands of upcoming AI events from public feeds
+- Filters with a multilingual keyword list (English, Spanish, Portuguese, French, German, Japanese, Chinese, Korean)
+- Scores each event against your messaging, strategic pillars, and SME bench
+- Surfaces a ranked list with rationale you can hand to a manager
+- Generates a print-ready one-page brief for any event
 
 ---
 
 ## What you get
 
-### The Dashboard
-A single page that shows you what to act on this week. Three roll-up numbers (events your team has approved in the next 90 days, events pending your review, CFPs closing in the next 30 days), a dark world map with a red dot on every city hosting an AI event Scout found, your top-ranked events as easy-to-scan cards, and a chat box for asking quick questions like *"what AI events in Europe close their CFP this month?"*
+**Dashboard** - Roll-up numbers, a world map of AI events, top-ranked event cards, and a chat box for quick lookups.
 
-### Conferences
-A ranked list of every event Scout has found. Click a row to open the detail page, which auto-scores the event the first time you view it (no command to run) and shows you:
+**Conferences** - Ranked list of every event. Detail pages show overall fit score, recommended SMEs with per-dimension breakdowns, source pages, and approve/reject buttons. "Discover more" pulls fresh events from the feed.
 
-- The overall fit score, broken into messaging / pillar / SME components.
-- Which SMEs the matcher recommends, with a per-dimension breakdown (topic overlap, audience fit, bio similarity, location, past attendance).
-- The original source pages Scout pulled this from.
-- One-click approve / reject so the dashboard's stats stay current.
+**Conference Brief** - Print-optimized one-pager per event: dates, location, why we're going, who should attend, CFP info, talking points.
 
-There's a **Discover more** button at the top that triggers a fresh pull from the events feed — typically surfaces dozens of new candidates per click.
+**SMEs** - Directory of your team. Bio, topics, audience focus, location, past conferences. The matcher uses all of this for recommendations.
 
-### Conference Brief
-A clean, print-optimized one-pager for any event. Header, dates, location, why we're going, who should attend, CFP info, past engagement, talking points to crib from. Built for the SME walking into the venue — open it, print to PDF, and they have everything they need on one sheet.
+**Audiences** - Personas you're targeting (role, seniority, pain points, key messages). Used by the matcher for audience-overlap scoring.
 
-### Subject-Matter Experts (SMEs)
-The directory of who's on your bench. Each SME has a bio, topic coverage, audience focus, location, and a list of conferences they've spoken at before. Click any row to edit. The matcher uses all of this to recommend who should attend each new event.
+**Messaging** - Active positioning docs with elevator pitch, themes, talking points, differentiators. The matcher scores events against these.
 
-### Audiences
-The personas you're trying to reach (Platform Engineering Lead, ML Platform Lead, C-Suite, etc.). Each one has industry, role seniority, pain points, key messages, and exclusion criteria. The matcher uses these to predict which events will put you in front of the right people.
+**Attendance** - Tracked per-conference. Each person gets a row (spoke, booth, attended, sponsored) with cost and headcount. Feeds the ranker for next time.
 
-### Messaging
-Active product messaging documents — one per positioning artifact. Each one has an elevator pitch, target personas, key themes, talking points, differentiators, and competitive position. The matcher compares every event's description against these to compute a messaging-fit score.
+**Agent chat** - Read-only RAG chat. Ask anything about your data in plain English, get cited answers.
 
-### Attendance tracking
-Recorded against the conference itself, not a separate list. Each person gets a row saying what they did there — gave a talk, worked the booth, attended, or we sponsored — so "Alice spoke and Bob ran the stand" is expressible. The event carries what it cost, roughly how many people were there, and whether it was worth going. That history feeds the SME ranker and the next edition's score.
+**Diagnostics** - System health, LLM budget, background jobs, data freshness.
 
-### Ask Scout (agent chat)
-A read-only RAG chat. Ask it anything in plain English about your conferences, SMEs, or messaging documents — it answers with citations to specific rows so you can verify. Examples: *"Which approved events does Sarah have a high fit score for?"*, *"Show me events about MLOps in Europe in Q3"*, *"Which SMEs haven't been assigned to anything in the next 90 days?"*
-
-### Diagnostics
-What's the health of the system? Where is the LLM budget going? Which background jobs ran, succeeded, failed? How fresh is each data source? One page with all of it.
-
-### Settings
-Everything tunable in one place. The runtime knobs (matcher weights, gate thresholds, AI keyword filter, discovery sources) live under **Settings → Tunables** and update live without a restart. A JSON export of every setting (including your LLM API keys) lets you move installs or recover from a wipe.
+**Settings** - All tunables in one place (matcher weights, gate thresholds, AI keyword filter, discovery sources). Updates live without restart.
 
 ---
 
 ## Install
 
-You'll need either Docker Desktop, or Podman + podman-compose. That's it.
+You'll need Docker Desktop or Podman + podman-compose.
 
 ```bash
 git clone https://github.com/<your-org>/scout
 cd scout
-cp .env.example .env       # paste your LLM API key when you open this
-make up                    # builds the images and brings up the stack (~2 min first time)
-make migrate               # creates the database schema + seeds the conference series catalog
+cp .env.example .env       # paste your LLM API key
+make up                    # builds images, brings up the stack (~2 min first time)
+make migrate               # creates schema + seeds conference series catalog
 ```
 
-Open <http://localhost:8000> in your browser. That's it.
-
-If you don't have an LLM API key yet, leave `LLM_DRY_RUN=true` in `.env` and Scout will run with canned LLM responses so you can poke around the UI offline.
+Open <http://localhost:8000>. If you don't have an LLM API key yet, set `LLM_DRY_RUN=true` in `.env` to run with canned responses.
 
 ---
 
-## First-time setup: load your data
+## First-time setup
 
-Scout needs to know about your team before it can recommend anything. Enter it through the UI: each section (`/smes`, `/audiences`, `/messaging`, `/pillars`, `/topics`) has a **New** button, and rows are clickable to edit.
+Scout needs your team data before it can recommend anything. Enter it through the UI (each section has a **New** button, rows are clickable to edit).
 
-**The minimum to get useful results:**
+**Minimum for useful results:**
 
-- At least one messaging document (so the matcher has something to score events against).
-- At least one SME with a real bio and 2+ topic assignments (so the matcher can recommend someone).
-- At least one audience (so the matcher can compute audience overlap).
+- At least one messaging document
+- At least one SME with a real bio and 2+ topic assignments
+- At least one audience
 
-Once those are in, click **Discover more** on `/conferences` and Scout will start pulling events.
-
----
-
-## Backup and restore (including API keys)
-
-**Settings backup — JSON file with everything (including secrets).** Hit `GET /api/v1/admin/settings/export` to download a JSON file with every runtime setting in it: the 33-key tunables surface (matcher weights, gate thresholds, AI keyword filter, discovery sources) **and** your LLM API keys in plain text. Re-import with `POST /api/v1/admin/settings/import`. This is the "move my install to a new machine" file.
-
-> The settings export contains your API keys unmasked. Save with `chmod 600`, don't commit to git, don't share in Slack. The export endpoint logs a warning every time it runs.
-
-Reference data (pillars, SMEs, audiences, topics, series) lives in Postgres and is covered by a database backup — that is the backup story for it. The settings JSON covers the configuration that is not in the database.
+Then click **Discover more** on `/conferences` to start pulling events.
 
 ---
 
-## How discovery works (in plain English)
+## How discovery works
 
-You click **Discover more** on `/conferences`. Here's what happens:
+1. Hits a public JSON feed of developer events (5,000+ entries, refreshed daily)
+2. Filters with a 148-keyword AI list covering 8 languages
+3. Creates rows, generates embeddings, queues for the matcher
+4. First view of an event scores it inline (5-30 seconds). After that, instant.
+5. Coordinates get geocoded via OpenStreetMap for the world map
 
-1. Scout hits a public JSON feed of developer events (5,000+ entries, refreshed daily by a community maintainer).
-2. It filters that feed with a 148-keyword AI list that includes English, Spanish, Portuguese, French, German, Japanese, Chinese, and Korean variants — so a Spanish "Inteligencia Artificial" conference and a Japanese "人工知能" event both make it through. You can edit this list from Settings → Tunables.
-3. For each event that passes the filter, Scout creates a row, generates embeddings of its description, and queues it for the matcher.
-4. The first time you open one of these in the UI, Scout scores it inline (5–30 seconds, with a loading skeleton). After that, it's instant.
-5. Coordinates get geocoded in the background using OpenStreetMap so the world map populates.
-
-The nightly scheduled job runs the same pipeline plus a web crawl for anything not in the feed.
-
-For the full pipeline narrative — sources, filter rules, failure modes — see [`docs/web-discovery.md`](docs/web-discovery.md).
+A nightly job runs the same pipeline plus a web crawl. See [`docs/web-discovery.md`](docs/web-discovery.md) for details.
 
 ---
 
-## Daily use
+## Backup and restore
 
-Most days, you open `/dashboard`. The three roll-up cards tell you what needs your attention. The map shows you where things are. The top picks tell you what to do next. If something looks interesting, you click into it, read the rationale, click **Open brief**, and forward the PDF to the SME.
+Export all settings (including API keys) via `GET /api/v1/admin/settings/export`. Re-import with `POST /api/v1/admin/settings/import`.
 
-Once a week, click **Discover more** on `/conferences` to pick up anything new. The pending-review queue on the dashboard tells you what needs a thumbs-up or thumbs-down.
+> The export contains API keys unmasked. Save with `chmod 600`, don't commit to git.
+
+Reference data (pillars, SMEs, audiences, topics, series) lives in Postgres and is covered by a database backup.
 
 ---
 
 ## Documentation
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system overview, data flow diagram, glossary
-- [`docs/web-discovery.md`](docs/web-discovery.md) — how the events feed, AI filter, and geocoding fit together
-- [`docs/data-model.md`](docs/data-model.md) — every table and column, with the *why* behind each design choice
-- [`docs/ops/runbook.md`](docs/ops/runbook.md) — start here when something breaks
-- [`docs/ops/`](docs/ops/) — per-topic runbooks (backups, secrets, migrations, database, data guardrails)
-- [`docs/security/SECURITY_REVIEW.md`](docs/security/SECURITY_REVIEW.md) — threat model and per-control status
-- [`docs/ADR/`](docs/ADR/) — architecture decision records (what we chose and why)
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - System overview, data flow, glossary
+- [`docs/web-discovery.md`](docs/web-discovery.md) - Events feed, AI filter, geocoding
+- [`docs/data-model.md`](docs/data-model.md) - Tables and columns
+- [`docs/ops/runbook.md`](docs/ops/runbook.md) - Start here when something breaks
+- [`docs/ops/`](docs/ops/) - Per-topic runbooks (backups, secrets, migrations)
+- [`docs/security/SECURITY_REVIEW.md`](docs/security/SECURITY_REVIEW.md) - Threat model
+- [`docs/ADR/`](docs/ADR/) - Architecture decision records
 
 ---
 
