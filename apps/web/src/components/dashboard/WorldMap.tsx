@@ -160,6 +160,7 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
           zoom={view.zoom}
           minZoom={1}
           maxZoom={8}
+          translateExtent={[[-200, -100], [1180, 560]]}
           onMoveEnd={({ coordinates, zoom }) =>
             setView({ center: coordinates as [number, number], zoom })
           }
