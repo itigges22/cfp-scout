@@ -11,7 +11,7 @@
  */
 
 import { useNavigate } from "@tanstack/react-router";
-import { Minus, Plus, RotateCcw } from "lucide-react";
+import { HelpCircle, Minus, Plus, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   ComposableMap,
@@ -80,6 +80,7 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
   const navigate = useNavigate();
   const [hoverKey, setHoverKey] = useState<string | null>(null);
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   // Default to a moderate zoom centered on the dense AI-event clusters
   // (Europe + US). zoom=1 fits the whole globe but leaves Europe so
   // cramped that the dots overlap. zoom=1.8 shows individual cities
@@ -323,8 +324,23 @@ export function WorldMap({ items }: { items: LocationItem[] }) {
           })}
         </ul>
       </div>
-      <div className="pointer-events-none absolute bottom-2 right-3 text-xs uppercase tracking-wider text-fg-subtle">
-        Drag to pan · scroll to zoom · click a dot to pin · click a name to open
+      <div className="absolute left-3 top-3">
+        <button
+          type="button"
+          onClick={() => setShowHelp((v) => !v)}
+          className="rounded-full border border-border-strong bg-surface-2/95 p-1.5 text-fg-muted shadow backdrop-blur hover:bg-surface-3 hover:text-fg"
+          aria-label="Map controls help"
+        >
+          <HelpCircle className="h-3.5 w-3.5" />
+        </button>
+        {showHelp && (
+          <div className="absolute left-0 top-full mt-1.5 w-48 rounded-md border border-border-strong bg-surface-2/95 px-3 py-2 text-xs text-fg-muted shadow-lg backdrop-blur">
+            <span className="inline-block w-10 font-bold text-fg">Drag</span> to pan<br />
+            <span className="inline-block w-10 font-bold text-fg">Scroll</span> to zoom<br />
+            <span className="inline-block w-10 font-bold text-fg">Click</span> a dot to pin<br />
+            <span className="inline-block w-10 font-bold text-fg">Click</span> a name to open
+          </div>
+        )}
       </div>
     </div>
   );
