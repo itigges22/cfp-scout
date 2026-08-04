@@ -646,9 +646,9 @@ function ConferenceRow({ c }: { c: import("@/lib/api-types").ConferenceListItem 
         }
       }}
     >
-      <div className="flex items-start gap-4 pr-24">
+      <div className="flex items-start gap-3 pr-10 lg:gap-4 lg:pr-24">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 truncate">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate text-base font-medium text-fg">{c.name}</h2>
             <StatusPill status={c.status} />
             {c.is_virtual ? <Badge variant="muted">Virtual</Badge> : null}
@@ -674,15 +674,15 @@ function ConferenceRow({ c }: { c: import("@/lib/api-types").ConferenceListItem 
             </div>
           ) : null}
         </div>
-        <div className="flex w-32 flex-col items-end gap-1">
+        <div className="flex w-20 shrink-0 flex-col items-end gap-1 lg:w-32">
           <div className="flex items-baseline gap-1 tabular-nums">
-            <span className="text-2xl font-semibold">
+            <span className="text-xl font-semibold lg:text-2xl">
               {overall !== null ? Math.round(overall * 100) : "—"}
             </span>
             <span className="text-xs text-fg-muted">/ 100</span>
           </div>
           {overall !== null ? <Progress value={overall} className="w-full" /> : null}
-          <p className="text-xs font-medium uppercase tracking-wider text-fg-muted">
+          <p className="hidden text-xs font-medium uppercase tracking-wider text-fg-muted lg:block">
             overall fit
           </p>
         </div>

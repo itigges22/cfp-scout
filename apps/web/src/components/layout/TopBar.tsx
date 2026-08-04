@@ -25,7 +25,7 @@ import type {
 
 export function TopBar() {
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface px-6">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface pl-14 pr-6 lg:px-6">
       <div className="flex items-center gap-3">
         <EnvBadge />
       </div>

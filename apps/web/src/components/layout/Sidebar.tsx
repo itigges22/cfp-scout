@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { BarChart3,
@@ -6,14 +6,17 @@ import { BarChart3,
   CalendarClock,
   LayoutDashboard,
   Loader2,
+  Menu,
   Plus,
   Settings,
   Users,
+  X,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ApiError, pillarsApi } from "@/lib/api";
 import type { PillarRead } from "@/lib/api-types";
+import { SidebarContext } from "@/routes/__root";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -78,6 +81,7 @@ export function Sidebar() {
   const navigate = useNavigate();
   const routerState = useRouterState();
   const currentPath = routerState.location.pathname;
+  const { open, toggle } = useContext(SidebarContext);
 
   const [editingPillar, setEditingPillar] = useState<PillarRead | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -112,7 +116,26 @@ export function Sidebar() {
   const isPillarActive = (id: string) => currentPath === `/pillars/${id}`;
 
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-surface px-3 py-4">
+    <>
+      <button
+        type="button"
+        onClick={toggle}
+        className="fixed left-3 top-3 z-50 rounded-md bg-surface p-2 text-fg-muted hover:bg-surface-2 hover:text-fg lg:hidden"
+        aria-label="Toggle sidebar"
+      >
+        {open ? <X className="size-5" /> : <Menu className="size-5" />}
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={toggle} />
+      )}
+
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 flex h-full w-60 shrink-0 flex-col border-r border-border bg-surface px-3 py-4 transition-transform duration-200 lg:static lg:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
       <Link
         to="/dashboard"
         className="mb-6 flex items-center gap-2 px-3 text-lg font-semibold tracking-tight"
@@ -215,6 +238,7 @@ export function Sidebar() {
         }}
       />
     </aside>
+    </>
   );
 }
 

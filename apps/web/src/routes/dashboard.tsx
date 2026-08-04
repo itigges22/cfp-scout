@@ -66,10 +66,10 @@ function DashboardPage() {
           rest of the dashboard down as the conversation grows) and so
           the map fills its half exactly. Below lg they stack. */}
       <div className="grid grid-cols-1 gap-4 lg:h-[640px] lg:grid-cols-2">
-        <div className="h-[640px] min-h-0 lg:h-auto">
+        <div className="h-[400px] min-h-0 lg:h-auto">
           <WorldMap items={mapQ.data?.items ?? []} />
         </div>
-        <div className="h-[640px] min-h-0 lg:h-auto">
+        <div className="h-[400px] min-h-0 lg:h-auto">
           <AgentChatPanel
             title="Ask Scout"
             storageKey="scout-dashboard-chat-session-id"

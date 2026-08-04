@@ -93,12 +93,12 @@ function SmesPage() {
       />
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
           <div className="flex flex-1 items-center gap-3">
             <CardTitle>SME directory</CardTitle>
             {query.data ? <Badge variant="muted">{query.data.total} total</Badge> : null}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <TeamTabs value={teamFilter} onChange={setTeamFilter} />
             <Input
               type="search"
@@ -108,7 +108,7 @@ function SmesPage() {
                 setSearch(e.currentTarget.value);
                 setPage(1);
               }}
-              className="w-56"
+              className="w-40 lg:w-56"
             />
             <label className="flex items-center gap-1.5 text-xs text-fg-muted">
               <input

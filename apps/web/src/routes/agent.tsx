@@ -97,7 +97,7 @@ function AgentPage() {
           <ChatPanel sessionId={sessionId} />
         ) : (
           <Card>
-            <CardContent className="flex h-[640px] flex-col items-center justify-center gap-3 text-center">
+            <CardContent className="flex h-[400px] flex-col items-center justify-center gap-3 text-center lg:h-[640px]">
               <p className="text-sm text-fg-muted">
                 No session selected. Start a new conversation to ask Scout
                 questions about its conference data.
@@ -137,7 +137,7 @@ function SessionSidebar({
   newPending: boolean;
 }) {
   return (
-    <Card className="h-[640px] overflow-hidden">
+    <Card className="h-[400px] overflow-hidden lg:h-[640px]">
       <CardContent className="flex h-full flex-col gap-2 p-3">
         <Button
           onClick={onNew}
@@ -247,7 +247,7 @@ function ChatPanel({ sessionId }: { sessionId: string }) {
   }, [messages]);
 
   return (
-    <Card className="flex h-[640px] flex-col overflow-hidden">
+    <Card className="flex h-[400px] flex-col overflow-hidden lg:h-[640px]">
       <CardContent className="flex h-full flex-col gap-3 p-0">
         <div
           ref={scrollerRef}
