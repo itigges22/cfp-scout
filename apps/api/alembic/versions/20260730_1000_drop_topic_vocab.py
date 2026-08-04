@@ -25,9 +25,8 @@ DOWNGRADE
 from __future__ import annotations
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
-
 from alembic import op
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
 revision = "20260730_1000"
 down_revision = "20260729_1000"

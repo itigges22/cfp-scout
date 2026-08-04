@@ -26,7 +26,6 @@ WHAT CHANGES
 from __future__ import annotations
 
 import sqlalchemy as sa
-
 from alembic import op
 
 revision = "20260729_1000"
